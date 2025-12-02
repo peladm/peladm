@@ -1,21 +1,21 @@
 @echo off
-echo 🔧 Corrigindo campo plan no dashboard...
+echo 🔧 Corrigindo TODOS os campos plan no dashboard...
 echo.
 
 cd /d "C:\Users\Matheus\Documents\peladm"
 
-echo 📝 Removendo campo plan e adicionando novos campos...
+echo 📝 Removendo todas as ocorrências de plan...
 git add .
 
 echo 💾 Fazendo commit da correção...
-git commit -m "fix: remover campo plan e mostrar responsible_name e pelada_name no dashboard"
+git commit -m "fix: remover TODAS as ocorrências de plan e usar novos campos da tabela clientes"
 
 echo 📤 Enviando para GitHub...
 git push
 
 echo.
-echo ✅ Dashboard corrigido! Campos atualizados
+echo ✅ Dashboard completamente corrigido! Todos os campos atualizados
 echo 🔄 Deploy deve funcionar agora
-echo 👤 Mostra: responsible_name e pelada_name
+echo 📋 Mostra: responsible_name, pelada_name, phone
 echo.
 pause

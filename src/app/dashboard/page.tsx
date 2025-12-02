@@ -182,8 +182,16 @@ export default function DashboardPage() {
                 <div className="text-gray-600">{currentClient?.email}</div>
               </div>
               <div>
-                <span className="font-medium">Plano:</span>
-                <div className="text-gray-600 capitalize">{currentClient?.plan}</div>
+                <span className="font-medium">Responsável:</span>
+                <div className="text-gray-600">{currentClient?.responsible_name}</div>
+              </div>
+              <div>
+                <span className="font-medium">Pelada:</span>
+                <div className="text-gray-600">{currentClient?.pelada_name}</div>
+              </div>
+              <div>
+                <span className="font-medium">Telefone:</span>
+                <div className="text-gray-600">{currentClient?.phone}</div>
               </div>
               <div>
                 <span className="font-medium">Status:</span>
