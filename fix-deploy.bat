@@ -1,22 +1,21 @@
 @echo off
-echo 🔧 Corrigindo conflito de configuração Next.js...
+echo 🔧 Corrigindo tipos TypeScript...
 echo.
 
 cd /d "C:\Users\Matheus\Documents\peladm"
 
-echo 📝 Removendo arquivo conflitante...
-git rm next.config.ts
+echo 📝 Adicionando tipos Supabase...
 git add .
 
 echo 💾 Fazendo commit da correção...
-git commit -m "fix: remover next.config.ts conflitante, manter apenas next.config.js"
+git commit -m "fix: adicionar tipos supabase.ts para resolver erro TypeScript"
 
 echo 📤 Enviando para GitHub...
 git push
 
 echo.
-echo ✅ Correção enviada! Conflito de configuração resolvido
+echo ✅ Correção enviada! Tipos Supabase adicionados
 echo 🔄 Deploy deve funcionar agora - aguarde o Vercel
-echo 📋 Apenas next.config.js será usado
+echo 📋 Arquivo src/types/supabase.ts criado
 echo.
 pause
