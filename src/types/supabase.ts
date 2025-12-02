@@ -73,6 +73,35 @@ export interface Database {
           updated_at?: string
         }
       }
+      users: {
+        Row: {
+          id: string
+          email: string
+          name: string
+          phone: string | null
+          position: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          email: string
+          name: string
+          phone?: string | null
+          position?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          name?: string
+          phone?: string | null
+          position?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       players: {
         Row: {
           id: string
