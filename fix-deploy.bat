@@ -1,21 +1,21 @@
 @echo off
-echo 🔧 Adicionando tabela users aos tipos...
+echo 🔧 Corrigindo tipagem Supabase...
 echo.
 
 cd /d "C:\Users\Matheus\Documents\peladm"
 
-echo 📝 Corrigindo tipos Supabase...
+echo 📝 Aplicando tipagem Database em todos os clientes...
 git add .
 
 echo 💾 Fazendo commit da correção...
-git commit -m "fix: adicionar tabela users aos tipos supabase para AuthContext"
+git commit -m "fix: aplicar tipagem Database em supabase-factory para resolver erro never"
 
 echo 📤 Enviando para GitHub...
 git push
 
 echo.
-echo ✅ Correção enviada! Tabela users adicionada aos tipos
+echo ✅ Correção enviada! Tipagem Database aplicada corretamente
 echo 🔄 Deploy deve funcionar agora - aguarde o Vercel
-echo 👤 AuthContext agora tem tipos corretos para users
+echo 🏗️ Todos os clientes Supabase agora têm tipagem correta
 echo.
 pause

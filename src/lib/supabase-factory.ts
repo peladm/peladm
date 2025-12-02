@@ -1,13 +1,14 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { getClientConfig } from '@/config/clients';
+import { Database } from '@/types/supabase';
 
 // Cache de instâncias Supabase para evitar recriações desnecessárias
-const supabaseInstances = new Map<string, SupabaseClient>();
+const supabaseInstances = new Map<string, SupabaseClient<Database>>();
 
 /**
  * Factory para criar instâncias Supabase baseadas no cliente
  */
-export function createSupabaseClient(clientEmail: string): SupabaseClient {
+export function createSupabaseClient(clientEmail: string): SupabaseClient<Database> {
   const normalizedEmail = clientEmail.toLowerCase();
   
   // Verificar se já existe instância em cache
@@ -27,7 +28,7 @@ export function createSupabaseClient(clientEmail: string): SupabaseClient {
   }
   
   // Criar nova instância Supabase
-  const supabase = createClient(
+  const supabase = createClient<Database>(
     clientConfig.supabaseUrl,
     clientConfig.supabaseKey,
     {
@@ -59,7 +60,7 @@ export function clearSupabaseCache(clientEmail?: string): void {
 /**
  * Obter instância Supabase atual do contexto
  */
-export function getCurrentSupabaseClient(): SupabaseClient {
+export function getCurrentSupabaseClient(): SupabaseClient<Database> {
   // TODO: Implementar contexto para armazenar cliente atual
   // Por enquanto, usar cliente de desenvolvimento
   return createSupabaseClient('admin@dev.local');
@@ -70,8 +71,8 @@ export function getCurrentSupabaseClient(): SupabaseClient {
  */
 export async function validateSupabaseConfig(url: string, key: string): Promise<boolean> {
   try {
-    const testClient = createClient(url, key);
-    const { data, error } = await testClient.from('_').select('*').limit(1);
+    const testClient = createClient<Database>(url, key);
+    const { data, error } = await testClient.from('users').select('*').limit(1);
     
     // Se não der erro de auth ou rede, configuração é válida
     return !error || !error.message.includes('Invalid API key');
