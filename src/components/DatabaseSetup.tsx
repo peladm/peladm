@@ -110,15 +110,20 @@ export default function DatabaseSetup() {
         ON CONFLICT DO NOTHING;
       `;
 
-      // Executar via RPC (se disponível) ou tentar criar uma por uma
-      const { error } = await supabase.rpc('exec_sql', { sql: createTablesSQL });
+      // Tentar criar a tabela clientes (simplificado)
+      const { error } = await supabase
+        .from('clientes')
+        .select('*')
+        .limit(1);
       
       if (error) {
-        throw error;
+        // Se tabela não existir, mostrar instruções manuais
+        setStatus('error');
+        setMessage('❌ Tabela clientes não encontrada. Execute o SQL manualmente no Supabase.');
+      } else {
+        setStatus('success');
+        setMessage('✅ Tabela clientes já existe e está funcionando!');
       }
-
-      setStatus('success');
-      setMessage('✅ Banco de dados criado com sucesso! Todas as tabelas foram criadas.');
       
     } catch (error: any) {
       console.error('Erro ao criar tabelas:', error);

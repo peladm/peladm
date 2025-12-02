@@ -1,21 +1,21 @@
 @echo off
-echo 🔧 Corrigindo campo plan no pelada-login...
+echo 🔧 Corrigindo DatabaseSetup.tsx...
 echo.
 
 cd /d "C:\Users\Matheus\Documents\peladm"
 
-echo 📝 Removendo último campo plan restante...
+echo 📝 Removendo função RPC inválida...
 git add .
 
 echo 💾 Fazendo commit da correção...
-git commit -m "fix: remover campo plan do pelada-login e usar pelada_name"
+git commit -m "fix: corrigir DatabaseSetup removendo função rpc inválida"
 
 echo 📤 Enviando para GitHub...
 git push
 
 echo.
-echo ✅ Todas as páginas corrigidas! Campo plan removido completamente
-echo 🔄 Deploy deve funcionar FINALMENTE agora
-echo 🎯 Ultimo campo plan removido do pelada-login
+echo ✅ DatabaseSetup corrigido! Função RPC removida
+echo 🔄 Deploy deve funcionar AGORA
+echo 🎯 Componente simplificado para apenas verificar tabela
 echo.
 pause
