@@ -42,6 +42,7 @@ const withPWA = require('next-pwa')({
 });
 
 const nextConfig = {
+  turbo: {},
   experimental: {
     optimizePackageImports: ['lucide-react', '@heroicons/react']
   },
