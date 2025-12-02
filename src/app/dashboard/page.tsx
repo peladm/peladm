@@ -67,7 +67,10 @@ export default function DashboardPage() {
             
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-500">
-                Plano: <span className="font-medium capitalize">{currentClient?.plan}</span>
+                Responsável: <span className="font-medium">{currentClient?.responsible_name}</span>
+              </div>
+              <div className="text-sm text-gray-500">
+                Pelada: <span className="font-medium">{currentClient?.pelada_name}</span>
               </div>
               <button
                 onClick={pelladaLogout}
