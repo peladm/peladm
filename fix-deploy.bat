@@ -1,21 +1,21 @@
 @echo off
-echo 🔧 Corrigindo tipagem Supabase...
+echo 🔧 Atualizando tipos para tabela clientes...
 echo.
 
 cd /d "C:\Users\Matheus\Documents\peladm"
 
-echo 📝 Aplicando tipagem Database em todos os clientes...
+echo 📝 Corrigindo tipos Supabase para tabela clientes...
 git add .
 
 echo 💾 Fazendo commit da correção...
-git commit -m "fix: aplicar tipagem Database em supabase-factory para resolver erro never"
+git commit -m "fix: atualizar tipos para tabela clientes com novos campos"
 
 echo 📤 Enviando para GitHub...
 git push
 
 echo.
-echo ✅ Correção enviada! Tipagem Database aplicada corretamente
-echo 🔄 Deploy deve funcionar agora - aguarde o Vercel
-echo 🏗️ Todos os clientes Supabase agora têm tipagem correta
+echo ✅ Tipos atualizados! Tabela clientes configurada
+echo 🔄 Deploy deve funcionar perfeitamente agora
+echo 📋 Estrutura: clientes com responsible_name, phone, pelada_name
 echo.
 pause

@@ -3,8 +3,9 @@ import { Database } from '@/types/supabase';
 import { createSupabaseClient } from './supabase-factory';
 
 // Supabase master (para autenticação do sistema e gerenciamento de clientes)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+// Credenciais reais do projeto criado
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ewcswczqvelhlwpbraea.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMwODI5NDMsImV4cCI6MjA0ODY1ODk0M30.ehQzuCQaRgPG3poKGqmV_5gYLgoQ3k4ajRCnaHDX5-Q';
 
 // Cliente Supabase master (seu banco central)
 export const masterSupabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
