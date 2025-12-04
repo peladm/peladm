@@ -197,6 +197,41 @@ function hideNoSessionScreen() {
     }
 }
 
+// ========== FUNÇÕES GLOBAIS PARA HTML ==========
+// Função para mostrar painel de gerenciamento UNIFICADO
+function mostrarGerenciamento() {
+    // Verificar se o novo painel está disponível
+    const unifiedPanel = document.querySelector('.management-content-unified');
+    
+    if (unifiedPanel) {
+        // Usar novo painel unificado
+        mostrarGerenciamentoUnificado();
+    } else {
+        // Fallback para painel antigo
+        mostrarGerenciamentoAntigo();
+    }
+}
+
+// Função do painel antigo (backup)
+function mostrarGerenciamentoAntigo() {
+    // Verificar permissão
+    if (typeof hasActionPermission !== 'undefined' && !hasActionPermission()) {
+        return;
+    }
+    
+    const painel = document.getElementById('painel-gerenciamento');
+    if (painel) {
+        painel.style.display = 'flex';
+        
+        // Adicionar listener para fechar clicando no fundo
+        painel.onclick = function(e) {
+            if (e.target === painel) {
+                fecharGerenciamento();
+            }
+        };
+    }
+}
+
 // ========== ESTADO DO JOGO ==========
 let gameState = {
     currentGame: {
@@ -724,6 +759,124 @@ function getChangedComponents(newState) {
     return changes;
 }
 
+// Função para renderizar os blocos da fila de espera com loading
+async function renderQueueBlocks() {
+    const container = document.getElementById('queue-blocks-container');
+    const queueCount = document.getElementById('queue-count');
+    
+    if (queueCount) {
+        const remainingInQueue = Math.max(0, gameState.queue.length - 12);
+        queueCount.textContent = `${remainingInQueue} aguardando`;
+    }
+    
+    if (!container) return;
+    
+    // Mostrar skeleton se há muitos jogadores para processar
+    if (gameState.queue.length > 12) {
+        showQueueSkeleton();
+        
+        // Small delay to show skeleton
+        await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    
+    // Jogadores a partir da posição 13 (índice 12)
+    const waitingPlayers = gameState.queue.slice(12);
+    
+    if (waitingPlayers.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state" style="text-align: center; padding: 40px;">
+                <span class="emoji" style="font-size: 2rem; display: block; margin-bottom: 10px;">✅</span>
+                <strong>Todos organizados!</strong><br>
+                <small style="color: #666;">Próximos 12 jogadores já estão nos times</small>
+            </div>
+        `;
+        return;
+    }
+    
+    // Dividir jogadores em grupos de 6
+    const blocks = [];
+    for (let i = 0; i < waitingPlayers.length; i += 6) {
+        blocks.push(waitingPlayers.slice(i, i + 6));
+    }
+    
+    let html = '';
+    blocks.forEach((block, blockIndex) => {
+        const isNextUp = blockIndex === 0; // Primeiro bloco é o próximo
+        
+        // Definir o texto do cabeçalho
+        let headerText;
+        if (isNextUp) {
+            headerText = 'Próximo time';
+        } else {
+            headerText = `${blockIndex + 1}º na fila`;
+        }
+        
+        html += `
+            <div class="queue-block ${isNextUp ? 'next-up' : ''}">
+                <div class="queue-block-header">
+                    <h4>${headerText}</h4>
+                </div>
+                <div class="queue-block-table-container">
+                    <table class="queue-block-table">
+                        <tbody>
+        `;
+        
+        // Adicionar jogadores do bloco
+        for (let i = 0; i < 6; i++) {
+            const player = block[i];
+            if (player) {
+                html += `
+                    <tr>
+                        <td class="queue-block-player-name">${player.nome || player.jogador?.nome}</td>
+                    </tr>
+                `;
+            } else {
+                // Linha vazia para completar o time de 6
+                html += `
+                    <tr class="empty-row">
+                        <td class="queue-block-player-name" style="color: #ccc; font-style: italic;">Aguardando jogador...</td>
+                    </tr>
+                `;
+            }
+        }
+        
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function renderReserves() {
+    // Elemento removido da interface - não precisa mais renderizar reserves na tela principal
+    // Reserves agora são acessadas apenas via modal
+    return;
+    
+    if (gameState.reserves.length === 0) {
+        reservesList.innerHTML = `
+            <div class="empty-state">
+                <span class="emoji">✅</span>
+                <h3>Todos na fila!</h3>
+                <p>Todos os jogadores estão jogando ou na fila</p>
+            </div>
+        `;
+        return;
+    }
+    
+    reservesList.innerHTML = gameState.reserves.map(player => `
+        <div class="reserve-item">
+            <span class="reserve-name">${player.nome}</span>
+            <button class="btn-add-queue" onclick="addPlayerToQueue(${player.id})">
+                Adicionar
+            </button>
+        </div>
+    `).join('');
+}
+
 // Função otimizada de renderização que só atualiza o que mudou
 async function renderGameInterface() {
     console.log('🎨 Iniciando renderização diferencial...');
@@ -1243,124 +1396,6 @@ async function renderTeam(teamNumber, startIndex, endIndex) {
     console.log(`✅ Time ${teamNumber} renderizado com ${teamPlayers.filter(p => p).length} jogadores`);
 }
 
-// Função para renderizar os blocos da fila de espera com loading
-async function renderQueueBlocks() {
-    const container = document.getElementById('queue-blocks-container');
-    const queueCount = document.getElementById('queue-count');
-    
-    if (queueCount) {
-        const remainingInQueue = Math.max(0, gameState.queue.length - 12);
-        queueCount.textContent = `${remainingInQueue} aguardando`;
-    }
-    
-    if (!container) return;
-    
-    // Mostrar skeleton se há muitos jogadores para processar
-    if (gameState.queue.length > 12) {
-        showQueueSkeleton();
-        
-        // Small delay to show skeleton
-        await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    
-    // Jogadores a partir da posição 13 (índice 12)
-    const waitingPlayers = gameState.queue.slice(12);
-    
-    if (waitingPlayers.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state" style="text-align: center; padding: 40px;">
-                <span class="emoji" style="font-size: 2rem; display: block; margin-bottom: 10px;">✅</span>
-                <strong>Todos organizados!</strong><br>
-                <small style="color: #666;">Próximos 12 jogadores já estão nos times</small>
-            </div>
-        `;
-        return;
-    }
-    
-    // Dividir jogadores em grupos de 6
-    const blocks = [];
-    for (let i = 0; i < waitingPlayers.length; i += 6) {
-        blocks.push(waitingPlayers.slice(i, i + 6));
-    }
-    
-    let html = '';
-    blocks.forEach((block, blockIndex) => {
-        const isNextUp = blockIndex === 0; // Primeiro bloco é o próximo
-        
-        // Definir o texto do cabeçalho
-        let headerText;
-        if (isNextUp) {
-            headerText = 'Próximo time';
-        } else {
-            headerText = `${blockIndex + 1}º na fila`;
-        }
-        
-        html += `
-            <div class="queue-block ${isNextUp ? 'next-up' : ''}">
-                <div class="queue-block-header">
-                    <h4>${headerText}</h4>
-                </div>
-                <div class="queue-block-table-container">
-                    <table class="queue-block-table">
-                        <tbody>
-        `;
-        
-        // Adicionar jogadores do bloco
-        for (let i = 0; i < 6; i++) {
-            const player = block[i];
-            if (player) {
-                html += `
-                    <tr>
-                        <td class="queue-block-player-name">${player.nome || player.jogador?.nome}</td>
-                    </tr>
-                `;
-            } else {
-                // Linha vazia para completar o time de 6
-                html += `
-                    <tr class="empty-row">
-                        <td class="queue-block-player-name" style="color: #ccc; font-style: italic;">Aguardando jogador...</td>
-                    </tr>
-                `;
-            }
-        }
-        
-        html += `
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-    });
-    
-    container.innerHTML = html;
-}
-
-function renderReserves() {
-    // Elemento removido da interface - não precisa mais renderizar reserves na tela principal
-    // Reserves agora são acessadas apenas via modal
-    return;
-    
-    if (gameState.reserves.length === 0) {
-        reservesList.innerHTML = `
-            <div class="empty-state">
-                <span class="emoji">✅</span>
-                <h3>Todos na fila!</h3>
-                <p>Todos os jogadores estão jogando ou na fila</p>
-            </div>
-        `;
-        return;
-    }
-    
-    reservesList.innerHTML = gameState.reserves.map(player => `
-        <div class="reserve-item">
-            <span class="reserve-name">${player.nome}</span>
-            <button class="btn-add-queue" onclick="addPlayerToQueue(${player.id})">
-                Adicionar
-            </button>
-        </div>
-    `).join('');
-}
-
 async function addPlayerToQueue(playerId) {
     try {
         const player = gameState.reserves.find(p => p.id === playerId);
@@ -1688,38 +1723,6 @@ function mostrarOpcoesGerenciamento() {
     }
 }
 
-// Função para mostrar painel de gerenciamento UNIFICADO
-function mostrarGerenciamento() {
-    // Verificar se o novo painel está disponível
-    const unifiedPanel = document.querySelector('.management-content-unified');
-    
-    if (unifiedPanel) {
-        // Usar novo painel unificado
-        mostrarGerenciamentoUnificado();
-    } else {
-        // Fallback para painel antigo
-        mostrarGerenciamentoAntigo();
-    }
-}
-
-// Função do painel antigo (backup)
-function mostrarGerenciamentoAntigo() {
-    // Verificar permissão
-    if (typeof hasActionPermission !== 'undefined' && !hasActionPermission()) {
-        return;
-    }
-    
-    const painel = document.getElementById('painel-gerenciamento');
-    if (painel) {
-        painel.style.display = 'flex';
-        
-        // Adicionar listener para fechar clicando no fundo
-        painel.onclick = function(e) {
-            if (e.target === painel) {
-                fecharGerenciamento();
-            }
-        };
-    }
 }
 
 // Função para fechar painel de gerenciamento
@@ -4449,5 +4452,4 @@ function refreshManagementLists() {
             console.error('Erro ao recarregar listas:', error);
         });
     }
-}
 }
