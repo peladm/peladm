@@ -1,0 +1,950 @@
+/* Reset e Base */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #f8f9fa;
+    color: #333;
+    line-height: 1.6;
+    padding-bottom: 120px;
+}
+
+/* Container Principal */
+.main {
+    min-height: 100vh;
+    padding: 20px 0;
+}
+
+.container {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 0 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* Header */
+.header-card {
+    background: white;
+    border-radius: 20px;
+    padding: 25px 20px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.header-card h2 {
+    color: #2d8f2d;
+    margin-bottom: 20px;
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+/* Seletor de Filtros */
+.filter-selector {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.filter-btn {
+    padding: 12px 20px;
+    border: none;
+    background: #2d8f2d;
+    color: white;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 5px rgba(45, 143, 45, 0.3);
+}
+
+.filter-btn:hover {
+    background: #25a025;
+    transform: translateY(-1px);
+}
+
+.filter-btn.active {
+    background: #2d8f2d;
+    box-shadow: 0 3px 8px rgba(45, 143, 45, 0.4);
+}
+
+/* Date Select */
+.date-select {
+    flex: 1;
+    padding: 12px 15px;
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    background: #f8f9fa;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.date-select:focus {
+    outline: none;
+    border-color: #2d8f2d;
+    background: white;
+}
+
+/* Cards de Resumo */
+.summary-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.summary-card {
+    background: white;
+    border-radius: 12px;
+    padding: 15px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: transform 0.2s ease;
+}
+
+.summary-card:hover {
+    transform: translateY(-2px);
+}
+
+.card-icon {
+    font-size: 1.8rem;
+    background: #f8f9fa;
+    width: 45px;
+    height: 45px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card-content {
+    flex: 1;
+}
+
+.card-number {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #2d8f2d;
+    line-height: 1.2;
+}
+
+.card-label {
+    font-size: 0.75rem;
+    color: #666;
+    font-weight: 500;
+}
+
+.summary-card-button {
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.summary-card-button:hover {
+    transform: translateY(-3px);
+    border-color: #2d8f2d;
+    box-shadow: 0 4px 12px rgba(45, 143, 45, 0.2);
+}
+
+.summary-card-button:active {
+    transform: translateY(-1px);
+}
+
+.summary-card-button .card-content {
+    text-align: center;
+}
+
+.summary-card-button .card-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #2d8f2d;
+}
+
+/* Modais */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 15px;
+    max-width: 500px;
+    width: 100%;
+    max-height: 80vh;
+    overflow: hidden;
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-header {
+    padding: 20px 25px 15px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    font-size: 1.2rem;
+    color: #333;
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+    background: #f0f0f0;
+    color: #666;
+}
+
+.modal-body {
+    padding: 20px 25px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.jogador-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.jogador-item:last-child {
+    border-bottom: none;
+}
+
+.jogador-nome {
+    font-weight: 500;
+    color: #333;
+}
+
+/* Estilos para substituições */
+.jogador-substituido {
+    margin-bottom: 8px;
+    border-left: 3px solid #f0f0f0;
+    padding-left: 8px;
+}
+
+.jogador-saiu {
+    text-decoration: line-through;
+    opacity: 0.6;
+    color: #999 !important;
+    font-size: 0.85rem;
+    margin-bottom: 2px;
+}
+
+.jogador-entrou {
+    color: #2d8f2d !important;
+    font-weight: 600;
+    font-size: 0.9rem;
+    position: relative;
+    padding-left: 15px;
+}
+
+.jogador-entrou:before {
+    content: "↳";
+    position: absolute;
+    left: 0;
+    color: #2d8f2d;
+    font-weight: bold;
+}
+
+.jogador-stats {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.gols-section {
+    margin-bottom: 25px;
+}
+
+.gols-section:last-child {
+    margin-bottom: 0;
+}
+
+.gols-section h4 {
+    font-size: 1rem;
+    color: #2d8f2d;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.gol-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.gol-item:last-child {
+    border-bottom: none;
+}
+
+.jogador-sem-gol {
+    color: #999;
+    font-size: 0.9rem;
+    padding: 5px 0;
+}
+
+/* Loading */
+.loading-card {
+    background: white;
+    border-radius: 15px;
+    padding: 30px 20px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.loading-icon {
+    font-size: 2rem;
+    margin-bottom: 10px;
+}
+
+.loading-text {
+    color: #666;
+    font-style: italic;
+}
+
+/* Empty State */
+.empty-state {
+    background: white;
+    border-radius: 15px;
+    padding: 40px 20px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.empty-icon {
+    font-size: 3rem;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    color: #333;
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+}
+
+.empty-state p {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+/* Seção de Partidas */
+.partidas-section {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Card de Partida */
+.partida-card {
+    background: white;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: all 0.2s ease;
+}
+
+.partida-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+}
+
+/* Header da Partida */
+.partida-header {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.partida-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.partida-data {
+    font-size: 0.85rem;
+    color: #333;
+    font-weight: 600;
+}
+
+.partida-hora {
+    font-size: 0.75rem;
+    color: #666;
+}
+
+.partida-duracao {
+    background: #e3f2fd;
+    color: #1976d2;
+    padding: 3px 6px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+/* Placar */
+.partida-placar {
+    padding: 12px 15px;
+    text-align: center;
+}
+
+.placar {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+}
+
+.time {
+    flex: 1;
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.time-gols {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #333;
+    line-height: 1;
+}
+
+.time.vencedor .time-gols {
+    color: #2d8f2d;
+}
+
+.vs {
+    font-size: 1rem;
+    color: #999;
+    font-weight: bold;
+}
+
+/* Jogadores */
+.partida-jogadores {
+    background: #f8f9fa;
+    padding: 12px 15px;
+    border-top: 1px solid #eee;
+}
+
+.jogadores-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.time-jogadores {
+    background: white;
+    padding: 10px;
+    border-radius: 8px;
+}
+
+.jogadores-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.jogador-nome {
+    font-size: 0.75rem;
+    color: #333;
+    padding: 3px 6px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+/* Export Section */
+.export-section {
+    display: flex;
+    justify-content: center;
+    margin: 30px 0;
+    padding: 20px 0;
+}
+
+.btn-export {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(135deg, #2d8f2d, #1e6b1e);
+    color: white;
+    border: none;
+    border-radius: 15px;
+    padding: 15px 25px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(45, 143, 45, 0.3);
+}
+
+.btn-export:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(45, 143, 45, 0.4);
+    background: linear-gradient(135deg, #1e6b1e, #2d8f2d);
+}
+
+.btn-export:active {
+    transform: translateY(0);
+    box-shadow: 0 3px 10px rgba(45, 143, 45, 0.3);
+}
+
+.btn-export .emoji {
+    font-size: 1.2rem;
+}
+
+.btn-export:disabled {
+    background: #ddd;
+    color: #999;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Estilos especiais para exportação */
+.exporting .container {
+    max-width: none;
+    width: 400px;
+    margin: 0;
+    padding: 20px;
+    background: white;
+}
+
+.exporting .header-card {
+    border-radius: 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.exporting .summary-cards {
+    gap: 15px;
+}
+
+.exporting .partida-card {
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border: 1px solid #f0f0f0;
+}
+
+/* Footer Mobile */
+.footer-mobile {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 400px;
+    background: #fff;
+    border-top: 1px solid #eee;
+    border-left: 1px solid #eee;
+    border-right: 1px solid #eee;
+    border-radius: 20px 20px 0 0;
+    z-index: 1000;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+}
+
+.nav-mobile {
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 15px;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: #999;
+    transition: all 0.2s ease;
+    padding: 10px;
+    border-radius: 12px;
+    min-width: 50px;
+    height: 50px;
+}
+
+.nav-item.active,
+.nav-item:hover {
+    color: #2d8f2d;
+    background: rgba(45, 143, 45, 0.1);
+}
+
+.nav-item .emoji {
+    font-size: 2.8rem;
+}
+
+/* Botão Administrativo */
+.admin-btn {
+    background: none !important;
+    border: none;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: all 0.3s ease;
+}
+
+.admin-btn:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+/* Modal Apagar Dados */
+.modal-senha {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    backdrop-filter: blur(5px);
+}
+
+.modal-senha-content {
+    background: white;
+    border-radius: 16px;
+    width: 95%;
+    max-width: 400px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    animation: modalSlideUp 0.3s ease-out;
+}
+
+.modal-header {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: white;
+    padding: 20px;
+    text-align: center;
+    border-radius: 16px 16px 0 0;
+}
+
+.modal-emoji {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 10px;
+}
+
+.modal-header h2 {
+    margin: 0 0 5px 0;
+    font-size: 1.4rem;
+}
+
+.modal-header p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.9rem;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.data-seletor {
+    margin-bottom: 20px;
+}
+
+.data-seletor label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+}
+
+.input-data {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.3s ease;
+}
+
+.input-data:focus {
+    outline: none;
+    border-color: #dc3545;
+}
+
+.select-data {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    font-size: 1rem;
+    background-color: white;
+    cursor: pointer;
+    transition: border-color 0.3s ease;
+}
+
+.select-data:focus {
+    outline: none;
+    border-color: #dc3545;
+}
+
+.select-data:disabled {
+    background-color: #f8f9fa;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.warning-box {
+    background: #fff3cd;
+    border: 2px solid #ffc107;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 15px 0;
+    display: flex;
+    gap: 12px;
+}
+
+.warning-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.warning-text {
+    font-size: 0.9rem;
+    color: #856404;
+    line-height: 1.4;
+}
+
+.confirmacao-dupla {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px solid #dc3545;
+}
+
+.confirmacao-dupla h4 {
+    margin: 0 0 10px 0;
+    color: #dc3545;
+    font-size: 1rem;
+}
+
+.confirmacao-dupla code {
+    background: #dc3545;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+.input-confirmacao {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #dc3545;
+    border-radius: 6px;
+    font-size: 1rem;
+    text-align: center;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.input-confirmacao:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.25);
+}
+
+.modal-actions {
+    padding: 0 20px 20px;
+    display: flex;
+    gap: 12px;
+}
+
+.btn-modal-cancel, .btn-modal-danger {
+    flex: 1;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-modal-cancel {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-modal-cancel:hover {
+    background: #5a6268;
+    transform: translateY(-2px);
+}
+
+.btn-modal-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-modal-danger:hover:not(:disabled) {
+    background: #c82333;
+    transform: translateY(-2px);
+}
+
+.btn-modal-danger:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+@keyframes modalSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(50px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Responsividade */
+@media (max-width: 480px) {
+    .container {
+        padding: 10px;
+        margin: 0;
+    }
+    
+    .header-card {
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+    
+    .header-card h2 {
+        font-size: 1.3rem;
+        margin-bottom: 15px;
+    }
+    
+    .filter-selector {
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
+    }
+    
+    .filter-btn {
+        padding: 10px 16px;
+        font-size: 0.9rem;
+    }
+    
+    .date-select {
+        padding: 10px;
+        font-size: 0.9rem;
+    }
+    
+    .summary-cards {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .summary-card {
+        padding: 12px;
+    }
+    
+    .card-icon {
+        font-size: 1.2rem;
+    }
+    
+    .card-number {
+        font-size: 1.1rem;
+    }
+    
+    .card-label {
+        font-size: 0.75rem;
+    }
+    
+    .partida-card {
+        padding: 12px;
+        margin-bottom: 8px;
+    }
+    
+    .partida-info h3 {
+        font-size: 0.95rem;
+        margin-bottom: 8px;
+    }
+    
+    .partida-detalhes {
+        font-size: 0.8rem;
+    }
+    
+    .modal-content {
+        margin: 10px;
+        max-height: calc(100vh - 40px);
+        width: calc(100vw - 20px);
+        max-width: none;
+    }
+    
+    .modal-header h3 {
+        font-size: 1.2rem;
+    }
+    
+    .modal-body {
+        padding: 15px;
+        max-height: calc(100vh - 160px);
+    }
+}
+
+
+
+

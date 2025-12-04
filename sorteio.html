@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sorteio - Pelada 3</title>
+    <link rel="stylesheet" href="sorteio.css">
+</head>
+<body>
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            <!-- Header com Título e Controles -->
+            <section class="header-card">
+                <h2>🎲 Sorteio Inicial 🎲</h2>
+                <div class="controls-row">
+                    <button id="btn-select-all" class="btn-toggle">
+                        <span class="emoji">✅</span>
+                        <span>Selecionar Todos</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Lista de Jogadores -->
+            <section class="players-card">
+                <div id="lista-jogadores" class="players-list">
+                    <div class="loading-state">
+                        <span class="emoji">⏳</span>
+                        <p>Carregando jogadores...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Ações -->
+            <section class="actions-card">
+                <button id="btn-sortear" class="btn-primary" disabled>
+                    <span class="emoji">🎲</span>
+                    <span id="sortear-text">Sortear Times: 0</span>
+                </button>
+                
+                <button id="btn-resort" class="btn-secondary" style="display: none;">
+                    <span class="emoji">🔄</span>
+                    <span>Re-sortear</span>
+                </button>
+            </section>
+
+            <!-- Resultado do Sorteio -->
+            <section id="resultado-sorteio" class="result-card" style="display: none;">
+                <h2>⚽ Times Formados</h2>
+                <div id="teams-container" class="teams-container">
+                    <!-- Times serão inseridos aqui -->
+                </div>
+                
+                <div class="result-actions">
+                    <button id="btn-confirmar" class="btn-success">
+                        <span class="emoji">✅</span>
+                        <span>Confirmar Times</span>
+                    </button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+
+
+    <!-- Footer Mobile -->
+    <footer class="footer-mobile">
+        <nav class="nav-mobile">
+            <a href="index.html" class="nav-item">
+                <span class="emoji">🏠</span>
+            </a>
+            <a href="cadastro.html" class="nav-item">
+                <span class="emoji">👤</span>
+            </a>
+            <a href="sorteio.html" class="nav-item active">
+                <span class="emoji">🎲</span>
+            </a>
+            <a href="fila.html" class="nav-item">
+                <span class="emoji">📋</span>
+            </a>
+            <a href="regras.html" class="nav-item">
+                <span class="emoji">⚙️</span>
+            </a>
+        </nav>
+    </footer>
+
+    <!-- Supabase CDN -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <!-- Arquivo de configuração do banco -->
+    <script src="database.js"></script>
+    <script src="auth-protection.js"></script>
+    <!-- Script da página -->
+    <script src="sorteio.js"></script>
+</body>
+</html>

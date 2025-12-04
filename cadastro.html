@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cadastro - Pelada 3</title>
+    <link rel="stylesheet" href="cadastro.css">
+</head>
+<body>
+
+
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            <!-- Formulário de Cadastro -->
+            <section class="form-card">
+                <form id="form-cadastro" class="form">
+                    <div class="input-group">
+                        <input type="text" id="nome" name="nome" placeholder="Nome do jogador" required>
+                    </div>
+
+                    <div class="input-group">
+                        <div class="stars-selector">
+                            <input type="hidden" id="nivel" name="nivel" value="3">
+                            <div class="stars">
+                                <span class="star" data-value="1">⭐</span>
+                                <span class="star" data-value="2">⭐</span>
+                                <span class="star active" data-value="3">⭐</span>
+                                <span class="star" data-value="4">⭐</span>
+                                <span class="star" data-value="5">⭐</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-submit btn-small">
+                        <span class="emoji">✅</span>
+                        <span>Cadastrar</span>
+                    </button>
+                </form>
+            </section>
+
+            <!-- Lista de Jogadores -->
+            <section class="players-card">
+                <div class="header-with-admin">
+                    <h2>📝 Jogadores Cadastrados</h2>
+                    <button class="btn-admin-toggle" onclick="toggleAdminMode()" title="Modo Administrador">
+                        <span class="emoji">🔐</span>
+                    </button>
+                </div>
+                
+                <div id="lista-jogadores" class="players-list">
+                    <div class="empty-state">
+                        <span class="emoji">😴</span>
+                        <p>Nenhum jogador cadastrado ainda</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer Mobile -->
+    <footer class="footer-mobile">
+        <nav class="nav-mobile">
+            <a href="index.html" class="nav-item">
+                <span class="emoji">🏠</span>
+            </a>
+            <a href="cadastro.html" class="nav-item active">
+                <span class="emoji">👤</span>
+            </a>
+            <a href="sorteio.html" class="nav-item">
+                <span class="emoji">🎲</span>
+            </a>
+        </nav>
+    </footer>
+
+    <!-- Supabase CDN -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <!-- Arquivo de configuração do banco -->
+    <script src="database.js"></script>
+    <script src="auth-protection.js"></script>
+    <!-- Script da página -->
+    <script src="cadastro.js"></script>
+</body>
+</html>

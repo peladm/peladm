@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pelada 3 - Home</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-nav">
+                <img src="logo.png" alt="Logo" class="logo-profile">
+                <!-- Botão admin (dentro do container) -->
+                <button class="admin-gear-btn admin-only" onclick="irPara('usuarios.html')" title="Painel do Administrador">
+                    ⚙️
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            <!-- Gestão da Pelada Hero -->
+            <section class="hero-management-section organizer-only">
+                <div class="hero-management-card">
+                    <div class="management-content">
+                        <h2 class="management-title">Iniciar Pelada</h2>
+                        <p class="management-subtitle">Cadastre peladeiros e faça o sorteio</p>
+                        <div class="management-actions">
+                            <button class="hero-management-btn" onclick="irPara('cadastro.html')">
+                                <span>🏃‍♂️</span>
+                                <span>Peladeiros</span>
+                            </button>
+                            <button class="hero-management-btn" onclick="irPara('sorteio.html')">
+                                <span>🎲</span>
+                                <span>Sorteio</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="management-decoration"></div>
+                </div>
+            </section>
+
+            <!-- Botão de Resultados Especial -->
+            <section class="hero-results-section">
+                <div class="hero-results-card">
+                    <div class="results-icon-bg">
+                        <span class="results-icon">📊</span>
+                    </div>
+                    <div class="results-content">
+                        <h2 class="results-title">Estatísticas & Resultados</h2>
+                        <p class="results-subtitle">Veja todos os dados da pelada</p>
+                        <button class="hero-results-btn" onclick="irPara('resultados.html')">
+                            <span class="btn-text">Ver Relatório Completo</span>
+                            <span class="arrow">→</span>
+                        </button>
+                    </div>
+                    <div class="results-decoration"></div>
+                </div>
+            </section>
+
+            <!-- Status Dashboard -->
+            <section class="dashboard-section">
+                <div class="status-cards">
+                    <div class="status-card peladas-card">
+                        <div class="card-icon">📅</div>
+                        <div class="card-content">
+                            <h4>Peladas</h4>
+                            <span id="total-peladas" class="status-value">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="status-card gols-card">
+                        <div class="card-icon">⚽</div>
+                        <div class="card-content">
+                            <h4>Gols</h4>
+                            <span id="total-gols" class="status-value">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="status-card peladeiros-card">
+                        <div class="card-icon">👥</div>
+                        <div class="card-content">
+                            <h4>Peladeiros</h4>
+                            <span id="total-peladeiros" class="status-value">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="status-card partidas-card">
+                        <div class="card-icon">🏆</div>
+                        <div class="card-content">
+                            <h4>Partidas</h4>
+                            <span id="total-partidas" class="status-value">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="status-card media-gols-card">
+                        <div class="card-icon">📊</div>
+                        <div class="card-content">
+                            <h4>Média Gols</h4>
+                            <span id="media-gols" class="status-value">0.0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="status-card rei-pelada-card">
+                        <div class="card-icon">👑</div>
+                        <div class="card-content">
+                            <h4>Rei da Pelada</h4>
+                            <span id="rei-pelada" class="status-value player-name">-</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Próximos Times -->
+            <section class="next-teams-section" id="proximos-times" style="display: none;">
+                <h3 class="section-title">🔄 Próximos Times</h3>
+                <div class="teams-preview">
+                    <div class="team-preview team-a">
+                        <h4>Time A</h4>
+                        <div id="time-a-preview" class="players-preview"></div>
+                    </div>
+                    <div class="vs-divider">VS</div>
+                    <div class="team-preview team-b">
+                        <h4>Time B</h4>
+                        <div id="time-b-preview" class="players-preview"></div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- Seção Organizador (apenas para organizadores e admins) -->
+            <section class="organizer-section organizer-only" style="display: none;">
+                <h3 class="organizer-title">📋 Painel do Organizador</h3>
+                <div class="organizer-buttons">
+                    <button class="organizer-btn" onclick="irPara('sumula.html')">
+                        <span class="emoji">📝</span>
+                        <div class="btn-content">
+                            <strong>Súmula</strong>
+                            <small>Registrar resultados</small>
+                        </div>
+                    </button>
+                </div>
+            </section>
+
+
+        </div>
+    </main>
+
+    <!-- Footer Mobile -->
+    <footer class="footer-mobile">
+        <nav class="nav-mobile">
+            <a href="index.html" class="nav-item active">
+                <span class="emoji">🏠</span>
+            </a>
+            <a href="cadastro.html" class="nav-item">
+                <span class="emoji">👤</span>
+            </a>
+            <a href="sorteio.html" class="nav-item">
+                <span class="emoji">🎲</span>
+            </a>
+        </nav>
+    </footer>
+
+    <!-- Supabase CDN -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <!-- Arquivo de configuração do banco -->
+    <script src="database.js"></script>
+    <!-- Proteção de autenticação -->
+    <script src="auth-protection.js"></script>
+    <!-- Script da página -->
+    <script src="index.js"></script>
+</body>
+</html>

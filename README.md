@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ⚽ Pelada 3 - Sistema de Gestão de Futebol
 
-## Getting Started
+Um sistema completo para gerenciar peladas de futebol com controle de usuários, sorteios, estatísticas e muito mais!
 
-First, run the development server:
+## 🌟 Funcionalidades
+
+### 👑 **Sistema de Usuários**
+- **Admin**: Controle total do sistema
+- **Organizador**: Gerencia jogos e times
+- **Jogador**: Visualiza estatísticas e acompanha partidas
+
+### 🎮 **Gestão da Pelada**
+- 🏃‍♂️ **Cadastro de Peladeiros**
+- 🎲 **Sorteio Automático de Times**
+- 📋 **Controle de Fila**
+- ⚽ **Acompanhamento de Partidas**
+- 📈 **Estatísticas Detalhadas**
+- 📊 **Resultados Históricos**
+
+### 🔐 **Segurança**
+- Sistema de login personalizado
+- Controle de acesso por função
+- Senhas personalizadas por usuário
+- Proteção de páginas administrativas
+
+## 🛠️ **Tecnologias Utilizadas**
+
+- **Frontend**: HTML5, CSS3, JavaScript
+- **Backend**: Supabase (PostgreSQL)
+- **Design**: Mobile-first, Responsivo
+- **Hosting**: GitHub Pages
+
+## 🚀 **Como Usar**
+
+1. **Acesse o site**: [Pelada 3](https://seu-usuario.github.io/pelada-3)
+2. **Faça login** com suas credenciais
+3. **Gerencie sua pelada** conforme seu nível de acesso
+
+## 📱 **Compatibilidade**
+
+- ✅ Desktop
+- ✅ Tablet
+- ✅ Mobile
+- ✅ Todos os navegadores modernos
+
+## 🎯 **Instalação Local**
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/seu-usuario/pelada-3.git
+cd pelada-3
+# Abra index.html no navegador
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 📞 **Suporte**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Desenvolvido com ❤️ para organizar as melhores peladas!
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**⚽ Bora jogar bola! 🏆**

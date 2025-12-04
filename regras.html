@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regras - Pelada 3</title>
+    <link rel="stylesheet" href="regras.css">
+</head>
+<body>
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            <!-- Header -->
+            <section class="header-card">
+                <h2>⚙️ Configurações da Pelada ⚙️</h2>
+                <p>Defina as regras que afetarão os sorteios e partidas</p>
+            </section>
+
+            <!-- Configurações -->
+            <section class="config-card">
+                <form id="form-regras" class="config-form">
+                    
+                    <!-- Duração da Partida -->
+                    <div class="config-group">
+                        <label for="duracao">⏱️ Duração da Partida</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="duracao" name="duracao" min="5" max="90" value="10">
+                            <span class="unit">minutos</span>
+                        </div>
+                    </div>
+
+                    <!-- Jogadores por Time -->
+                    <div class="config-group">
+                        <label for="jogadores_por_time">👥 Jogadores por Time</label>
+                        <div class="selector-buttons">
+                            <button type="button" class="selector-btn" data-value="5">5x5</button>
+                            <button type="button" class="selector-btn active" data-value="6">6x6</button>
+                            <button type="button" class="selector-btn" data-value="7">7x7</button>
+                            <button type="button" class="selector-btn" data-value="11">11x11</button>
+                        </div>
+                        <input type="hidden" id="jogadores_por_time" name="jogadores_por_time" value="6">
+                    </div>
+
+                    <!-- Limite de Jogadores -->
+                    <div class="config-group">
+                        <label for="limite_jogadores">🎯 Limite Máximo de Jogadores</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="limite_jogadores" name="limite_jogadores" min="10" max="100" value="30">
+                            <span class="unit">jogadores</span>
+                        </div>
+                    </div>
+
+                    <!-- Regra de Vitórias Consecutivas -->
+                    <div class="config-group">
+                        <label for="vitorias_consecutivas">🏆 Vitórias Consecutivas para Regra Especial</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="vitorias_consecutivas" name="vitorias_consecutivas" min="2" max="10" value="3">
+                            <span class="unit">vitórias</span>
+                        </div>
+                    </div>
+
+                    <!-- Prioridade de Retorno -->
+                    <div class="config-group">
+                        <label>🔄 Regra após Vitórias Consecutivas</label>
+                        <div class="toggle-group">
+                            <div class="toggle-option">
+                                <input type="radio" id="prioridade_sim" name="prioridade_retorno" value="true" checked>
+                                <label for="prioridade_sim">
+                                    <span class="emoji">⬆️</span>
+                                    <span>Time vencedor vai na frente da fila</span>
+                                </label>
+                            </div>
+                            <div class="toggle-option">
+                                <input type="radio" id="prioridade_nao" name="prioridade_retorno" value="false">
+                                <label for="prioridade_nao">
+                                    <span class="emoji">⬇️</span>
+                                    <span>Time vencedor vai para o final da fila</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Botões de Ação -->
+                    <div class="actions">
+                        <button type="button" id="btn-reset" class="btn-secondary">
+                            <span class="emoji">🔄</span>
+                            <span>Padrão</span>
+                        </button>
+                        <button type="submit" class="btn-primary">
+                            <span class="emoji">💾</span>
+                            <span>Salvar Regras</span>
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Regras do Sorteio -->
+            <section class="rules-info-card">
+                <h3>🎲 Novo Sistema de Sorteio Profissional</h3>
+                <div class="rules-content">
+                    
+                    <div class="rule-description">
+                        <h4>⚖️ Como Funciona</h4>
+                        <p>O novo sistema é <strong>profissional</strong>, <strong>aleatório</strong> e <strong>inteligente</strong>:</p>
+                        <ol>
+                            <li><strong>Embaralhamento duplo</strong> garante máxima aleatoriedade</li>
+                            <li><strong>Times completos</strong> são sempre priorizados</li>
+                            <li><strong>13 padrões</strong> são testados em ordem de prioridade</li>
+                            <li><strong>Times incompletos</strong> seguem os mesmos padrões (quando possível)</li>
+                            <li><strong>Nunca quebra regras</strong> - sempre funciona</li>
+                        </ol>
+                    </div>
+
+                    <div class="priority-section">
+                        <h4>🥇 PRIORIDADE 1 - Times "Ideais" (Média 3,5⭐)</h4>
+                        
+                        <div class="combo-grid">
+                            <div class="combo-item">
+                                <strong>A)</strong> 1×5⭐ + 2×4⭐ + 2×3⭐ + 1×2⭐
+                            </div>
+                            <div class="combo-item">
+                                <strong>B)</strong> 1×5⭐ + 1×4⭐ + 3×3⭐ + 1×2⭐
+                            </div>
+                            <div class="combo-item">
+                                <strong>C)</strong> 1×5⭐ + 4×3⭐ + 1×2⭐
+                            </div>
+                            <div class="combo-item">
+                                <strong>D)</strong> 1×5⭐ + 2×4⭐ + 2×3⭐ + 1×1⭐
+                            </div>
+                            <div class="combo-item">
+                                <strong>E)</strong> 1×5⭐ + 1×4⭐ + 4×3⭐
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="priority-section">
+                        <h4>🥈 PRIORIDADE 2 - Média 3,4⭐</h4>
+                        
+                        <div class="combo-grid">
+                            <div class="combo-item">
+                                <strong>F)</strong> 1×5⭐ + 1×4⭐ + 3×3⭐ + 1×2⭐
+                            </div>
+                            <div class="combo-item">
+                                <strong>G)</strong> 1×5⭐ + 5×3⭐
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="priority-section">  
+                        <h4>🥉 PRIORIDADE 3 - Média 3,3⭐</h4>
+                        
+                        <div class="combo-grid">
+                            <div class="combo-item">
+                                <strong>H)</strong> 1×5⭐ + 2×4⭐ + 2×3⭐ + 1×2⭐
+                            </div>
+                            <div class="combo-item">
+                                <strong>I)</strong> 1×5⭐ + 4×3⭐ + 1×2⭐
+                            </div>
+                            <div class="combo-item">
+                                <strong>J)</strong> 1×5⭐ + 3×4⭐ + 2×3⭐
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="priority-section">
+                        <h4>🏅 PRIORIDADE 4 - Média 3,2⭐</h4>
+                        
+                        <div class="combo-grid">
+                            <div class="combo-item">
+                                <strong>K)</strong> 1×5⭐ + 1×4⭐ + 3×3⭐ + 1×2⭐
+                            </div>
+                            <div class="combo-item">
+                                <strong>L)</strong> 1×5⭐ + 4×3⭐ + 1×2⭐
+                            </div>
+                            <div class="combo-item">
+                                <strong>M)</strong> 1×5⭐ + 1×4⭐ + 4×3⭐
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rule-description">
+                        <h4>🚨 Regras Importantes</h4>
+                        <ul>
+                            <li>✅ <strong>Nenhuma formação</strong> repete 2 jogadores 5⭐</li>
+                            <li>✅ <strong>Nenhuma formação</strong> usa 2 jogadores 2⭐</li>
+                            <li>✅ <strong>Todas têm exatamente</strong> 6 jogadores</li>
+                            <li>✅ <strong>Times incompletos</strong> respeitam os mesmos limites</li>
+                            <li>✅ <strong>Embaralhamento duplo</strong> garante variação</li>
+                        </ul>
+                    </div>
+
+                    <div class="rule-description">
+                        <h4>🔄 Fallback Inteligente</h4>
+                        <p>Se nenhum dos 13 padrões for possível, o sistema aplica <strong>distribuição equilibrada</strong> respeitando sempre as regras de times completos e limites por nível.</p>
+                    </div>
+
+                    <div class="rule-description">
+                        <h4>🎯 Resultado</h4>
+                        <p>Sistema <strong>profissional</strong> que nunca quebra, sempre funciona e garante <strong>máxima variação</strong> entre sorteios, mantendo o equilíbrio competitivo.</p>
+                    </div>
+
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer Mobile -->
+    <footer class="footer-mobile">
+        <nav class="nav-mobile">
+            <a href="index.html" class="nav-item">
+                <span class="emoji">🏠</span>
+            </a>
+            <a href="cadastro.html" class="nav-item">
+                <span class="emoji">👤</span>
+            </a>
+            <a href="sorteio.html" class="nav-item">
+                <span class="emoji">🎲</span>
+            </a>
+            <a href="regras.html" class="nav-item active">
+                <span class="emoji">⚙️</span>
+            </a>
+        </nav>
+    </footer>
+
+    <!-- Supabase CDN -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <!-- Arquivo de configuração do banco -->
+    <script src="database.js"></script>
+    <!-- Script da página -->
+    <script src="regras.js"></script>
+</body>
+</html>

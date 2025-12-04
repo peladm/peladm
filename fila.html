@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fila - Pelada 3</title>
+    <link rel="stylesheet" href="fila.css">
+</head>
+<body>
+    <main class="main">
+        <div class="container">
+            <!-- Header -->
+            <section class="header-card">
+                <h2>📋 Organização da Fila 📋</h2>
+                <div class="status-info">
+                    <span id="data-atual"></span> • <span id="total-jogadores">0 jogadores</span>
+                </div>
+            </section>
+
+            <!-- Times Próximos -->
+            <section class="teams-cards">
+                <!-- Time 1 -->
+                <div class="team-card">
+                    <div class="team-header time1">
+                        <h3>TIME 1</h3>
+                    </div>
+                    <div class="team-table-container">
+                        <table class="team-table">
+                            <tbody id="team1-body">
+                                <!-- Time 1 será inserido aqui via JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Time 2 -->
+                <div class="team-card">
+                    <div class="team-header time2">
+                        <h3>TIME 2</h3>
+                    </div>
+                    <div class="team-table-container">
+                        <table class="team-table">
+                            <tbody id="team2-body">
+                                <!-- Time 2 será inserido aqui via JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Botão Iniciar Partida -->
+            <section class="start-match-container">
+                <button id="start-match-btn" class="start-match-btn">
+                    ⚽ Iniciar Pelada ⚽
+                </button>
+            </section>
+
+            <!-- Fila de Espera -->
+            <section class="queue-card">
+                <div class="queue-header">
+                    <h3>📋 Fila de Espera</h3>
+                    <span id="queue-count">0 aguardando</span>
+                </div>
+                <div id="queue-blocks-container" class="queue-blocks-container">
+                    <!-- Blocos da fila serão inseridos aqui via JavaScript -->
+                </div>
+            </section>
+
+            <!-- Estatísticas do Dia -->
+            <section class="stats-day-card">
+                <div class="stats-day-container">
+                    <div class="stat-box">
+                        <div class="stat-icon">⚽</div>
+                        <div class="stat-info">
+                            <span class="stat-label">Peladas</span>
+                            <span class="stat-value" id="total-partidas">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-box">
+                        <div class="stat-icon">🥅</div>
+                        <div class="stat-info">
+                            <span class="stat-label">Gols</span>
+                            <span class="stat-value" id="total-gols">0</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Painel de Gerenciamento Unificado -->
+            <section id="painel-gerenciamento" class="management-panel" style="display: none;">
+                <div class="management-content-unified">
+                    <div class="management-header">
+                        <h3>⚡ Gerenciar Jogadores</h3>
+                        <button class="btn-close" onclick="fecharGerenciamento()">×</button>
+                    </div>
+                    
+                    <!-- Busca -->
+                    <div class="management-search">
+                        <input type="text" id="search-players" placeholder="🔍 Buscar jogador..." autocomplete="off">
+                    </div>
+                    
+                    <!-- Interface de 2 colunas (mobile-first) -->
+                    <div class="management-columns">
+                        <!-- Coluna 1: Reservas -->
+                        <div class="column reserves-column">
+                            <div class="column-header">
+                                <h4>🪑 Reservas (<span id="reserves-count">0</span>)</h4>
+                                <small>Arraste para a fila</small>
+                            </div>
+                            <div class="column-content">
+                                <div id="reserves-list" class="player-list-drag">
+                                    <div class="loading-placeholder">Carregando reservas...</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Coluna 2: Fila -->
+                        <div class="column queue-column">
+                            <div class="column-header">
+                                <h4>📋 Fila (<span id="queue-count">0</span>)</h4>
+                                <small>Arraste para reorganizar</small>
+                            </div>
+                            <div class="column-content">
+                                <div id="queue-list" class="player-list-drag">
+                                    <div class="loading-placeholder">Carregando fila...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ações -->
+                    <div class="management-actions">
+                        <div class="actions-left">
+                            <button id="btn-undo" class="btn-secondary" disabled onclick="undoLastChange()">
+                                ↶ Desfazer
+                            </button>
+                            <button id="btn-clear" class="btn-secondary" onclick="clearAllChanges()">
+                                �️ Limpar
+                            </button>
+                        </div>
+                        <div class="actions-right">
+                            <span id="changes-indicator" class="changes-count" style="display: none;">
+                                <span id="changes-number">0</span> mudanças
+                            </span>
+                            <button id="btn-apply" class="btn-primary" disabled onclick="applyAllChanges()">
+                                ✅ Aplicar (<span id="changes-number-btn">0</span>)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Estados Vazios -->
+            <section id="empty-state" class="empty-state" style="display: none;">
+                <span class="emoji">😴</span>
+                <h3>Nenhuma fila ativa</h3>
+                <p>Inicie uma pelada na tela de sorteio para começar!</p>
+                <a href="sorteio.html" class="btn-primary">
+                    <span class="emoji">🎯</span>
+                    <span>Ir para Sorteio</span>
+                </a>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer Mobile -->
+    <footer class="footer-mobile">
+        <nav class="nav-mobile">
+            <a href="#" class="nav-item guest-hidden" onclick="mostrarGerenciamento(); return false;">
+                <span class="emoji">👥</span>
+            </a>
+            <a href="fila.html" class="nav-item active">
+                <span class="emoji">📋</span>
+            </a>
+            <a href="partida.html" class="nav-item">
+                <span class="emoji">⚽</span>
+            </a>
+            <a href="#" class="nav-item guest-hidden" onclick="encerrarPelada(); return false;">
+                <span class="emoji">🏁</span>
+            </a>
+        </nav>
+    </footer>
+
+
+
+    <!-- Modal Adicionar Jogadores -->
+    <div id="modal-adicionar" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>➕ Adicionar à Fila</h3>
+                <button class="btn-close" onclick="fecharModal('modal-adicionar')">×</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">Selecione jogadores da reserva para adicionar ao final da fila:</p>
+                <div id="lista-adicionar" class="player-list">
+                    <!-- Lista será inserida aqui -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Gerenciamento Unificado -->
+    <div id="gerenciamento-modal" class="modal-unified">
+        <div class="modal-content-unified">
+            <div class="modal-header-unified">
+                <h2>⚽ Gerenciar Fila</h2>
+                <button class="close-btn-unified" onclick="fecharGerenciamentoUnificado()">&times;</button>
+            </div>
+            
+            <div class="management-content-unified">
+                <div class="fila-section">
+                    <h3>🎯 Fila <span id="fila-count">(0)</span></h3>
+                    <p class="section-subtitle">Arraste para reorganizar</p>
+                    <div id="fila-list" class="players-list fila-container">
+                        <!-- Lista da fila será carregada aqui -->
+                    </div>
+                </div>
+                
+                <div class="reservas-section">
+                    <h3>📋 Reservas <span id="reservas-count">(22)</span></h3>
+                    <p class="section-subtitle">Arraste para a fila</p>
+                    <div id="reservas-list" class="players-list reservas-container">
+                        <!-- Lista de reservas será carregada aqui -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer-unified">
+                <button id="btn-mover-jogador" class="btn-acao btn-mover" onclick="moverJogadorSelecionado()" disabled>
+                    ↔️ Selecione um Jogador
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Remover Jogadores -->
+    <div id="modal-remover" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>➖ Remover da Fila</h3>
+                <button class="btn-close" onclick="fecharModal('modal-remover')">×</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">Selecione jogadores da fila para mover para reserva:</p>
+                <div id="lista-remover" class="player-list">
+                    <!-- Lista será inserida aqui -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Substituir Jogadores -->
+    <div id="modal-substituir" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>� Substituir Jogadores</h3>
+                <button class="btn-close" onclick="fecharModal('modal-substituir')">×</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">1º Selecione quem sai da fila:</p>
+                <div id="lista-sair-fila" class="player-list">
+                    <!-- Lista da fila será inserida aqui -->
+                </div>
+                
+                <div id="substituicao-step2" style="display: none;">
+                    <hr style="margin: 20px 0; border: 1px solid #eee;">
+                    <p class="modal-description">2º Selecione quem entra no lugar:</p>
+                    <div class="substitution-info">
+                        <strong>Posição: <span id="posicao-substituicao"></span></strong><br>
+                        <small>Saindo: <span id="jogador-saindo"></span></small>
+                    </div>
+                    <div id="lista-entrar-fila" class="player-list">
+                        <!-- Lista de reservas será inserida aqui -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Confirmação -->
+    <div id="modal-confirmacao" class="modal" style="display: none;">
+        <div class="modal-content confirmation-modal">
+            <div class="modal-header">
+                <h3 id="titulo-confirmacao">Confirmar Operação</h3>
+            </div>
+            <div class="modal-body">
+                <div id="detalhes-confirmacao" class="confirmation-details">
+                    <!-- Detalhes da operação -->
+                </div>
+                <div class="confirmation-buttons">
+                    <button class="btn-secondary" onclick="fecharModal('modal-confirmacao')">Cancelar</button>
+                    <button id="btn-confirmar-operacao" class="btn-primary">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editar Ordem -->
+    <div id="modal-editar-ordem" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3>📝 Editar Ordem da Fila</h3>
+                <button class="btn-close" onclick="fecharModal('modal-editar-ordem')">×</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">Arraste os jogadores para reorganizar a ordem da fila:</p>
+                <div id="lista-editar-ordem" class="sortable-list">
+                    <!-- Lista ordenável será inserida aqui -->
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 20px;">
+                    <button class="btn-secondary" onclick="fecharModal('modal-editar-ordem')">Cancelar</button>
+                    <button id="btn-salvar-ordem" class="btn-primary">Salvar Nova Ordem</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tela Sem Sessão Ativa -->
+    <div id="no-session-screen" class="no-session-screen" style="display: none;">
+        <div class="no-session-content">
+            <div class="no-session-animation">
+                <div class="dice-container">
+                    <div class="dice">🎲</div>
+                    <div class="dice-shadow"></div>
+                </div>
+                <div class="field-lines">
+                    <div class="line line-1"></div>
+                    <div class="line line-2"></div>
+                    <div class="line line-3"></div>
+                </div>
+            </div>
+            
+            <div class="no-session-text">
+                <h2>📋 Nenhuma Fila Ativa</h2>
+                <p>Não há sessão ativa no momento.</p>
+                <p>Faça o sorteio primeiro para iniciar uma nova fila!</p>
+            </div>
+            
+            <div class="no-session-actions">
+                <button id="go-to-sorteio-btn" class="go-to-sorteio-btn">
+                    <span class="emoji">🎲</span>
+                    <span class="text">Fazer Sorteio</span>
+                </button>
+                
+                <button id="refresh-queue-btn" class="refresh-queue-btn">
+                    <span class="emoji">�</span>
+                    <span class="text">Verificar Novamente</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Iniciar Partida -->
+    <div id="modal-iniciar-partida" class="modal-iniciar-partida" style="display: none;">
+        <div class="modal-overlay-iniciar"></div>
+        <div class="modal-content-iniciar">
+            <div class="modal-header-iniciar">
+                <h3>⚽ Iniciar Partida?</h3>
+            </div>
+            <div class="modal-body-iniciar">
+                <p>Ao confirmar, irá iniciar automaticamente o cronômetro.</p>
+            </div>
+            <div class="modal-buttons-iniciar">
+                <button id="btn-confirmar-iniciar" class="btn-sim-iniciar">
+                    ✅ Sim
+                </button>
+                <button id="btn-cancelar-iniciar" class="btn-nao-iniciar">
+                    ❌ Não
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supabase -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="database.js"></script>
+    <script src="auth-protection.js"></script>
+    <script src="fila.js"></script>
+</body>
+</html>

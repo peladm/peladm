@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Usuários - Pelada 3</title>
+    <link rel="stylesheet" href="usuarios.css">
+</head>
+<body>
+    <!-- Header com botão voltar -->
+    <header class="header">
+        <div class="container">
+            <button class="btn-voltar" onclick="window.location.href='index.html'">
+                <span>← Voltar</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            <!-- Formulário de Adicionar Usuário -->
+            <section class="form-card">
+                <form id="form-adicionar" class="form">
+                    <div class="input-group">
+                        <input type="text" id="username" placeholder="Nome de usuário" required>
+                    </div>
+
+                    <div class="input-group">
+                        <input type="password" id="senha" placeholder="Senha" required>
+                    </div>
+
+                    <div class="input-group">
+                        <select id="role" required>
+                            <option value="">Selecione o tipo...</option>
+                            <option value="admin">🔧 Administrador</option>
+                            <option value="organizer">📋 Organizador</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn-submit btn-small">
+                        <span class="emoji">✅</span>
+                        <span>Adicionar Usuário</span>
+                    </button>
+                </form>
+            </section>
+
+            <!-- Lista de Usuários -->
+            <section class="players-card">
+                <h2>👥 Usuários Cadastrados</h2>
+                
+                <div id="lista-usuarios" class="players-list">
+                    <div class="empty-state">
+                        <span class="emoji">👤</span>
+                        <p>Nenhum usuário cadastrado ainda</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer Mobile -->
+    <!-- <footer class="footer-mobile">
+        <nav class="nav-mobile">
+            <a href="index.html" class="nav-item">
+                <span class="emoji">🏠</span>
+            </a>
+            <a href="usuarios.html" class="nav-item active">
+                <span class="emoji">👥</span>
+            </a>
+            <a href="cadastro.html" class="nav-item">
+                <span class="emoji">👤</span>
+            </a>
+        </nav>
+    </footer> -->
+
+    <!-- Supabase CDN -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="database.js"></script>
+    <script src="auth-protection.js"></script>
+    <script src="usuarios.js"></script>
+</body>
+</html>

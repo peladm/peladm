@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔐 Login - Pelada 3</title>
+    <link rel="stylesheet" href="login.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <img src="logo.jpeg" alt="Pelada 3" class="login-logo">
+            </div>
+
+            <form class="login-form" id="login-form">
+                <div class="input-group">
+                    <label for="username">👤 Usuário</label>
+                    <input type="text" id="username" required placeholder="Digite seu usuário">
+                </div>
+
+                <div class="input-group">
+                    <label for="password">🔒 Senha</label>
+                    <input type="password" id="password" required placeholder="Digite sua senha">
+                </div>
+
+                <button type="submit" class="login-btn">
+                    <span class="btn-text">Entrar</span>
+                    <span class="btn-loading" style="display: none;">⏳ Entrando...</span>
+                </button>
+            </form>
+
+            <!-- Botão Acesso Visitante -->
+            <div class="guest-access">
+                <button type="button" class="guest-btn" onclick="entrarComoVisitante()">
+                    <span class="emoji">👀</span>
+                    <span>Entrar como Visitante</span>
+                </button>
+            </div>
+
+            <!-- Mensagem de erro -->
+            <div id="error-message" class="error-message" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Supabase CDN -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="database.js"></script>
+    <script src="login.js"></script>
+</body>
+</html>

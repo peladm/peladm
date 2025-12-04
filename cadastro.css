@@ -1,0 +1,364 @@
+/* CSS para a página de Cadastro - Mobile First */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #fff;
+    color: #000;
+    min-height: 100vh;
+    padding-bottom: 80px; /* Espaço para o footer */
+    overflow-x: hidden; /* Previne scroll horizontal */
+}
+
+.container {
+    max-width: 400px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+
+
+/* Main Content */
+.main {
+    padding: 20px 0 0 0;
+}
+
+/* Cards */
+.form-card, .players-card {
+    background: #fff;
+    border-radius: 20px;
+    padding: 25px 20px;
+    margin-bottom: 20px;
+    border: 1px solid #f0f0f0;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.form-card h2, .players-card h2 {
+    font-size: 1.1rem;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #333;
+    font-weight: 500;
+}
+
+/* Header com botão admin */
+.header-with-admin {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.header-with-admin h2 {
+    margin-bottom: 0;
+    text-align: left;
+}
+
+.btn-admin-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 6px;
+    background: #f8f9fa;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    opacity: 0.6;
+}
+
+.btn-admin-toggle:hover {
+    opacity: 1;
+    background: #e9ecef;
+    transform: scale(1.1);
+}
+
+.btn-admin-toggle .emoji {
+    font-size: 0.9rem;
+}
+
+/* Form */
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.input-group label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #666;
+}
+
+.input-group input[type="text"] {
+    padding: 18px 20px;
+    border: 2px solid #f0f0f0;
+    border-radius: 15px;
+    font-size: 1.1rem;
+    transition: border-color 0.3s ease;
+    background: #f8f9fa;
+    width: 100%;
+    text-align: center;
+}
+
+.input-group input[type="text"]:focus {
+    outline: none;
+    border-color: #2d8f2d;
+    background: #fff;
+}
+
+.input-group input[type="text"]::placeholder {
+    color: #999;
+    text-align: center;
+}
+
+/* Stars Selector */
+.stars-selector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 15px;
+}
+
+.stars {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.star {
+    font-size: 2rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    opacity: 0.3;
+    transform: scale(1);
+}
+
+.star:hover {
+    transform: scale(1.2);
+}
+
+.star.active {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.star.hover {
+    opacity: 0.7;
+}
+
+/* Submit Button */
+.btn-submit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 18px 20px;
+    background: #2d8f2d;
+    border: none;
+    border-radius: 15px;
+    color: white;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 4px;
+}
+
+.btn-submit:hover {
+    background: #248f24;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(45, 143, 45, 0.25);
+}
+
+.btn-submit:active {
+    transform: translateY(0);
+}
+
+.btn-submit .emoji {
+    font-size: 1.2rem;
+}
+
+.btn-submit:disabled {
+    background: #ddd;
+    color: #999;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-submit.btn-small {
+    padding: 12px 16px;
+    font-size: 0.9rem;
+}
+
+/* Players List */
+.players-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.player-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 12px;
+    border-left: 4px solid #2d8f2d;
+}
+
+.player-info {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.player-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.player-level {
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.player-stars {
+    font-size: 0.7rem;
+    opacity: 0.8;
+}
+
+.player-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 35px;
+    height: 35px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-edit {
+    background: #ffc107;
+}
+
+.btn-delete {
+    background: #dc3545;
+}
+
+.btn-status {
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+}
+
+.btn-action:hover {
+    transform: scale(1.1);
+}
+
+.btn-action .emoji {
+    font-size: 1rem;
+}
+
+/* Jogadores inativos */
+.player-inactive {
+    opacity: 0.5;
+    background: #f0f0f0 !important;
+    border-left-color: #999 !important;
+}
+
+.player-inactive .player-name {
+    color: #666 !important;
+    text-decoration: line-through;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #999;
+}
+
+.empty-state .emoji {
+    font-size: 2.5rem;
+    display: block;
+    margin-bottom: 10px;
+    opacity: 0.6;
+}
+
+/* Footer Mobile */
+.footer-mobile {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 400px;
+    background: #fff;
+    border-top: 1px solid #eee;
+    border-left: 1px solid #eee;
+    border-right: 1px solid #eee;
+    border-radius: 20px 20px 0 0;
+    z-index: 1000;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+}
+
+.nav-mobile {
+    display: flex;
+    justify-content: space-around;
+    padding: 15px 20px;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: #999;
+    transition: color 0.2s ease;
+    padding: 15px;
+    border-radius: 15px;
+    min-width: 60px;
+    height: 60px;
+}
+
+.nav-item.active,
+.nav-item:hover {
+    color: #2d8f2d;
+    background: rgba(45, 143, 45, 0.1);
+}
+
+.nav-item .emoji {
+    font-size: 2.8rem;
+}
+
+/* Loading states */
+.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Responsivo */
