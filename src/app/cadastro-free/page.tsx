@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
+import { CONTATO } from '../../config/contato';
 
 // Função para gerar pelada_id de 6 caracteres (2 letras do nome + 4 números)
 const gerarPeladaId = (nomeCompleto: string): string => {
@@ -206,17 +207,19 @@ export default function CadastroFree() {
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
       display: 'flex',
+      flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '20px'
+      padding: '20px 0'
     }}>
       <div style={{
         background: '#fff',
         borderRadius: '24px',
         boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-        maxWidth: '480px',
-        width: '100%',
-        padding: '40px'
+        width: '80%',
+        maxWidth: '600px',
+        padding: '40px',
+        margin: '0 20px'
       }}>
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
@@ -304,53 +307,213 @@ export default function CadastroFree() {
             {loading ? '⏳ Criando conta...' : '🚀 Criar Conta GRÁTIS'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => router.push('/login')}
-            style={{
-              width: '100%',
-              padding: '14px',
-              backgroundColor: 'transparent',
-              color: '#6b7280',
-              border: '2px solid #e5e7eb',
-              borderRadius: '12px',
-              fontSize: '1rem',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.backgroundColor = '#f3f4f6';
-              e.currentTarget.style.borderColor = '#10b981';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.borderColor = '#e5e7eb';
-            }}
-          >
-            ← Já tenho conta
-          </button>
+          <div style={{ textAlign: 'center', marginTop: '16px' }}>
+            <a
+              href="/login"
+              style={{
+                color: '#6b7280',
+                fontSize: '0.9rem',
+                textDecoration: 'none',
+                transition: 'color 0.2s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.color = '#10b981'}
+              onMouseOut={(e) => e.currentTarget.style.color = '#6b7280'}
+            >
+              ← Já tenho conta
+            </a>
+          </div>
         </form>
-
-        {/* Info plano FREE */}
-        <div style={{
-          marginTop: '24px',
-          padding: '16px',
-          backgroundColor: '#f0fdf4',
-          border: '2px solid #86efac',
-          borderRadius: '12px'
-        }}>
-          <p style={{ fontSize: '0.875rem', color: '#15803d', fontWeight: '600', marginBottom: '8px' }}>
-            ⚡ Plano FREE inclui:
-          </p>
-          <ul style={{ fontSize: '0.8rem', color: '#166534', paddingLeft: '20px', margin: 0 }}>
-            <li>Até 25 jogadores</li>
-            <li>Até 10 partidas por sessão</li>
-            <li>Gestão completa de fila</li>
-            <li>Sorteio de times</li>
-          </ul>
-        </div>
       </div>
+
+      {/* Tabela Comparativa de Planos */}
+      <div style={{
+        width: '95%',
+        maxWidth: '1200px',
+        marginTop: '32px',
+        backgroundColor: '#ffffff',
+        padding: '32px 24px',
+        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
+        borderRadius: '16px'
+      }}>
+        <h3 style={{
+          fontSize: '1.5rem',
+          fontWeight: '700',
+          color: '#1f2937',
+          marginBottom: '8px',
+          textAlign: 'center'
+        }}>
+          📊 Compare os Planos
+        </h3>
+        <p style={{
+          fontSize: '0.95rem',
+          color: '#6b7280',
+          marginBottom: '24px',
+          textAlign: 'center'
+        }}>
+          Escolha o melhor para sua pelada
+        </p>
+
+        {/* Tabela */}
+        <div style={{ width: '100%' }}>
+            <table style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: '0.85rem',
+              tableLayout: 'fixed'
+            }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                  <th style={{ padding: '12px 8px', textAlign: 'left', color: '#6b7280', fontWeight: '600', width: '35%' }}>
+                    Recurso
+                  </th>
+                  <th style={{ padding: '12px 8px', textAlign: 'center', color: '#6b7280', fontWeight: '600', backgroundColor: '#f9fafb', width: '21.66%' }}>
+                    🆓<br/>FREE
+                  </th>
+                  <th style={{ padding: '12px 8px', textAlign: 'center', color: '#d97706', fontWeight: '700', backgroundColor: '#fef3c7', width: '21.66%' }}>
+                    🥇<br/>GOLD
+                  </th>
+                  <th style={{ padding: '12px 8px', textAlign: 'center', color: '#7c3aed', fontWeight: '700', backgroundColor: '#f3e8ff', width: '21.66%' }}>
+                    👑<br/>PREMIUM
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Banco de Dados */}
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td colSpan={4} style={{ padding: '10px 8px', fontWeight: '600', color: '#4b5563', fontSize: '0.8rem', backgroundColor: '#f9fafb' }}>
+                    🗄️ BANCO
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>Tipo</td>
+                  <td style={{ padding: '8px', textAlign: 'center', color: '#6b7280' }}>Local</td>
+                  <td style={{ padding: '8px', textAlign: 'center', color: '#6b7280', backgroundColor: '#fffbeb' }}>Nuvem</td>
+                  <td style={{ padding: '8px', textAlign: 'center', color: '#6b7280', backgroundColor: '#faf5ff' }}>Dedicado</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>Usuários</td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>1</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#fffbeb' }}>4</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#faf5ff' }}>6</td>
+                </tr>
+
+                {/* Cadastro */}
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td colSpan={4} style={{ padding: '10px 8px', fontWeight: '600', color: '#4b5563', fontSize: '0.8rem', backgroundColor: '#f9fafb' }}>
+                    👥 CADASTRO
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>Jogadores</td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>25</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#fffbeb' }}>40</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#faf5ff' }}>∞</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>Nível</td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>❌</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#fffbeb' }}>✅</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#faf5ff' }}>✅</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>Persistência</td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>❌</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#fffbeb' }}>✅</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#faf5ff' }}>✅</td>
+                </tr>
+
+                {/* Sorteio */}
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td colSpan={4} style={{ padding: '10px 8px', fontWeight: '600', color: '#4b5563', fontSize: '0.8rem', backgroundColor: '#f9fafb' }}>
+                    🎲 SORTEIO
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>Equilibrado</td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>❌</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#fffbeb' }}>✅</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#faf5ff' }}>✅</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>WhatsApp</td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>❌</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#fffbeb' }}>✅</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#faf5ff' }}>✅</td>
+                </tr>
+
+                {/* Fila e Partidas */}
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td colSpan={4} style={{ padding: '10px 8px', fontWeight: '600', color: '#4b5563', fontSize: '0.8rem', backgroundColor: '#f9fafb' }}>
+                    🏃 PARTIDAS
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>Limite</td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>10</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#fffbeb' }}>15</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#faf5ff' }}>∞</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>Estatísticas</td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>❌</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#fffbeb' }}>❌</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#faf5ff' }}>✅</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px', color: '#6b7280' }}>Histórico</td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>❌</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#fffbeb' }}>❌</td>
+                  <td style={{ padding: '8px', textAlign: 'center', backgroundColor: '#faf5ff' }}>✅</td>
+                </tr>
+
+                {/* Anúncios */}
+                <tr>
+                  <td colSpan={4} style={{ padding: '10px 8px', fontWeight: '600', color: '#4b5563', fontSize: '0.8rem', backgroundColor: '#f9fafb' }}>
+                    📢 ANÚNCIOS
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px 8px', color: '#6b7280' }}>Frequência</td>
+                  <td style={{ padding: '10px 8px', textAlign: 'center', color: '#059669', fontSize: '0.75rem', fontWeight: '600' }}>Não<br/>Atrapalha</td>
+                  <td style={{ padding: '10px 8px', textAlign: 'center', color: '#d97706', fontSize: '0.75rem', fontWeight: '600', backgroundColor: '#fffbeb' }}>Você nem<br/>percebe</td>
+                  <td style={{ padding: '10px 8px', textAlign: 'center', color: '#7c3aed', fontSize: '0.75rem', fontWeight: '600', backgroundColor: '#faf5ff' }}>Zero</td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* Botão CTA WhatsApp */}
+            <a
+              href={`https://wa.me/${CONTATO.whatsapp}?text=${encodeURIComponent(CONTATO.mensagemGoldPremium)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'block',
+                marginTop: '20px',
+                padding: '16px 24px',
+                background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
+                color: '#ffffff',
+                borderRadius: '12px',
+                textAlign: 'center',
+                textDecoration: 'none',
+                fontSize: '0.95rem',
+                fontWeight: '700',
+                boxShadow: '0 4px 12px rgba(217, 119, 6, 0.3)',
+                transition: 'all 0.3s',
+                cursor: 'pointer'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 16px rgba(217, 119, 6, 0.4)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(217, 119, 6, 0.3)';
+              }}
+            >
+              🚀 Conheça agora os planos Gold ou Premium
+            </a>
+          </div>
+        </div>
 
       {/* Modal de Sucesso */}
       {mostrarModalSucesso && (

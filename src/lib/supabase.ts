@@ -27,9 +27,8 @@ const clienteSupabaseCache: Record<string, SupabaseClient> = {};
 
 /**
  * Obtém o cliente Supabase apropriado para operações de dados
- * - SEMPRE usa as credenciais cadastradas no cliente (supabase_url e supabase_anon_key)
- * - Gold: credenciais apontam para banco compartilhado
- * - Premium: credenciais apontam para banco dedicado
+ * - Se o cliente for Premium e tiver banco dedicado, retorna conexão dedicada
+ * - Caso contrário, retorna banco principal
  */
 export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseClient> => {
   // Se não tiver pelada_id, usa banco principal
@@ -43,29 +42,28 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
   }
 
   // Busca credenciais do cliente no banco principal
-  const { data: clienteData, error } = await supabase
+  const { data: clienteData } = await supabase
     .from('clientes')
-    .select('supabase_url, supabase_anon_key')
+    .select('supabase_url, supabase_anon_key, plano')
     .eq('id', peladaId)
     .single();
 
-  if (error || !clienteData?.supabase_url || !clienteData?.supabase_anon_key) {
-    console.error('Erro ao buscar credenciais do cliente:', error);
-    throw new Error('Credenciais do cliente não encontradas');
+  // Se cliente Premium com banco dedicado, cria e cacheia conexão
+  if (clienteData?.supabase_url && clienteData?.supabase_anon_key) {
+    const clienteSupabase = createClient(
+      clienteData.supabase_url,
+      clienteData.supabase_anon_key,
+      {
+        auth: { persistSession: false },
+        db: { schema: 'public' },
+      }
+    );
+    clienteSupabaseCache[peladaId] = clienteSupabase;
+    return clienteSupabase;
   }
 
-  // SEMPRE cria conexão com as credenciais do cadastro do cliente
-  const clienteSupabase = createClient(
-    clienteData.supabase_url,
-    clienteData.supabase_anon_key,
-    {
-      auth: { persistSession: false },
-      db: { schema: 'public' },
-    }
-  );
-  
-  clienteSupabaseCache[peladaId] = clienteSupabase;
-  return clienteSupabase;
+  // Cliente Free ou sem banco dedicado: usa banco principal
+  return supabase;
 };
 
 // Tipos para as tabelas

@@ -5,12 +5,13 @@ interface AdInterstitialManager {
   shouldShowInterstitial: boolean;
   incrementActionCounter: () => void;
   resetInterstitial: () => void;
+  showAdOnPeladaEnd: () => void; // Nova função para forçar anúncio ao encerrar pelada
 }
 
-const AD_FREQUENCY = 4; // Mostrar anúncio a cada X ações
+const AD_FREQUENCY_FREE = 4; // FREE: a cada 4 ações
 
 export function useAdInterstitial(): AdInterstitialManager {
-  const { possuiPermissao } = usePermissions();
+  const { possuiPermissao, planoUsuario } = usePermissions();
   const [actionCounter, setActionCounter] = useState(0);
   const [shouldShowInterstitial, setShouldShowInterstitial] = useState(false);
 
@@ -23,19 +24,23 @@ export function useAdInterstitial(): AdInterstitialManager {
   }, []);
 
   const incrementActionCounter = () => {
-    // Não incrementar se usuário tem permissão para remover anúncios
-    if (possuiPermissao('removerAnuncios')) {
+    // Premium não mostra anúncios
+    if (planoUsuario === 'Premium') {
       return;
     }
 
+    // Gold não mostra anúncios de ação (só ao encerrar pelada)
+    if (planoUsuario === 'Gold') {
+      return;
+    }
+
+    // Free: mostrar a cada 4 ações
     const newCounter = actionCounter + 1;
     setActionCounter(newCounter);
     localStorage.setItem('ad_action_counter', newCounter.toString());
 
-    // Verificar se deve mostrar anúncio
-    if (newCounter >= AD_FREQUENCY) {
+    if (newCounter >= AD_FREQUENCY_FREE) {
       setShouldShowInterstitial(true);
-      // Resetar contador
       setActionCounter(0);
       localStorage.setItem('ad_action_counter', '0');
     }
@@ -45,9 +50,20 @@ export function useAdInterstitial(): AdInterstitialManager {
     setShouldShowInterstitial(false);
   };
 
+  const showAdOnPeladaEnd = () => {
+    // Premium não mostra anúncios
+    if (planoUsuario === 'Premium') {
+      return;
+    }
+
+    // Free e Gold mostram anúncio ao encerrar pelada
+    setShouldShowInterstitial(true);
+  };
+
   return {
     shouldShowInterstitial,
     incrementActionCounter,
-    resetInterstitial
+    resetInterstitial,
+    showAdOnPeladaEnd
   };
 }

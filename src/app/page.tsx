@@ -31,9 +31,11 @@ export default function Home() {
   const [dataLista, setDataLista] = useState('');
   const [numLinhas, setNumLinhas] = useState(10);
   const [observacao, setObservacao] = useState('');
+  const [avisosLista, setAvisosLista] = useState<string[]>([]);
 
   useEffect(() => {
     verificarSessaoAtiva();
+    carregarAvisos();
     
     // Simular carregamento de estatísticas
     // TODO: Implementar chamada real para API
@@ -48,6 +50,66 @@ export default function Home() {
       });
     }, 1000);
   }, []);
+
+  const carregarAvisos = async () => {
+    try {
+      const userData = localStorage.getItem('user');
+      if (!userData) return;
+
+      const userLocal = JSON.parse(userData);
+      const hoje = new Date().toISOString().split('T')[0];
+      const avisos: string[] = [];
+
+      // Buscar dados atualizados do cliente do banco
+      const { data: clienteAtualizado, error: erroCliente } = await supabase
+        .from('clientes')
+        .select('data_vencimento, plano')
+        .eq('id', userLocal.id)
+        .single();
+
+      if (erroCliente) {
+        console.error('Erro ao buscar dados do cliente:', erroCliente);
+        return;
+      }
+
+      // Verificar aviso de vencimento (5 dias ou menos)
+      if (clienteAtualizado?.data_vencimento) {
+        const dataVencimento = new Date(clienteAtualizado.data_vencimento);
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        dataVencimento.setHours(0, 0, 0, 0);
+        
+        const diasRestantes = Math.ceil((dataVencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (diasRestantes <= 5 && diasRestantes >= 0) {
+          const dataFormatada = dataVencimento.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+          avisos.push(`⚠️ Seu plano vence em ${dataFormatada}`);
+        }
+      }
+
+      // Buscar avisos do sistema
+      const { data: avisosSistema, error } = await supabase
+        .from('avisos_sistema')
+        .select('*')
+        .eq('ativo', true)
+        .lte('data_inicio', hoje)
+        .gte('data_fim', hoje)
+        .or(`plano_alvo.eq.todos,plano_alvo.eq.${clienteAtualizado?.plano || 'Free'}`)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Erro ao buscar avisos:', error);
+      } else if (avisosSistema && avisosSistema.length > 0) {
+        avisosSistema.forEach(aviso => {
+          avisos.push(aviso.mensagem);
+        });
+      }
+
+      setAvisosLista(avisos);
+    } catch (error) {
+      console.error('Erro ao carregar avisos:', error);
+    }
+  };
 
   const verificarSessaoAtiva = async () => {
     try {
@@ -287,9 +349,55 @@ export default function Home() {
         </button>
       </section>
 
+      {/* Avisos do Sistema */}
+      {avisosLista.length > 0 && (
+        <section className="mb-6">
+          <div className="w-full bg-white rounded-xl shadow-md border-2 border-orange-400 transition-all duration-300 p-4 sm:p-6">
+            <div className="flex items-center h-full">
+              {/* Emoji fixo à esquerda */}
+              <div className="flex-shrink-0 w-12 h-12 sm:w-14 sm:h-14 bg-orange-50 rounded-lg flex items-center justify-center shadow-md mr-4 border border-orange-200">
+                <span className="text-3xl sm:text-4xl">📢</span>
+              </div>
+              {/* Lista de avisos */}
+              <div className="flex-1">
+                <ul className="space-y-2">
+                  {avisosLista.map((aviso, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="text-orange-500 mr-2 mt-1 flex-shrink-0">●</span>
+                      <span className="text-gray-700 text-sm sm:text-base font-medium leading-snug">
+                        {aviso}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {avisosLista.length === 0 && (
+        <section className="mb-6">
+          <div className="w-full bg-white hover:bg-gray-50 rounded-xl shadow-md border-2 border-orange-400 transition-all duration-300 p-4 sm:p-6">
+            <div className="flex items-center h-full">
+              {/* Emoji fixo à esquerda */}
+              <div className="flex-shrink-0 w-12 h-12 sm:w-14 sm:h-14 bg-orange-50 rounded-lg flex items-center justify-center shadow-md mr-4 border border-orange-200">
+                <span className="text-3xl sm:text-4xl">📢</span>
+              </div>
+              {/* Texto do aviso */}
+              <div className="flex-1 text-left">
+                <p className="text-gray-600 text-sm sm:text-base font-medium leading-snug text-justify italic">
+                  Quadro de avisos do sistema. No momento não há avisos disponíveis.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Estatísticas Gerais */}
       <section className="mb-6">
-        <div className={`bg-gradient-to-br from-purple-50 to-violet-50 rounded-2xl shadow-lg p-8 border border-purple-200 transition-all h-48 relative ${
+        <div className={`bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl shadow-lg p-8 border border-orange-200 transition-all h-48 relative ${
           possuiPermissao('verEstatisticas') ? 'hover:shadow-xl' : 'opacity-60 cursor-not-allowed'
         }`}>
           {/* Tag Versão Premium */}
@@ -303,7 +411,7 @@ export default function Home() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 h-full">
             {/* Conteúdo Principal */}
             <div className="flex items-center space-x-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg">
+              <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg">
                 <span className="text-2xl">📊</span>
               </div>
               <div>
@@ -324,7 +432,7 @@ export default function Home() {
               disabled={!possuiPermissao('verEstatisticas')}
               className={`px-8 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-3 shadow-lg ${
                 possuiPermissao('verEstatisticas')
-                  ? 'bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white hover:shadow-xl cursor-pointer'
+                  ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white hover:shadow-xl cursor-pointer'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
             >
@@ -332,75 +440,6 @@ export default function Home() {
               <span>Ver Relatório Completo</span>
               <span className="text-lg">→</span>
             </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Painel ADM */}
-      <section className="mb-6">
-        <div className={`bg-gradient-to-br from-orange-50 to-red-50 rounded-2xl shadow-lg p-8 border border-gray-200 transition-all h-48 relative ${
-          possuiPermissao('gerenciarUsuarios') ? 'hover:shadow-xl' : 'opacity-60 cursor-not-allowed'
-        }`}>
-          {/* Tag Versão Premium */}
-          {!possuiPermissao('gerenciarUsuarios') && (
-            <div className="absolute top-4 right-4 bg-gradient-to-r from-amber-400 to-yellow-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
-              <span>👑</span>
-              <span>Versão Premium</span>
-            </div>
-          )}
-
-          <div className="flex flex-col space-y-6 h-full justify-center">
-            {/* Header */}
-            <div className="flex items-center space-x-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-2xl">⚙️</span>
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-1">Painel ADM</h2>
-                <p className="text-gray-600">Gerencie regras e usuários da sua conta</p>
-              </div>
-            </div>
-            
-            {/* Botões de Ação */}
-            <div className="flex gap-4">
-              <button
-                onClick={() => {
-                  if (possuiPermissao('configurarVitoriasConsecutivas')) {
-                    navigateTo('regras');
-                  } else {
-                    alert(`👑 Configurações avançadas de regras disponíveis nos planos Gold e Premium!\n\nPlano atual: ${nomePlano}\n\nFaça upgrade para personalizar suas regras!`);
-                  }
-                }}
-                disabled={!possuiPermissao('configurarVitoriasConsecutivas')}
-                className={`flex-1 px-6 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-3 shadow-lg ${
-                  possuiPermissao('configurarVitoriasConsecutivas')
-                    ? 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white hover:shadow-xl cursor-pointer'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-              >
-                <span>📋</span>
-                <span>Regras</span>
-              </button>
-              
-              <button
-                onClick={() => {
-                  if (possuiPermissao('gerenciarUsuarios')) {
-                    navigateTo('usuarios');
-                  } else {
-                    alert(`👑 Gerenciamento de usuários disponível nos planos Gold e Premium!\n\nPlano atual: ${nomePlano}\n\nFaça upgrade para ter múltiplos usuários!`);
-                  }
-                }}
-                disabled={!possuiPermissao('gerenciarUsuarios')}
-                className={`flex-1 px-6 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-3 shadow-lg ${
-                  possuiPermissao('gerenciarUsuarios')
-                    ? 'bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white hover:shadow-xl cursor-pointer'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-              >
-                <span>👥</span>
-                <span>Usuários</span>
-              </button>
-            </div>
           </div>
         </div>
       </section>

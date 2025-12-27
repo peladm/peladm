@@ -133,8 +133,11 @@ export default function SorteioPage() {
       }
       
       if (regrasSupabase) {
+        const jogadoresPorTime = regrasSupabase.jogadores_por_time || 5;
+        console.log('🎯 Jogadores por time do banco:', jogadoresPorTime, '(tipo:', typeof jogadoresPorTime, ')');
+        
         setRegras({
-          jogadores_por_time: regrasSupabase.jogadores_por_time || 5,
+          jogadores_por_time: jogadoresPorTime,
           modelo_sorteio: regrasSupabase.modelo_sorteio || 'equilibrado'
         });
         console.log('✅ Regras carregadas do Supabase para sorteio');

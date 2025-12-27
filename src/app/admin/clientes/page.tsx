@@ -35,6 +35,7 @@ export default function AdminClientes() {
   const [modalPromocao, setModalPromocao] = useState(false);
   const [modalDicas, setModalDicas] = useState(false);
   const [modalAvisos, setModalAvisos] = useState(false);
+  const [modalAvisosSistema, setModalAvisosSistema] = useState(false);
   
   // Estados dos dados dos formulários
   const [novidades, setNovidades] = useState({ resumo: '' });
@@ -48,11 +49,42 @@ export default function AdminClientes() {
   });
   const [dicas, setDicas] = useState({ texto: '', planoAlvo: 'todos' });
   const [avisos, setAvisos] = useState({ titulo: '', assunto: '' });
+  const [avisoSistema, setAvisoSistema] = useState({
+    mensagem: '',
+    planoAlvo: 'todos',
+    dataInicio: '',
+    dataFim: ''
+  });
+  const [avisosAtivos, setAvisosAtivos] = useState<any[]>([]);
   const [mostrarFiltro, setMostrarFiltro] = useState(false);
 
   useEffect(() => {
     carregarClientes();
   }, []);
+
+  useEffect(() => {
+    if (modalAvisosSistema) {
+      carregarAvisosAtivos();
+    }
+  }, [modalAvisosSistema]);
+
+  const carregarAvisosAtivos = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('avisos_sistema')
+        .select('*')
+        .eq('ativo', true)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Erro ao carregar avisos:', error);
+      } else {
+        setAvisosAtivos(data || []);
+      }
+    } catch (error) {
+      console.error('Erro:', error);
+    }
+  };
 
   const carregarClientes = async () => {
     try {
@@ -92,6 +124,59 @@ export default function AdminClientes() {
       case 'inativo': return 'bg-gray-100 border-gray-300';
       case 'bloqueado': return 'bg-red-50 border-red-200';
       default: return 'bg-gray-50 border-gray-200';
+    }
+  };
+
+  const salvarAvisoSistema = async () => {
+    if (!avisoSistema.mensagem || !avisoSistema.dataInicio || !avisoSistema.dataFim) {
+      alert('Preencha todos os campos obrigatórios!');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('avisos_sistema')
+        .insert([{
+          mensagem: avisoSistema.mensagem,
+          plano_alvo: avisoSistema.planoAlvo,
+          data_inicio: avisoSistema.dataInicio,
+          data_fim: avisoSistema.dataFim,
+          ativo: true
+        }]);
+      
+      if (error) {
+        console.error('Erro ao salvar aviso:', error);
+        alert('Erro ao salvar aviso: ' + error.message);
+      } else {
+        alert('Aviso salvo com sucesso!');
+        setAvisoSistema({ mensagem: '', planoAlvo: 'todos', dataInicio: '', dataFim: '' });
+        carregarAvisosAtivos();
+      }
+    } catch (error) {
+      console.error('Erro ao salvar aviso:', error);
+      alert('Erro ao salvar aviso!');
+    }
+  };
+
+  const excluirAviso = async (id: number) => {
+    if (!confirm('Deseja realmente excluir este aviso? Esta ação não pode ser desfeita.')) return;
+
+    try {
+      const { error } = await supabase
+        .from('avisos_sistema')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        console.error('Erro ao excluir aviso:', error);
+        alert('Erro ao excluir aviso!');
+      } else {
+        alert('Aviso excluído com sucesso!');
+        carregarAvisosAtivos();
+      }
+    } catch (error) {
+      console.error('Erro:', error);
+      alert('Erro ao excluir aviso!');
     }
   };
 
@@ -319,16 +404,26 @@ export default function AdminClientes() {
           </button>
         </div>
 
-        {/* Templates WhatsApp */}
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl shadow-md border-2 border-green-200 p-6">
+        {/* Botões de Ação */}
+        <div className="space-y-4">
+          {/* Templates WhatsApp */}
           <button
             onClick={() => setShowTemplates(true)}
-            className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-4 rounded-xl font-bold text-lg flex items-center justify-center space-x-3 transition-all hover:scale-[1.02]"
+            className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-4 rounded-xl font-bold text-lg flex items-center justify-center space-x-3 transition-all hover:scale-[1.02] shadow-md"
           >
             <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current">
               <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
             </svg>
             <span>Templates</span>
+          </button>
+
+          {/* Avisos do Sistema */}
+          <button
+            onClick={() => setModalAvisosSistema(true)}
+            className="w-full bg-orange-600 hover:bg-orange-700 text-white px-6 py-4 rounded-xl font-bold text-lg flex items-center justify-center space-x-3 transition-all hover:scale-[1.02] shadow-md"
+          >
+            <span className="text-2xl">📢</span>
+            <span>Avisos do Sistema</span>
           </button>
         </div>
 
@@ -764,6 +859,147 @@ export default function AdminClientes() {
                 >
                   Enviar
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Avisos do Sistema */}
+      {modalAvisosSistema && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-6 rounded-t-2xl flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <span className="text-3xl">📢</span>
+                <h2 className="text-2xl font-bold">Avisos do Sistema</h2>
+              </div>
+              <button
+                onClick={() => setModalAvisosSistema(false)}
+                className="text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-2 transition-colors"
+              >
+                <span className="text-2xl">✕</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Mensagem do Aviso *
+                </label>
+                <textarea
+                  value={avisoSistema.mensagem}
+                  onChange={(e) => setAvisoSistema({ ...avisoSistema, mensagem: e.target.value })}
+                  placeholder="Digite a mensagem que aparecerá no quadro de avisos..."
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  rows={4}
+                  maxLength={500}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {avisoSistema.mensagem.length}/500 caracteres
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Público-alvo *
+                </label>
+                <select
+                  value={avisoSistema.planoAlvo}
+                  onChange={(e) => setAvisoSistema({ ...avisoSistema, planoAlvo: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  <option value="todos">Todos os Planos</option>
+                  <option value="Free">Free</option>
+                  <option value="Gold">Gold</option>
+                  <option value="Premium">Premium</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Data de Início *
+                  </label>
+                  <input
+                    type="date"
+                    value={avisoSistema.dataInicio}
+                    onChange={(e) => setAvisoSistema({ ...avisoSistema, dataInicio: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Data de Fim *
+                  </label>
+                  <input
+                    type="date"
+                    value={avisoSistema.dataFim}
+                    onChange={(e) => setAvisoSistema({ ...avisoSistema, dataFim: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="flex space-x-3 pt-2">
+                <button
+                  onClick={() => setModalAvisosSistema(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={salvarAvisoSistema}
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2"
+                >
+                  <span>💾</span>
+                  <span>Salvar Aviso</span>
+                </button>
+              </div>
+
+              {/* Lista de Avisos Ativos */}
+              <div className="border-t border-gray-200 pt-6 mt-6">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center space-x-2">
+                  <span>📋</span>
+                  <span>Avisos Ativos</span>
+                </h3>
+                
+                {/* TODO: Buscar do banco de dados */}
+                <div className="space-y-3">
+                  {avisosAtivos.length === 0 ? (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <p className="text-sm text-gray-600 text-center">
+                        Nenhum aviso ativo no momento.
+                      </p>
+                    </div>
+                  ) : (
+                    avisosAtivos.map((aviso) => (
+                      <div key={aviso.id} className="bg-orange-50 border border-orange-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <span className="text-xs font-semibold text-orange-700 bg-orange-100 px-2 py-1 rounded">
+                                {aviso.plano_alvo === 'todos' ? 'Todos os Planos' : aviso.plano_alvo}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {new Date(aviso.data_inicio).toLocaleDateString('pt-BR')} - {new Date(aviso.data_fim).toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-800">
+                              {aviso.mensagem}
+                            </p>
+                          </div>
+                          <button 
+                            onClick={() => excluirAviso(aviso.id)}
+                            className="ml-4 text-red-500 hover:text-red-700 font-bold text-lg"
+                            title="Excluir aviso"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>

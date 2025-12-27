@@ -29,7 +29,7 @@ interface Regras {
 
 export default function FilaPage() {
   const { possuiPermissao } = usePermissions();
-  const { shouldShowInterstitial, incrementActionCounter, resetInterstitial } = useAdInterstitial();
+  const { shouldShowInterstitial, incrementActionCounter, resetInterstitial, showAdOnPeladaEnd } = useAdInterstitial();
   const [filaCompleta, setFilaCompleta] = useState<JogadorFila[]>([]);
   const [jogadoresJogando, setJogadoresJogando] = useState<JogadorFila[]>([]);
   const [jogadoresFila, setJogadoresFila] = useState<JogadorFila[]>([]);
@@ -1599,6 +1599,9 @@ export default function FilaPage() {
       
       // Mostrar modal de sucesso
       setShowModalSucessoEncerrar(true);
+      
+      // Mostrar anúncio ao encerrar pelada (Free e Gold)
+      showAdOnPeladaEnd();
       
       // Após 3 segundos, redirecionar para home
       setTimeout(() => {

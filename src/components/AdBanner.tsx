@@ -2,13 +2,15 @@
 
 import { useEffect } from 'react';
 import { usePermissions } from '../lib/usePermissions';
+import { usePathname } from 'next/navigation';
 
 interface AdBannerProps {
   position?: 'top' | 'bottom';
 }
 
 export default function AdBanner({ position = 'bottom' }: AdBannerProps) {
-  const { possuiPermissao } = usePermissions();
+  const { possuiPermissao, planoUsuario } = usePermissions();
+  const pathname = usePathname();
 
   useEffect(() => {
     // Carregar script do AdMob/AdSense quando o componente montar
@@ -22,10 +24,17 @@ export default function AdBanner({ position = 'bottom' }: AdBannerProps) {
     }
   }, [possuiPermissao]);
 
-  // Não renderizar se o usuário tem permissão para remover anúncios
-  if (possuiPermissao('removerAnuncios')) {
+  // Premium: não mostrar anúncios
+  if (planoUsuario === 'Premium') {
     return null;
   }
+
+  // Gold: não mostrar banner na página de fila
+  if (planoUsuario === 'Gold' && (pathname === '/fila' || pathname === '/page-fila')) {
+    return null;
+  }
+
+  // Free: mostrar em todas as páginas
 
   return (
     <div

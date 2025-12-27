@@ -177,7 +177,7 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
           </div>
 
           {/* Área de Login/Logout */}
-          <div className="px-6 py-4">
+          <div className="px-6 py-4 border-b border-gray-200">
             {isLoggedIn ? (
               <>
                 {/* Detalhes do usuário logado */}
@@ -212,6 +212,9 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             )}
           </div>
 
+          {/* Espaço flexível para empurrar botões para baixo */}
+          <div className="flex-1"></div>
+
           {/* Botão ADM Clientes - apenas para master (is_master = true) */}
           {isClient && clienteData?.is_master === true && (
             <div className="px-6 pb-4">
@@ -221,6 +224,28 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
               >
                 <span>👥</span>
                 <span>ADM Clientes</span>
+              </button>
+            </div>
+          )}
+
+          {/* Botão Gerenciar Usuários */}
+          {isLoggedIn && (
+            <div className="px-6 pb-4">
+              <button
+                onClick={() => {
+                  const possuiPermissao = clienteData?.plano === 'premium' || clienteData?.plano === 'gold';
+                  if (possuiPermissao) {
+                    navigateTo('usuarios');
+                    toggleSidebar();
+                  } else {
+                    const nomePlano = clienteData?.plano === 'free' ? 'Free' : clienteData?.plano === 'silver' ? 'Silver' : 'Free';
+                    alert(`👑 Gerenciamento de usuários disponível nos planos Gold e Premium!\n\nPlano atual: ${nomePlano}\n\nFaça upgrade para ter múltiplos usuários!`);
+                  }
+                }}
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 shadow-md"
+              >
+                <span>👥</span>
+                <span>Manut. Usuários</span>
               </button>
             </div>
           )}
@@ -238,8 +263,8 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             </button>
           </div>
 
-          {/* Footer do menu */}
-          <div className="p-6 border-t border-gray-200">
+          {/* Footer do menu - fixo embaixo */}
+          <div className="p-6 border-t border-gray-200 mt-auto">
             <p className="text-xs text-gray-500 text-center">
               PeladM v1.0.0<br />
               Sistema de gestão de peladas
