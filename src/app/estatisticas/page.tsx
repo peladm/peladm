@@ -80,7 +80,7 @@ export default function EstatisticasPage() {
   const [loading, setLoading] = useState(false);
   const [rankings, setRankings] = useState<RankingsColetivos | null>(null);
   const [rankingExpandido, setRankingExpandido] = useState<{
-    tipo: 'artilheiro' | 'vitorioso' | 'fominha' | 'reiDaPelada' | 'mediaGols' | 'taxaVitoria' | 'presenca' | 'mvp' | 'hatTricks' | 'golsDecisivos' | 'semPerder' | 'semVencer' | 'jogosRuins' | 'semMarcar' | null;
+    tipo: 'artilheiro' | 'vitorioso' | 'fominha' | 'reiDaPelada' | 'mediaGols' | 'taxaVitoria' | 'presenca' | 'regularidade' | 'mvp' | 'hatTricks' | 'golsDecisivos' | 'semPerder' | 'semVencer' | 'jogosRuins' | 'semMarcar' | null;
     dados: RankingJogador[];
   }>({ tipo: null, dados: [] });
 
