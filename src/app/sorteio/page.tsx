@@ -559,9 +559,6 @@ export default function SorteioPage() {
       
       console.log('🔄 Iniciando pelada para:', peladaId);
       
-      // Buscar tipo de fila configurado nas regras
-      const { data: regrasData } = await supabase
-        .from('regras')
       // Não precisa mais buscar tipo_fila - agora só existe uma fila (page-fila)
       // Os modos (prancheta/partida) são escolhidos quando inicia a partida
       
