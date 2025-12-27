@@ -125,7 +125,9 @@ export default function RegrasPage() {
           vitorias_consecutivas: regrasCarregadas.vitorias_consecutivas || 0,
           prioridade_retorno: regrasCarregadas.prioridade_retorno || 'prioridade',
           regra_empate: regrasCarregadas.regra_empate || 'ambos_saem',
-          regra_apos_empate: regrasCarregadas.regra_apos_empate || 'desempate_decide'
+          regra_apos_empate: regrasCarregadas.regra_apos_empate || 'desempate_decide',
+          empate_conta_vitoria: regrasCarregadas.empate_conta_vitoria || false,
+          tipo_fila: regrasCarregadas.tipo_fila || 'modo_prancheta'
         });
         console.log('✅ Regras carregadas do localStorage (fallback)');
       }
