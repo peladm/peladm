@@ -288,7 +288,9 @@ export default function RegrasPage() {
       vitorias_consecutivas: 0,
       prioridade_retorno: 'prioridade',
       regra_empate: 'ambos_saem',
-      regra_apos_empate: 'desempate_decide'
+      regra_apos_empate: 'desempate_decide',
+      empate_conta_vitoria: false,
+      tipo_fila: 'modo_prancheta'
     });
     setMessage('🔄 Configurações restauradas para o padrão');
     setTimeout(() => setMessage(''), 3000);
