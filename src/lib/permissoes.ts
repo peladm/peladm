@@ -56,7 +56,7 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     cadastrarNivel: false, // Só nome
     limiteJogadores: 25,
     limitePartidas: 10,
-    limiteUsuarios: 1, // Apenas o admin
+    limiteUsuarios: 0, // 0 usuários adicionais (apenas o admin master)
     
     // Sorteio
     sorteioEquilibrado: false, // Só aleatório
@@ -100,7 +100,7 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     cadastrarNivel: true,
     limiteJogadores: 40,
     limitePartidas: 15,
-    limiteUsuarios: 3, // Admin + 2 usuários
+    limiteUsuarios: 3, // 3 usuários adicionais (além do admin master)
     
     // Sorteio
     sorteioEquilibrado: true,
@@ -144,7 +144,7 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     cadastrarNivel: true,
     limiteJogadores: null, // Ilimitado
     limitePartidas: null, // Ilimitado
-    limiteUsuarios: null, // Ilimitado
+    limiteUsuarios: 5, // 5 usuários adicionais (além do admin master)
     
     // Sorteio
     sorteioEquilibrado: true,

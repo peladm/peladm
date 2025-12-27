@@ -68,7 +68,40 @@ export default function DashboardCliente() {
       const { createClient } = await import('@supabase/supabase-js');
       const clienteSupabase = createClient(dadosCliente.supabase_url, dadosCliente.supabase_anon_key);
 
-      const tables = ['clientes', 'jogadores', 'usuarios', 'sessoes', 'fila', 'jogos', 'gols', 'regras'];
+      // MÉTODO 1: Tentar usar função SQL customizada (mais preciso)
+      const { data: tableSizeData, error: rpcError } = await clienteSupabase
+        .rpc('get_tables_size');
+
+      if (!rpcError && tableSizeData && tableSizeData.length > 0) {
+        // Sucesso! Usa dados reais do PostgreSQL
+        const usageInfo = tableSizeData.map((table: any) => {
+          const totalSize = parseInt(table.total_size) || 0;
+          const rowCount = parseInt(table.row_count) || 0;
+          const tableName = table.tablename.replace('public.', '');
+
+          const size = totalSize > 1024 * 1024
+            ? `${(totalSize / (1024 * 1024)).toFixed(2)} MB`
+            : totalSize > 1024
+            ? `${(totalSize / 1024).toFixed(2)} KB`
+            : `${totalSize} bytes`;
+
+          return {
+            tablename: tableName,
+            size: `${rowCount} reg (${size})`,
+            size_bytes: totalSize,
+            row_count: rowCount
+          };
+        });
+
+        setUsageData(usageInfo);
+        console.log('✅ Tamanho real obtido via SQL function');
+        return;
+      }
+
+      // MÉTODO 2: Fallback - estimativa melhorada
+      console.log('⚠️ Função get_tables_size() não encontrada, usando estimativa');
+      
+      const tables = ['jogadores', 'sessoes', 'fila', 'jogos', 'gols', 'regras', 'fila_snapshot'];
       const usageInfo = [];
 
       for (const tableName of tables) {
@@ -78,7 +111,16 @@ export default function DashboardCliente() {
             .select('*', { count: 'exact', head: true });
 
           if (!error && count !== null) {
-            const estimatedBytes = count * 1024;
+            // Estimativa calibrada baseada em testes reais
+            let bytesPerRow = 2048;
+            
+            if (tableName === 'regras') bytesPerRow = 512;
+            else if (tableName === 'jogadores' || tableName === 'sessoes') bytesPerRow = 1536;
+            else if (tableName === 'jogos' || tableName === 'gols') bytesPerRow = 3072;
+            else if (tableName === 'fila' || tableName === 'fila_snapshot') bytesPerRow = 2560;
+            
+            const estimatedBytes = count * bytesPerRow;
+
             const size = estimatedBytes > 1024 * 1024
               ? `${(estimatedBytes / (1024 * 1024)).toFixed(2)} MB`
               : estimatedBytes > 1024
@@ -87,12 +129,13 @@ export default function DashboardCliente() {
 
             usageInfo.push({
               tablename: tableName,
-              size: `${count} registros (~${size})`,
-              size_bytes: estimatedBytes
+              size: `${count} reg (~${size})`,
+              size_bytes: estimatedBytes,
+              row_count: count
             });
           }
         } catch (err) {
-          console.log(`Tabela ${tableName} não encontrada`);
+          console.log(`Erro ao buscar tabela ${tableName}:`, err);
         }
       }
 

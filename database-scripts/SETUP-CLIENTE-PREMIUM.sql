@@ -140,6 +140,43 @@ CREATE POLICY "Permitir tudo para autenticados" ON gols FOR ALL USING (true);
 CREATE POLICY "Permitir tudo para autenticados" ON fila_snapshot FOR ALL USING (true);
 
 -- =====================================================
+-- FUNÇÃO: Retornar tamanho real das tabelas
+-- =====================================================
+CREATE OR REPLACE FUNCTION get_tables_size()
+RETURNS TABLE (
+    tablename text,
+    row_count bigint,
+    total_size bigint,
+    table_size bigint,
+    indexes_size bigint
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        'public.' || t.tablename AS tablename,
+        COALESCE((
+            SELECT n_live_tup 
+            FROM pg_stat_user_tables 
+            WHERE schemaname = 'public' AND relname = t.tablename
+        ), 0)::bigint AS row_count,
+        pg_total_relation_size('public.' || t.tablename)::bigint AS total_size,
+        pg_relation_size('public.' || t.tablename)::bigint AS table_size,
+        pg_indexes_size('public.' || t.tablename)::bigint AS indexes_size
+    FROM pg_catalog.pg_tables t
+    WHERE schemaname = 'public'
+    AND tablename IN ('jogadores', 'sessoes', 'fila', 'jogos', 'gols', 'regras', 'fila_snapshot')
+    ORDER BY total_size DESC;
+END;
+$$;
+
+-- Dar permissões de execução
+GRANT EXECUTE ON FUNCTION get_tables_size() TO anon;
+GRANT EXECUTE ON FUNCTION get_tables_size() TO authenticated;
+
+-- =====================================================
 -- MENSAGEM FINAL
 -- =====================================================
 SELECT '✅ Setup completo! Todas as tabelas foram criadas.' as mensagem;
