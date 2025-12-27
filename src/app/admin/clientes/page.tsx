@@ -17,6 +17,8 @@ interface Cliente {
   email?: string;
   telefone?: string;
   status: string;
+  data_vencimento?: string;
+  valor_plano?: number;
 }
 
 export default function AdminClientes() {
