@@ -77,8 +77,7 @@ export default function DashboardCliente() {
         setTotalDatabaseSize(totalSizeData[0].total_size_formatted);
         console.log('✅ Tamanho total do banco:', totalSizeData[0].total_size_formatted);
       } else {
-        console.log('⚠️ Função get_database_total_size() não encontrada');
-        setTotalDatabaseSize('');
+        console.log('⚠️ Função get_database_total_size() não encontrada', totalSizeError);
       }
 
       // MÉTODO 2: Buscar detalhamento por tabela
