@@ -19,6 +19,7 @@ export default function DashboardCliente() {
   const [loadingUsuarios, setLoadingUsuarios] = useState(false);
   const [cliente, setCliente] = useState<any>(null);
   const [usageData, setUsageData] = useState<any>(null);
+  const [totalDatabaseSize, setTotalDatabaseSize] = useState<string>('');
   const [usuarios, setUsuarios] = useState<any[]>([]);
 
   useEffect(() => {
@@ -67,7 +68,19 @@ export default function DashboardCliente() {
         ? createClient(dadosCliente.supabase_url, dadosCliente.supabase_anon_key)
         : supabase; // Banco principal
 
-      // MÉTODO 1: Tentar usar função SQL customizada (mais preciso)
+      // MÉTODO 1: Buscar tamanho TOTAL do banco
+      const { data: totalSizeData, error: totalSizeError } = await clienteSupabase
+        .rpc('get_database_total_size');
+
+      if (!totalSizeError && totalSizeData && totalSizeData.length > 0) {
+        setTotalDatabaseSize(totalSizeData[0].total_size_formatted);
+        console.log('✅ Tamanho total do banco:', totalSizeData[0].total_size_formatted);
+      } else {
+        console.log('⚠️ Função get_database_total_size() não encontrada');
+        setTotalDatabaseSize('');
+      }
+
+      // MÉTODO 2: Buscar detalhamento por tabela
       const { data: tableSizeData, error: rpcError } = await clienteSupabase
         .rpc('get_tables_size');
 
@@ -93,11 +106,11 @@ export default function DashboardCliente() {
         });
 
         setUsageData(usageInfo);
-        console.log('✅ Tamanho real obtido via SQL function');
+        console.log('✅ Tamanho por tabela obtido via SQL function');
         return;
       }
 
-      // MÉTODO 2: Fallback - estimativa melhorada
+      // MÉTODO 3: Fallback - estimativa melhorada
       console.log('⚠️ Função get_tables_size() não encontrada, usando estimativa');
       
       const tables = ['jogadores', 'sessoes', 'fila', 'jogos', 'gols', 'regras', 'fila_snapshot'];
@@ -327,12 +340,27 @@ export default function DashboardCliente() {
               </div>
             ) : usageData && usageData.length > 0 ? (
               <div className="space-y-3">
-                {/* TOTAL PRIMEIRO */}
+                {/* TAMANHO TOTAL DO BANCO (o que conta no limite) */}
+                {totalDatabaseSize && (
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg border-2 border-purple-300">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-gray-800 text-base flex items-center space-x-2">
+                        <span>🗄️</span>
+                        <span>BANCO TOTAL (Limite Supabase)</span>
+                      </span>
+                      <span className="font-bold text-purple-700 text-2xl">
+                        {totalDatabaseSize}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                
+                {/* TOTAL DAS TABELAS DA APP */}
                 <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-2 border-green-200">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-gray-800 text-lg flex items-center space-x-2">
+                    <span className="font-bold text-gray-800 text-base flex items-center space-x-2">
                       <span>📊</span>
-                      <span>TOTAL</span>
+                      <span>TABELAS DA APP</span>
                     </span>
                     <span className="font-bold text-green-700 text-xl">
                       {usageData.reduce((acc: number, t: any) => acc + (t.size_bytes || 0), 0) > 1024 * 1024
@@ -342,7 +370,7 @@ export default function DashboardCliente() {
                   </div>
                 </div>
 
-                {/* Lista de tabelas */}
+                {/* Lista detalhada de tabelas */}
                 <div className="space-y-1.5">
                   {usageData.map((table: any, index: number) => (
                     <div key={index} className="bg-gray-50 px-3 py-2 rounded flex items-center justify-between">

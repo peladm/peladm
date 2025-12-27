@@ -3,7 +3,24 @@
 -- Execute este script no BANCO DEDICADO DO CLIENTE
 -- =====================================================
 
--- Criar função que retorna tamanho de todas as tabelas
+-- FUNÇÃO 1: Tamanho TOTAL do banco (o que conta no limite)
+CREATE OR REPLACE FUNCTION get_database_total_size()
+RETURNS TABLE (
+    total_size_bytes bigint,
+    total_size_formatted text
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        pg_database_size(current_database())::bigint AS total_size_bytes,
+        pg_size_pretty(pg_database_size(current_database()))::text AS total_size_formatted;
+END;
+$$;
+
+-- FUNÇÃO 2: Tamanho por tabela (detalhamento)
 CREATE OR REPLACE FUNCTION get_tables_size()
 RETURNS TABLE (
     tablename text,
@@ -35,13 +52,16 @@ END;
 $$;
 
 -- Dar permissão de execução para usuários autenticados
+GRANT EXECUTE ON FUNCTION get_database_total_size() TO anon;
+GRANT EXECUTE ON FUNCTION get_database_total_size() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_tables_size() TO anon;
 GRANT EXECUTE ON FUNCTION get_tables_size() TO authenticated;
 
--- Testar a função
+-- Testar as funções
+SELECT * FROM get_database_total_size();
 SELECT * FROM get_tables_size();
 
 -- =====================================================
 -- MENSAGEM FINAL
 -- =====================================================
-SELECT '✅ Função get_tables_size() criada com sucesso!' as mensagem;
+SELECT '✅ Funções criadas com sucesso!' as mensagem;

@@ -140,8 +140,27 @@ CREATE POLICY "Permitir tudo para autenticados" ON gols FOR ALL USING (true);
 CREATE POLICY "Permitir tudo para autenticados" ON fila_snapshot FOR ALL USING (true);
 
 -- =====================================================
--- FUNÇÃO: Retornar tamanho real das tabelas
+-- FUNÇÕES: Monitoramento de uso do banco
 -- =====================================================
+
+-- FUNÇÃO 1: Tamanho TOTAL do banco (o que conta no limite)
+CREATE OR REPLACE FUNCTION get_database_total_size()
+RETURNS TABLE (
+    total_size_bytes bigint,
+    total_size_formatted text
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        pg_database_size(current_database())::bigint AS total_size_bytes,
+        pg_size_pretty(pg_database_size(current_database()))::text AS total_size_formatted;
+END;
+$$;
+
+-- FUNÇÃO 2: Tamanho por tabela (detalhamento)
 CREATE OR REPLACE FUNCTION get_tables_size()
 RETURNS TABLE (
     tablename text,
@@ -173,6 +192,8 @@ END;
 $$;
 
 -- Dar permissões de execução
+GRANT EXECUTE ON FUNCTION get_database_total_size() TO anon;
+GRANT EXECUTE ON FUNCTION get_database_total_size() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_tables_size() TO anon;
 GRANT EXECUTE ON FUNCTION get_tables_size() TO authenticated;
 
