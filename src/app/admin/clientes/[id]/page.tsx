@@ -17,6 +17,7 @@ export default function DashboardCliente() {
   const [loading, setLoading] = useState(true);
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [loadingUsuarios, setLoadingUsuarios] = useState(false);
+  const [showTableDetails, setShowTableDetails] = useState(false);
   const [cliente, setCliente] = useState<any>(null);
   const [usageData, setUsageData] = useState<any>(null);
   const [totalDatabaseSize, setTotalDatabaseSize] = useState<string>('');
@@ -196,18 +197,24 @@ export default function DashboardCliente() {
     const mes = String(cadastro.getMonth() + 1).padStart(2, '0');
     const ano = cadastro.getFullYear();
     
-    return `${dia}/${mes}/${ano}`;
+    return `Desde ${dia}/${mes}/${ano}`;
   };
 
   const formatarUltimoAcesso = () => {
     if (!cliente?.last_access) return 'Nunca';
     
     const lastAccess = new Date(cliente.last_access);
-    const dia = String(lastAccess.getDate()).padStart(2, '0');
-    const mes = String(lastAccess.getMonth() + 1).padStart(2, '0');
-    const ano = lastAccess.getFullYear();
+    const agora = new Date();
+    const diffMs = agora.getTime() - lastAccess.getTime();
+    const diffMinutos = Math.floor(diffMs / (1000 * 60));
+    const diffHoras = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     
-    return `${dia}/${mes}/${ano}`;
+    // Considera online se acessou nos últimos 5 minutos
+    if (diffMinutos < 5) return 'Online';
+    if (diffMinutos < 60) return `A ${diffMinutos} minuto${diffMinutos > 1 ? 's' : ''}`;
+    if (diffHoras < 24) return `A ${diffHoras} hora${diffHoras > 1 ? 's' : ''}`;
+    return `A ${diffDias} dia${diffDias > 1 ? 's' : ''}`;
   };
 
   const getPlanColor = (plano: string) => {
@@ -336,31 +343,31 @@ export default function DashboardCliente() {
             {loadingUsage && !usageData ? (
               <div className="text-center py-8 text-gray-500">
                 <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-2"></div>
-                <p className="text-sm">Carregando dados...</p>
+                <p className="text-sm">Carregando dados do banco...</p>
               </div>
-            ) : usageData && usageData.length > 0 ? (
+            ) : usageData ? (
               <div className="space-y-3">
-                {/* TAMANHO TOTAL DO BANCO (o que conta no limite) */}
+                {/* BANCO TOTAL */}
                 {totalDatabaseSize && (
                   <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg border-2 border-purple-300">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-gray-800 text-base flex items-center space-x-2">
-                        <span>🗄️</span>
-                        <span>BANCO TOTAL (Limite Supabase)</span>
-                      </span>
-                      <span className="font-bold text-purple-700 text-2xl">
-                        {totalDatabaseSize}
-                      </span>
+                      <span className="font-bold text-gray-800 text-base">🗄️ Banco Total</span>
+                      <span className="font-bold text-purple-700 text-2xl">{totalDatabaseSize}</span>
                     </div>
                   </div>
                 )}
                 
-                {/* TOTAL DAS TABELAS DA APP */}
+                {/* TABELAS (clicável para expandir) */}
                 <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-2 border-green-200">
-                  <div className="flex items-center justify-between">
+                  <div 
+                    onClick={() => setShowTableDetails(!showTableDetails)}
+                    className="flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity"
+                  >
                     <span className="font-bold text-gray-800 text-base flex items-center space-x-2">
-                      <span>📊</span>
-                      <span>TABELAS DA APP</span>
+                      <span>📊 Tabelas</span>
+                      <span className="text-xs text-gray-500">
+                        {showTableDetails ? '▼' : '▶'}
+                      </span>
                     </span>
                     <span className="font-bold text-green-700 text-xl">
                       {usageData.reduce((acc: number, t: any) => acc + (t.size_bytes || 0), 0) > 1024 * 1024
@@ -368,16 +375,18 @@ export default function DashboardCliente() {
                         : `${(usageData.reduce((acc: number, t: any) => acc + (t.size_bytes || 0), 0) / 1024).toFixed(2)} KB`}
                     </span>
                   </div>
-                </div>
 
-                {/* Lista detalhada de tabelas */}
-                <div className="space-y-1.5">
-                  {usageData.map((table: any, index: number) => (
-                    <div key={index} className="bg-gray-50 px-3 py-2 rounded flex items-center justify-between">
-                      <span className="text-sm text-gray-700">📁 {table.tablename}</span>
-                      <span className="text-xs text-gray-600 font-mono">{table.size}</span>
+                  {/* Lista detalhada (recolhível) */}
+                  {showTableDetails && (
+                    <div className="mt-3 space-y-1.5">
+                      {usageData.map((table: any, index: number) => (
+                        <div key={index} className="bg-white px-3 py-2 rounded flex items-center justify-between">
+                          <span className="text-sm text-gray-700">📁 {table.tablename}</span>
+                          <span className="text-xs text-gray-600 font-mono">{table.size}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             ) : (
