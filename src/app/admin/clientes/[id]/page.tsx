@@ -408,35 +408,17 @@ export default function DashboardCliente() {
               {usuarios.map((usuario, index) => (
                 <div 
                   key={usuario.id || index} 
-                  className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all"
+                  className="bg-gray-50 rounded-lg p-3 border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all"
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-bold text-gray-800 text-base">{usuario.username}</span>
-                        {usuario.role === 'admin' && (
-                          <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full border border-purple-200">
-                            👑 Admin
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm text-gray-600 space-y-0.5">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-gray-400">📅 Criado em:</span>
-                          <span className="font-medium">{formatarDataUsuario(usuario.created_at)}</span>
-                        </div>
-                        {usuario.senha && (
-                          <div className="flex items-center space-x-2">
-                            <span className="text-gray-400">🔑 Senha:</span>
-                            <span className="font-mono text-xs bg-gray-200 px-2 py-1 rounded">
-                              {'•'.repeat(usuario.senha.length)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="ml-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
                       <span className="text-2xl">{usuario.role === 'admin' ? '👑' : '👤'}</span>
+                      <span className="font-bold text-gray-800 text-base">{usuario.username}</span>
+                      {usuario.role === 'admin' && (
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full border border-purple-200">
+                          Admin
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
