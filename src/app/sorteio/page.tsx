@@ -712,7 +712,8 @@ export default function SorteioPage() {
       
     } catch (error) {
       console.error('💥 Erro ao iniciar pelada:', error);
-      setMessage('❌ Erro ao iniciar pelada: ' + error.message);
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      setMessage('❌ Erro ao iniciar pelada: ' + errorMessage);
     }
   };
 
