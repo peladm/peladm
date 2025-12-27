@@ -588,9 +588,11 @@ export default function EstatisticasPage() {
 
         // Calcular TODAS as posições
         const calcularPosicao = (metrica: string, ordem: 'DESC' | 'ASC' = 'DESC') => {
-          const sorted = [...estatisticasTodosJogadores].sort((a, b) => 
-            ordem === 'DESC' ? b[metrica] - a[metrica] : a[metrica] - b[metrica]
-          );
+          const sorted = [...estatisticasTodosJogadores].sort((a, b) => {
+            const valorA = a[metrica] as number;
+            const valorB = b[metrica] as number;
+            return ordem === 'DESC' ? valorB - valorA : valorA - valorB;
+          });
           return sorted.findIndex(j => j.nome === nomeJogador) + 1;
         };
 
