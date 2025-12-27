@@ -42,3 +42,5 @@ next-env.d.ts
 
 # backup files
 BACKUP_PAGINAS/
+**/page-backup.tsx
+**/page-modal-disaster.tsx
