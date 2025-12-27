@@ -44,10 +44,10 @@ export default function DashboardCliente() {
 
       setCliente(data);
 
-      // Buscar uso do Supabase automaticamente se for Gold/Premium
-      if (data.plano === 'Gold' || data.plano === 'Premium') {
-        buscarUsoSupabase(data);
-      }
+      // Não buscar automaticamente ao carregar - usuário clica no refresh
+      // if (data.plano === 'Gold' || data.plano === 'Premium') {
+      //   buscarUsoSupabase(data);
+      // }
     } catch (error) {
       console.error('Erro:', error);
       alert('Erro ao carregar cliente!');
