@@ -4821,7 +4821,6 @@ export default function FilaPage() {
           }}
           onClick={() => console.log('🔍 Fundo do modal clicado')}
           >
-            {console.log('🚀 MODAL ESTÁ SENDO RENDERIZADO! Estado showManagementModal:', showManagementModal)}
             <div style={{
               backgroundColor: 'white',
               borderRadius: '0px',
