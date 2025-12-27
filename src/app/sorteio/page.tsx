@@ -303,7 +303,7 @@ export default function SorteioPage() {
 
       // Inicializar times vazios
       const times: Time[] = Array.from({ length: numeroTimes }, (_, i) => ({
-        id: i + 1,
+        id: String(i + 1),
         nome: `Time ${i + 1}`,
         jogadores: [],
         nivelMedio: 0,
