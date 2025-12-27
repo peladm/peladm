@@ -239,6 +239,34 @@ export default function DashboardCliente() {
     }
   };
 
+  const confirmarPagamento = async () => {
+    if (!cliente.data_vencimento) {
+      alert('Defina uma data de vencimento primeiro!');
+      return;
+    }
+
+    if (confirm('Confirmar pagamento e renovar para o próximo mês?')) {
+      try {
+        const dataAtual = new Date(cliente.data_vencimento + 'T00:00:00');
+        dataAtual.setMonth(dataAtual.getMonth() + 1);
+        const novaData = dataAtual.toISOString().split('T')[0];
+
+        const { error } = await supabase
+          .from('clientes')
+          .update({ data_vencimento: novaData })
+          .eq('id', clienteId);
+
+        if (error) throw error;
+
+        alert('Pagamento confirmado! Vencimento renovado para ' + new Date(novaData + 'T00:00:00').toLocaleDateString('pt-BR'));
+        await carregarCliente();
+      } catch (error) {
+        console.error('Erro:', error);
+        alert('Erro ao confirmar pagamento!');
+      }
+    }
+  };
+
   const templates = [
     {
       titulo: '🔔 Vencimento Próximo',
@@ -497,21 +525,33 @@ export default function DashboardCliente() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-2 border-green-200">
-                <div className="text-sm text-gray-600 mb-1">Valor do Plano</div>
-                <div className="text-2xl font-bold text-green-700">
-                  R$ {(cliente.valor_plano || 0).toFixed(2).replace('.', ',')}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-2 border-green-200">
+                  <div className="text-sm text-gray-600 mb-1">Valor do Plano</div>
+                  <div className="text-2xl font-bold text-green-700">
+                    R$ {(cliente.valor_plano || 0).toFixed(2).replace('.', ',')}
+                  </div>
+                </div>
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-lg border-2 border-blue-200">
+                  <div className="text-sm text-gray-600 mb-1">Vencimento</div>
+                  <div className="text-2xl font-bold text-blue-700">
+                    {cliente.data_vencimento 
+                      ? new Date(cliente.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR')
+                      : 'Não definido'}
+                  </div>
                 </div>
               </div>
-              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-lg border-2 border-blue-200">
-                <div className="text-sm text-gray-600 mb-1">Vencimento</div>
-                <div className="text-2xl font-bold text-blue-700">
-                  {cliente.data_vencimento 
-                    ? new Date(cliente.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR')
-                    : 'Não definido'}
-                </div>
-              </div>
+              
+              {cliente.data_vencimento && (
+                <button
+                  onClick={confirmarPagamento}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold transition-colors flex items-center justify-center space-x-2"
+                >
+                  <span>✅</span>
+                  <span>Confirmar Pagamento?</span>
+                </button>
+              )}
             </div>
           )}
         </div>
