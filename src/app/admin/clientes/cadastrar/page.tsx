@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
@@ -67,6 +67,14 @@ const gerarPeladaIdUnico = async (): Promise<string> => {
 };
 
 export default function CadastrarCliente() {
+  return (
+    <Suspense fallback={<div style={{ padding: '50px', textAlign: 'center' }}>Carregando...</div>}>
+      <CadastrarClienteContent />
+    </Suspense>
+  );
+}
+
+function CadastrarClienteContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const clienteId = searchParams.get('id');
