@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from '../../components/Layout';
-import { jogadoresService, supabase } from '../../lib/supabase';
+import { jogadoresService, supabase, getSupabaseParaUsuarioLogado } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { useAdInterstitial } from '../../lib/useAdInterstitial';
 import AdInterstitial from '../../components/AdInterstitial';
@@ -113,8 +113,11 @@ export default function SorteioPage() {
       const user = JSON.parse(userData);
       const peladaId = user.id;
       
+      // Usar banco apropriado (dedicado se Premium)
+      const clienteDb = await getSupabaseParaUsuarioLogado();
+      
       // Buscar regras no Supabase
-      const { data: regrasSupabase, error } = await supabase
+      const { data: regrasSupabase, error } = await clienteDb
         .from('regras')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -559,6 +562,9 @@ export default function SorteioPage() {
       
       console.log('🔄 Iniciando pelada para:', peladaId);
       
+      // Usar banco apropriado (dedicado se Premium)
+      const clienteDb = await getSupabaseParaUsuarioLogado();
+      
       // Não precisa mais buscar tipo_fila - agora só existe uma fila (page-fila)
       // Os modos (prancheta/partida) são escolhidos quando inicia a partida
       
@@ -566,7 +572,7 @@ export default function SorteioPage() {
       let sessao;
       const hoje = new Date().toISOString().split('T')[0];
       
-      const { data: sessaoExistente, error: consultaError } = await supabase
+      const { data: sessaoExistente, error: consultaError } = await clienteDb
         .from('sessoes')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -583,7 +589,7 @@ export default function SorteioPage() {
         sessao = sessaoExistente;
       } else {
         // Criar nova sessão apenas se não existir
-        const { data: novaSessao, error: sessaoError } = await supabase
+        const { data: novaSessao, error: sessaoError } = await clienteDb
           .from('sessoes')
           .insert({
             pelada_id: peladaId,
@@ -600,7 +606,7 @@ export default function SorteioPage() {
       }
       
       // 2. BUSCAR TODOS OS JOGADORES CADASTRADOS (igual Pelada 3)
-      const { data: todosJogadores, error: errorJogadores } = await supabase
+      const { data: todosJogadores, error: errorJogadores } = await clienteDb
         .from('jogadores')
         .select('id, nome')
         .eq('pelada_id', peladaId)
@@ -621,7 +627,7 @@ export default function SorteioPage() {
       
       // 4. LIMPAR TODA A FILA EXISTENTE (apenas 1 fila ativa por vez)
       console.log('🧹 Limpando fila existente...');
-      await supabase
+      await clienteDb
         .from('fila')
         .delete()
         .eq('pelada_id', peladaId);
@@ -680,7 +686,7 @@ export default function SorteioPage() {
       console.log(`  - ${filaInserts.filter(f => f.status === 'reserva').length} reservas`);
       
       if (filaInserts.length > 0) {
-        const { error: filaError } = await supabase
+        const { error: filaError } = await clienteDb
           .from('fila')
           .insert(filaInserts);
         

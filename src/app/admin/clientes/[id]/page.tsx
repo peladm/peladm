@@ -16,11 +16,14 @@ export default function DashboardCliente() {
 
   const [loading, setLoading] = useState(true);
   const [loadingUsage, setLoadingUsage] = useState(false);
+  const [loadingUsuarios, setLoadingUsuarios] = useState(false);
   const [cliente, setCliente] = useState<any>(null);
   const [usageData, setUsageData] = useState<any>(null);
+  const [usuarios, setUsuarios] = useState<any[]>([]);
 
   useEffect(() => {
     carregarCliente();
+    carregarUsuarios();
   }, [clienteId]);
 
   const carregarCliente = async () => {
@@ -100,6 +103,35 @@ export default function DashboardCliente() {
     } finally {
       setLoadingUsage(false);
     }
+  };
+
+  const carregarUsuarios = async () => {
+    setLoadingUsuarios(true);
+    try {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('pelada_id', clienteId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setUsuarios(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar usuários:', error);
+      setUsuarios([]);
+    } finally {
+      setLoadingUsuarios(false);
+    }
+  };
+
+  const formatarDataUsuario = (dataISO: string) => {
+    if (!dataISO) return 'N/A';
+    const data = new Date(dataISO);
+    const dia = String(data.getDate()).padStart(2, '0');
+    const mes = String(data.getMonth() + 1).padStart(2, '0');
+    const ano = data.getFullYear();
+    return `${dia}/${mes}/${ano}`;
   };
 
   const calcularTempoCadastro = () => {
@@ -287,6 +319,85 @@ export default function DashboardCliente() {
             )}
           </div>
         )}
+
+        {/* Usuários do Cliente */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800 flex items-center space-x-2">
+                <span>👥</span>
+                <span>Usuários Cadastrados</span>
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">Usuários que podem fazer login nesta pelada</p>
+            </div>
+            <button
+              onClick={carregarUsuarios}
+              disabled={loadingUsuarios}
+              className="text-2xl hover:scale-110 disabled:opacity-50 transition-all"
+              title="Atualizar lista"
+            >
+              {loadingUsuarios ? '⏳' : '🔄'}
+            </button>
+          </div>
+
+          {loadingUsuarios ? (
+            <div className="text-center py-8 text-gray-500">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-2"></div>
+              <p className="text-sm">Carregando usuários...</p>
+            </div>
+          ) : usuarios.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <div className="text-4xl mb-2">😴</div>
+              <p className="text-sm">Nenhum usuário cadastrado ainda</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {usuarios.map((usuario, index) => (
+                <div 
+                  key={usuario.id || index} 
+                  className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-1">
+                        <span className="font-bold text-gray-800 text-base">{usuario.username}</span>
+                        {usuario.role === 'admin' && (
+                          <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full border border-purple-200">
+                            👑 Admin
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600 space-y-0.5">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-400">📅 Criado em:</span>
+                          <span className="font-medium">{formatarDataUsuario(usuario.created_at)}</span>
+                        </div>
+                        {usuario.senha && (
+                          <div className="flex items-center space-x-2">
+                            <span className="text-gray-400">🔑 Senha:</span>
+                            <span className="font-mono text-xs bg-gray-200 px-2 py-1 rounded">
+                              {'•'.repeat(usuario.senha.length)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="ml-4">
+                      <span className="text-2xl">{usuario.role === 'admin' ? '👑' : '👤'}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600 font-medium">Total de usuários:</span>
+                  <span className="text-green-600 font-bold text-lg">{usuarios.length}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Status */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

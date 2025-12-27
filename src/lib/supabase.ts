@@ -1,10 +1,10 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Configurações do Supabase (usando a instância existente do projeto)
+// Configurações do Supabase PRINCIPAL (para autenticação e clientes)
 const supabaseUrl = 'https://ewcswczqvelhlwpbraea.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks';
 
-// Criar cliente Supabase
+// Criar cliente Supabase PRINCIPAL (para autenticação, clientes e usuarios)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
@@ -21,6 +21,50 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     }
   }
 });
+
+// Cache de conexões com bancos dedicados dos clientes
+const clienteSupabaseCache: Record<string, SupabaseClient> = {};
+
+/**
+ * Obtém o cliente Supabase apropriado para operações de dados
+ * - Se o cliente for Premium e tiver banco dedicado, retorna conexão dedicada
+ * - Caso contrário, retorna banco principal
+ */
+export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseClient> => {
+  // Se não tiver pelada_id, usa banco principal
+  if (!peladaId) {
+    return supabase;
+  }
+
+  // Verifica se já tem conexão em cache
+  if (clienteSupabaseCache[peladaId]) {
+    return clienteSupabaseCache[peladaId];
+  }
+
+  // Busca credenciais do cliente no banco principal
+  const { data: clienteData } = await supabase
+    .from('clientes')
+    .select('supabase_url, supabase_anon_key, plano')
+    .eq('id', peladaId)
+    .single();
+
+  // Se cliente Premium com banco dedicado, cria e cacheia conexão
+  if (clienteData?.supabase_url && clienteData?.supabase_anon_key) {
+    const clienteSupabase = createClient(
+      clienteData.supabase_url,
+      clienteData.supabase_anon_key,
+      {
+        auth: { persistSession: false },
+        db: { schema: 'public' },
+      }
+    );
+    clienteSupabaseCache[peladaId] = clienteSupabase;
+    return clienteSupabase;
+  }
+
+  // Cliente Free ou sem banco dedicado: usa banco principal
+  return supabase;
+};
 
 // Tipos para as tabelas
 export interface Jogador {
@@ -79,7 +123,7 @@ export const validarSenhaPelada = async (senhaDigitada: string): Promise<boolean
   }
 };
 
-// Funções de interação com a tabela jogadores
+// Funções de interação com a tabela jogadores (usa banco dedicado se Premium)
 export const jogadoresService = {
   // Buscar todos os jogadores
   async buscarTodos() {
@@ -88,7 +132,9 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    const { data, error } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    
+    const { data, error } = await clienteDb
       .from('jogadores')
       .select('*')
       .eq('pelada_id', peladaId)
@@ -109,7 +155,9 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    const { data, error } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    
+    const { data, error } = await clienteDb
       .from('jogadores')
       .insert([
         {
@@ -137,7 +185,9 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    const { data, error } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    
+    const { data, error } = await clienteDb
       .from('jogadores')
       .update({
         nome: nome.trim(),
@@ -164,7 +214,9 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    const { data, error } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    
+    const { data, error } = await clienteDb
       .from('jogadores')
       .update({
         status,
@@ -190,7 +242,9 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    const { error } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    
+    const { error } = await clienteDb
       .from('jogadores')
       .delete()
       .eq('id', id)
@@ -211,7 +265,9 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    const { data, error } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    
+    const { data, error } = await clienteDb
       .from('jogadores')
       .select('*')
       .eq('pelada_id', peladaId)
@@ -225,6 +281,12 @@ export const jogadoresService = {
     
     return data || [];
   }
+};
+
+// Helper: Obtém supabase apropriado para o usuário logado
+export const getSupabaseParaUsuarioLogado = async () => {
+  const peladaId = getPeladaId();
+  return await getClienteSupabase(peladaId || undefined);
 };
 
 export default supabase;
