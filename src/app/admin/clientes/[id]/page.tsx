@@ -45,7 +45,7 @@ export default function DashboardCliente() {
       setCliente(data);
 
       // Buscar uso do Supabase automaticamente se for Gold/Premium
-      if (data.supabase_url && data.supabase_anon_key && (data.plano === 'Gold' || data.plano === 'Premium')) {
+      if (data.plano === 'Gold' || data.plano === 'Premium') {
         buscarUsoSupabase(data);
       }
     } catch (error) {
@@ -193,11 +193,24 @@ export default function DashboardCliente() {
     if (!cliente?.created_at) return 'Data desconhecida';
     
     const cadastro = new Date(cliente.created_at);
+    const agora = new Date();
+    const diffMs = agora.getTime() - cadastro.getTime();
+    const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffMeses = Math.floor(diffDias / 30);
+    const diffAnos = Math.floor(diffDias / 365);
+    
+    if (diffAnos > 0) return `${diffAnos} ano${diffAnos > 1 ? 's' : ''}`;
+    if (diffMeses > 0) return `${diffMeses} ${diffMeses === 1 ? 'mês' : 'meses'}`;
+    return `${diffDias} dia${diffDias !== 1 ? 's' : ''}`;
+  };
+
+  const formatarDataCadastro = () => {
+    if (!cliente?.created_at) return '';
+    const cadastro = new Date(cliente.created_at);
     const dia = String(cadastro.getDate()).padStart(2, '0');
     const mes = String(cadastro.getMonth() + 1).padStart(2, '0');
     const ano = cadastro.getFullYear();
-    
-    return `Desde ${dia}/${mes}/${ano}`;
+    return `${dia}/${mes}/${ano}`;
   };
 
   const formatarUltimoAcesso = () => {
@@ -299,7 +312,10 @@ export default function DashboardCliente() {
                 <span className="text-xl">📅</span>
                 <h3 className="font-bold text-gray-800 text-sm">Tempo de Cadastro</h3>
               </div>
-              <p className="text-lg font-bold text-blue-600">{calcularTempoCadastro()}</p>
+              <div className="text-right">
+                <p className="text-lg font-bold text-blue-600">{calcularTempoCadastro()}</p>
+                <p className="text-xs text-gray-500">{formatarDataCadastro()}</p>
+              </div>
             </div>
           </div>
 
