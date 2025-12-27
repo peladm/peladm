@@ -116,6 +116,7 @@ export default function DashboardCliente() {
       
       const tables = ['jogadores', 'sessoes', 'fila', 'jogos', 'gols', 'regras', 'fila_snapshot'];
       const usageInfo = [];
+      let totalEstimatedBytes = 0;
 
       for (const tableName of tables) {
         try {
@@ -133,6 +134,7 @@ export default function DashboardCliente() {
             else if (tableName === 'fila' || tableName === 'fila_snapshot') bytesPerRow = 2560;
             
             const estimatedBytes = count * bytesPerRow;
+            totalEstimatedBytes += estimatedBytes;
 
             const size = estimatedBytes > 1024 * 1024
               ? `${(estimatedBytes / (1024 * 1024)).toFixed(2)} MB`
@@ -150,6 +152,15 @@ export default function DashboardCliente() {
         } catch (err) {
           console.log(`Erro ao buscar tabela ${tableName}:`, err);
         }
+      }
+
+      // Calcular e definir o total estimado
+      if (usageInfo.length > 0) {
+        const totalFormatted = totalEstimatedBytes > 1024 * 1024
+          ? `${(totalEstimatedBytes / (1024 * 1024)).toFixed(2)} MB`
+          : `${(totalEstimatedBytes / 1024).toFixed(2)} KB`;
+        setTotalDatabaseSize(totalFormatted);
+        console.log('✅ Total estimado do banco:', totalFormatted);
       }
 
       setUsageData(usageInfo.length > 0 ? usageInfo : null);
