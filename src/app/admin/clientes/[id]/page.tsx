@@ -297,10 +297,7 @@ export default function DashboardCliente() {
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center space-x-2">
                 <span className="text-xl">📅</span>
-                <div>
-                  <h3 className="font-bold text-gray-800 text-sm">Tempo de Cadastro</h3>
-                  <p className="text-xs text-gray-500">Desde a criação da conta</p>
-                </div>
+                <h3 className="font-bold text-gray-800 text-sm">Tempo de Cadastro</h3>
               </div>
               <p className="text-lg font-bold text-blue-600">{calcularTempoCadastro()}</p>
             </div>
@@ -310,10 +307,7 @@ export default function DashboardCliente() {
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center space-x-2">
                 <span className="text-xl">🕐</span>
-                <div>
-                  <h3 className="font-bold text-gray-800 text-sm">Último Acesso</h3>
-                  <p className="text-xs text-gray-500">Última vez no app</p>
-                </div>
+                <h3 className="font-bold text-gray-800 text-sm">Último Acesso</h3>
               </div>
               <p className="text-lg font-bold text-green-600">{formatarUltimoAcesso()}</p>
             </div>
@@ -391,7 +385,7 @@ export default function DashboardCliente() {
               </div>
             ) : (
               <div className="text-center py-8 text-gray-500">
-                <p className="text-sm">Aguardando dados...</p>
+                <p className="text-sm">Clique em 🔄 para carregar os dados</p>
               </div>
             )}
           </div>
