@@ -57,16 +57,15 @@ export default function DashboardCliente() {
 
   const buscarUsoSupabase = async (clienteData?: any) => {
     const dadosCliente = clienteData || cliente;
-    
-    if (!dadosCliente?.supabase_url || !dadosCliente?.supabase_anon_key) {
-      alert('Este cliente não tem Supabase configurado!');
-      return;
-    }
 
     setLoadingUsage(true);
     try {
       const { createClient } = await import('@supabase/supabase-js');
-      const clienteSupabase = createClient(dadosCliente.supabase_url, dadosCliente.supabase_anon_key);
+      
+      // Se tiver banco dedicado, usa ele. Senão usa o principal
+      const clienteSupabase = (dadosCliente?.supabase_url && dadosCliente?.supabase_anon_key)
+        ? createClient(dadosCliente.supabase_url, dadosCliente.supabase_anon_key)
+        : supabase; // Banco principal
 
       // MÉTODO 1: Tentar usar função SQL customizada (mais preciso)
       const { data: tableSizeData, error: rpcError } = await clienteSupabase
@@ -305,35 +304,23 @@ export default function DashboardCliente() {
         {(cliente.plano === 'Gold' || cliente.plano === 'Premium') && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-800">💾 Banco de Dados</h2>
-              {cliente.supabase_url && cliente.supabase_anon_key && (
-                <button
-                  onClick={buscarUsoSupabase}
-                  disabled={loadingUsage}
-                  className="text-2xl hover:scale-110 disabled:opacity-50 transition-all"
-                  title="Atualizar dados"
-                >
-                  {loadingUsage ? '⏳' : '🔄'}
-                </button>
-              )}
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">💾 Banco de Dados</h2>
+                {!cliente.supabase_url && !cliente.supabase_anon_key && (
+                  <p className="text-xs text-gray-500 mt-1">🏢 Usando banco compartilhado</p>
+                )}
+              </div>
+              <button
+                onClick={buscarUsoSupabase}
+                disabled={loadingUsage}
+                className="text-2xl hover:scale-110 disabled:opacity-50 transition-all"
+                title="Atualizar dados"
+              >
+                {loadingUsage ? '⏳' : '🔄'}
+              </button>
             </div>
 
-            {!cliente.supabase_url || !cliente.supabase_anon_key ? (
-              <div className="text-center py-8">
-                <div className="text-4xl mb-3">🏢</div>
-                <p className="text-gray-700 font-medium mb-2">Cliente usando banco compartilhado</p>
-                <p className="text-sm text-gray-500 mb-4">
-                  Este cliente usa o banco de dados principal do sistema.<br/>
-                  Para ter banco dedicado, configure as credenciais Supabase.
-                </p>
-                <button
-                  onClick={() => router.push(`/admin/clientes/cadastrar?id=${clienteId}`)}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  ⚙️ Configurar banco dedicado
-                </button>
-              </div>
-            ) : loadingUsage && !usageData ? (
+            {loadingUsage && !usageData ? (
               <div className="text-center py-8 text-gray-500">
                 <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-2"></div>
                 <p className="text-sm">Carregando dados...</p>
