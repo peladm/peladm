@@ -12,7 +12,6 @@ interface Jogador {
 }
 
 interface JogadorFila {
-interface JogadorFila {
   id: string;
   nome: string;
   posicao_fila: number;
