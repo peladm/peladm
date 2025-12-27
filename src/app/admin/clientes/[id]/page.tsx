@@ -25,6 +25,20 @@ export default function DashboardCliente() {
   const [usageData, setUsageData] = useState<any>(null);
   const [totalDatabaseSize, setTotalDatabaseSize] = useState<string>('');
   const [usuarios, setUsuarios] = useState<any[]>([]);
+  
+  // Estados dos modais individuais
+  const [modalVencimento, setModalVencimento] = useState(false);
+  const [modalOferta, setModalOferta] = useState(false);
+  const [modalBoasVindas, setModalBoasVindas] = useState(false);
+  const [modalPagamento, setModalPagamento] = useState(false);
+  const [modalAtraso, setModalAtraso] = useState(false);
+  
+  // Estados dos dados dos formulários individuais
+  const [dadosVencimento, setDadosVencimento] = useState({ diasRestantes: '' });
+  const [dadosOferta, setDadosOferta] = useState({ tipo: '', valor: '', beneficios: '' });
+  const [dadosBoasVindas, setDadosBoasVindas] = useState({ mensagemAdicional: '' });
+  const [dadosPagamento, setDadosPagamento] = useState({ novaDataVencimento: '', observacao: '' });
+  const [dadosAtraso, setDadosAtraso] = useState({ diasAtraso: '', consequencia: '' });
 
   useEffect(() => {
     carregarCliente();
@@ -270,29 +284,86 @@ export default function DashboardCliente() {
   const templates = [
     {
       titulo: '🔔 Vencimento Próximo',
-      mensagem: `Olá [Nome]! Seu plano está próximo do vencimento. Para evitar o bloqueio do acesso, faça a renovação o quanto antes. Qualquer dúvida, estamos à disposição!`
+      descricao: 'Avisar sobre vencimento iminente',
+      action: () => setModalVencimento(true)
     },
     {
       titulo: '🎁 Propaganda/Oferta',
-      mensagem: `Olá [Nome]! Temos uma oferta especial de upgrade para você! Entre em contato para saber mais e aproveitar condições exclusivas.`
+      descricao: 'Enviar oferta personalizada',
+      action: () => setModalOferta(true)
     },
     {
       titulo: '👋 Boas-vindas',
-      mensagem: `Olá [Nome]! Seja bem-vindo(a) ao PelADM! Seu acesso já está liberado. Qualquer dúvida, estamos à disposição para ajudar!`
+      descricao: 'Mensagem de boas-vindas',
+      action: () => setModalBoasVindas(true)
     },
     {
       titulo: '✅ Pagamento Confirmado',
-      mensagem: `Olá [Nome]! Seu pagamento foi confirmado com sucesso! Seu acesso está renovado. Obrigado pela confiança!`
-    },
-    {
-      titulo: '💬 Suporte Técnico',
-      mensagem: `Olá [Nome]! Identificamos que você pode estar com dúvidas. Estamos aqui para ajudar! Me conte como posso te auxiliar.`
+      descricao: 'Confirmar recebimento',
+      action: () => setModalPagamento(true)
     },
     {
       titulo: '⚠️ Lembrete de Atraso',
-      mensagem: `Olá [Nome]! Identificamos que seu pagamento está em atraso. Para manter seu acesso ativo, regularize sua situação o quanto antes. Estamos à disposição!`
+      descricao: 'Notificar sobre atraso',
+      action: () => setModalAtraso(true)
     }
   ];
+
+  const enviarVencimento = () => {
+    if (!dadosVencimento.diasRestantes) {
+      alert('Informe quantos dias restam!');
+      return;
+    }
+    const mensagem = `Olá ${cliente.nome}! 🔔\n\nSeu plano vence em ${dadosVencimento.diasRestantes} dias.\n\nPara evitar o bloqueio do acesso, faça a renovação o quanto antes. Qualquer dúvida, estamos à disposição!`;
+    abrirWhatsApp(mensagem);
+    setModalVencimento(false);
+    setDadosVencimento({ diasRestantes: '' });
+  };
+
+  const enviarOferta = () => {
+    if (!dadosOferta.tipo || !dadosOferta.beneficios) {
+      alert('Preencha o tipo de oferta e benefícios!');
+      return;
+    }
+    const valorTexto = dadosOferta.valor ? `\n💰 Valor especial: R$ ${dadosOferta.valor}` : '';
+    const mensagem = `Olá ${cliente.nome}! 🎁\n\n${dadosOferta.tipo}${valorTexto}\n\n🎯 Benefícios:\n${dadosOferta.beneficios}\n\nEntre em contato para aproveitar!`;
+    abrirWhatsApp(mensagem);
+    setModalOferta(false);
+    setDadosOferta({ tipo: '', valor: '', beneficios: '' });
+  };
+
+  const enviarBoasVindas = () => {
+    const adicional = dadosBoasVindas.mensagemAdicional ? `\n\n${dadosBoasVindas.mensagemAdicional}` : '';
+    const mensagem = `Olá ${cliente.nome}! 👋\n\nSeja bem-vindo(a) ao PelADM!\n\nSeu acesso já está liberado e você pode começar a usar todas as funcionalidades do sistema.${adicional}\n\nQualquer dúvida, estamos à disposição para ajudar!`;
+    abrirWhatsApp(mensagem);
+    setModalBoasVindas(false);
+    setDadosBoasVindas({ mensagemAdicional: '' });
+  };
+
+  const enviarPagamento = () => {
+    if (!dadosPagamento.novaDataVencimento) {
+      alert('Informe a nova data de vencimento!');
+      return;
+    }
+    const dataFormatada = new Date(dadosPagamento.novaDataVencimento + 'T00:00:00').toLocaleDateString('pt-BR');
+    const observacaoTexto = dadosPagamento.observacao ? `\n\n📝 ${dadosPagamento.observacao}` : '';
+    const mensagem = `Olá ${cliente.nome}! ✅\n\nSeu pagamento foi confirmado com sucesso!\n\nSeu acesso está renovado até ${dataFormatada}.${observacaoTexto}\n\nObrigado pela confiança!`;
+    abrirWhatsApp(mensagem);
+    setModalPagamento(false);
+    setDadosPagamento({ novaDataVencimento: '', observacao: '' });
+  };
+
+  const enviarAtraso = () => {
+    if (!dadosAtraso.diasAtraso) {
+      alert('Informe quantos dias de atraso!');
+      return;
+    }
+    const consequenciaTexto = dadosAtraso.consequencia ? `\n\n⚠️ ${dadosAtraso.consequencia}` : '';
+    const mensagem = `Olá ${cliente.nome}! ⚠️\n\nIdentificamos que seu pagamento está com ${dadosAtraso.diasAtraso} dias de atraso.${consequenciaTexto}\n\nPara manter seu acesso ativo, regularize sua situação o quanto antes.\n\nEstamos à disposição para ajudar!`;
+    abrirWhatsApp(mensagem);
+    setModalAtraso(false);
+    setDadosAtraso({ diasAtraso: '', consequencia: '' });
+  };
 
   if (loading) {
     return (
@@ -556,98 +627,6 @@ export default function DashboardCliente() {
           )}
         </div>
 
-        {/* Quadro de Avisos */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <div className="mb-4">
-            <h2 className="text-lg font-bold text-gray-800 flex items-center space-x-2">
-              <span>📢</span>
-              <span>Quadro de Avisos</span>
-            </h2>
-            <p className="text-sm text-gray-500 mt-1">Envie mensagens padronizadas via WhatsApp</p>
-          </div>
-
-          <div className="space-y-3">
-            {templates.map((template, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4 hover:border-green-300 transition-colors">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-bold text-gray-800 text-sm">{template.titulo}</h3>
-                  <button
-                    onClick={() => abrirWhatsApp(template.mensagem)}
-                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center space-x-1"
-                  >
-                    <span>💬</span>
-                    <span>Enviar</span>
-                  </button>
-                </div>
-                <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
-                  {template.mensagem.replace('[Nome]', cliente.nome)}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Usuários do Cliente */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-lg font-bold text-gray-800 flex items-center space-x-2">
-                <span>👥</span>
-                <span>Usuários Cadastrados</span>
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">Usuários que podem fazer login nesta pelada</p>
-            </div>
-            <button
-              onClick={carregarUsuarios}
-              disabled={loadingUsuarios}
-              className="text-2xl hover:scale-110 disabled:opacity-50 transition-all"
-              title="Atualizar lista"
-            >
-              {loadingUsuarios ? '⏳' : '🔄'}
-            </button>
-          </div>
-
-          {loadingUsuarios ? (
-            <div className="text-center py-8 text-gray-500">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-2"></div>
-              <p className="text-sm">Carregando usuários...</p>
-            </div>
-          ) : usuarios.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <div className="text-4xl mb-2">😴</div>
-              <p className="text-sm">Nenhum usuário cadastrado ainda</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {usuarios.map((usuario, index) => (
-                <div 
-                  key={usuario.id || index} 
-                  className="bg-gray-50 rounded-lg p-3 border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-2xl">{usuario.role === 'admin' ? '👑' : '👤'}</span>
-                      <span className="font-bold text-gray-800 text-base">{usuario.username}</span>
-                      {usuario.role === 'admin' && (
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full border border-purple-200">
-                          Admin
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 font-medium">Total de usuários:</span>
-                  <span className="text-green-600 font-bold text-lg">{usuarios.length}</span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Status */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-start justify-between mb-5">
@@ -728,7 +707,279 @@ export default function DashboardCliente() {
             </div>
           </div>
         </div>
+
+        {/* Quadro de Avisos */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center space-x-2">
+              <span>📢</span>
+              <span>Quadro de Avisos</span>
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">Envie mensagens personalizadas via WhatsApp</p>
+          </div>
+
+          <div className="space-y-3">
+            {templates.map((template, index) => (
+              <div key={index} className="border border-gray-200 rounded-lg p-4 hover:border-green-300 transition-colors">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-bold text-gray-800 text-sm">{template.titulo}</h3>
+                    <p className="text-xs text-gray-500 mt-1">{template.descricao}</p>
+                  </div>
+                  <button
+                    onClick={template.action}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    Abrir
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* Modal Vencimento Próximo */}
+      {modalVencimento && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+            <div className="bg-gradient-to-r from-red-500 to-red-600 text-white p-6 rounded-t-2xl">
+              <h2 className="text-2xl font-bold">🔔 Vencimento Próximo</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Quantos dias restam até o vencimento?
+                </label>
+                <input
+                  type="number"
+                  value={dadosVencimento.diasRestantes}
+                  onChange={(e) => setDadosVencimento({ diasRestantes: e.target.value })}
+                  placeholder="Ex: 3"
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setModalVencimento(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={enviarVencimento}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Enviar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Oferta */}
+      {modalOferta && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+            <div className="bg-gradient-to-r from-pink-500 to-pink-600 text-white p-6 rounded-t-2xl">
+              <h2 className="text-2xl font-bold">🎁 Propaganda/Oferta</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Tipo de Oferta*
+                </label>
+                <input
+                  type="text"
+                  value={dadosOferta.tipo}
+                  onChange={(e) => setDadosOferta({ ...dadosOferta, tipo: e.target.value })}
+                  placeholder="Ex: Upgrade para Premium com desconto"
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Valor (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={dadosOferta.valor}
+                  onChange={(e) => setDadosOferta({ ...dadosOferta, valor: e.target.value })}
+                  placeholder="Ex: 79,90"
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Benefícios*
+                </label>
+                <textarea
+                  value={dadosOferta.beneficios}
+                  onChange={(e) => setDadosOferta({ ...dadosOferta, beneficios: e.target.value })}
+                  placeholder="Ex: ✅ Usuários ilimitados\n✅ Relatórios avançados\n✅ Suporte prioritário"
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  rows={4}
+                />
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setModalOferta(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={enviarOferta}
+                  className="flex-1 bg-pink-600 hover:bg-pink-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Enviar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Boas-vindas */}
+      {modalBoasVindas && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+            <div className="bg-gradient-to-r from-green-500 to-green-600 text-white p-6 rounded-t-2xl">
+              <h2 className="text-2xl font-bold">👋 Boas-vindas</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Mensagem Adicional (opcional)
+                </label>
+                <textarea
+                  value={dadosBoasVindas.mensagemAdicional}
+                  onChange={(e) => setDadosBoasVindas({ mensagemAdicional: e.target.value })}
+                  placeholder="Ex: Aproveite para conhecer nossa área de relatórios!"
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  rows={3}
+                />
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setModalBoasVindas(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={enviarBoasVindas}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Enviar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Pagamento Confirmado */}
+      {modalPagamento && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-t-2xl">
+              <h2 className="text-2xl font-bold">✅ Pagamento Confirmado</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Nova Data de Vencimento*
+                </label>
+                <input
+                  type="date"
+                  value={dadosPagamento.novaDataVencimento}
+                  onChange={(e) => setDadosPagamento({ ...dadosPagamento, novaDataVencimento: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Observação (opcional)
+                </label>
+                <textarea
+                  value={dadosPagamento.observacao}
+                  onChange={(e) => setDadosPagamento({ ...dadosPagamento, observacao: e.target.value })}
+                  placeholder="Ex: Pagamento recebido via PIX"
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={2}
+                />
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setModalPagamento(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={enviarPagamento}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Enviar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Atraso */}
+      {modalAtraso && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-6 rounded-t-2xl">
+              <h2 className="text-2xl font-bold">⚠️ Lembrete de Atraso</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Dias de Atraso*
+                </label>
+                <input
+                  type="number"
+                  value={dadosAtraso.diasAtraso}
+                  onChange={(e) => setDadosAtraso({ ...dadosAtraso, diasAtraso: e.target.value })}
+                  placeholder="Ex: 5"
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Consequência (opcional)
+                </label>
+                <textarea
+                  value={dadosAtraso.consequencia}
+                  onChange={(e) => setDadosAtraso({ ...dadosAtraso, consequencia: e.target.value })}
+                  placeholder="Ex: Seu acesso será bloqueado em 2 dias caso não regularize"
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  rows={3}
+                />
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setModalAtraso(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={enviarAtraso}
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Enviar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
