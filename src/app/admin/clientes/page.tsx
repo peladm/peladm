@@ -23,6 +23,7 @@ export default function AdminClientes() {
   const router = useRouter();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showTemplates, setShowTemplates] = useState(false);
 
   useEffect(() => {
     carregarClientes();
@@ -69,6 +70,57 @@ export default function AdminClientes() {
     }
   };
 
+  const abrirWhatsApp = (telefone: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const numero = telefone.replace(/\D/g, '');
+    window.open(`https://wa.me/55${numero}`, '_blank');
+  };
+
+  const templates = [
+    {
+      titulo: '🔔 Vencimento Próximo',
+      mensagem: (nome: string) => `Olá ${nome}! Seu plano está próximo do vencimento. Para evitar o bloqueio do acesso, faça a renovação o quanto antes. Qualquer dúvida, estamos à disposição!`
+    },
+    {
+      titulo: '🎁 Propaganda/Oferta',
+      mensagem: (nome: string) => `Olá ${nome}! Temos uma oferta especial de upgrade para você! Entre em contato para saber mais e aproveitar condições exclusivas.`
+    },
+    {
+      titulo: '👋 Boas-vindas',
+      mensagem: (nome: string) => `Olá ${nome}! Seja bem-vindo(a) ao PelADM! Seu acesso já está liberado. Qualquer dúvida, estamos à disposição para ajudar!`
+    },
+    {
+      titulo: '✅ Pagamento Confirmado',
+      mensagem: (nome: string) => `Olá ${nome}! Seu pagamento foi confirmado com sucesso! Seu acesso está renovado. Obrigado pela confiança!`
+    },
+    {
+      titulo: '💬 Suporte Técnico',
+      mensagem: (nome: string) => `Olá ${nome}! Identificamos que você pode estar com dúvidas. Estamos aqui para ajudar! Me conte como posso te auxiliar.`
+    },
+    {
+      titulo: '⚠️ Lembrete de Atraso',
+      mensagem: (nome: string) => `Olá ${nome}! Identificamos que seu pagamento está em atraso. Para manter seu acesso ativo, regularize sua situação o quanto antes. Estamos à disposição!`
+    }
+  ];
+
+  const enviarTemplateMassivo = (templateIndex: number) => {
+    const template = templates[templateIndex];
+    const clientesAtivos = clientes.filter(c => c.status === 'ativo' && c.telefone);
+    
+    if (clientesAtivos.length === 0) {
+      alert('Nenhum cliente ativo com telefone cadastrado!');
+      return;
+    }
+
+    if (confirm(`Deseja enviar "${template.titulo}" para ${clientesAtivos.length} cliente(s)?`)) {
+      clientesAtivos.forEach(cliente => {
+        const mensagem = encodeURIComponent(template.mensagem(cliente.nome));
+        const numero = cliente.telefone!.replace(/\D/g, '');
+        window.open(`https://wa.me/55${numero}?text=${mensagem}`, '_blank');
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header exclusivo para esta página */}
@@ -102,13 +154,22 @@ export default function AdminClientes() {
           <div>
             <h2 className="text-2xl font-bold text-gray-800">Gerenciar Clientes</h2>
           </div>
-          <button
-            onClick={() => router.push('/admin/clientes/cadastrar')}
-            className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 transition-colors"
-          >
-            <span>➕</span>
-            <span>Novo Cliente</span>
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowTemplates(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 transition-colors"
+            >
+              <span>📨</span>
+              <span>Templates</span>
+            </button>
+            <button
+              onClick={() => router.push('/admin/clientes/cadastrar')}
+              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 transition-colors"
+            >
+              <span>➕</span>
+              <span>Novo Cliente</span>
+            </button>
+          </div>
         </div>
 
         {/* Lista de Clientes */}
@@ -153,6 +214,15 @@ export default function AdminClientes() {
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-xl">{getStatusEmoji(cliente.status)}</span>
+                      {cliente.telefone && (
+                        <button
+                          onClick={(e) => abrirWhatsApp(cliente.telefone!, e)}
+                          className="text-2xl hover:scale-110 transition-transform"
+                          title="Abrir WhatsApp"
+                        >
+                          💬
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -162,6 +232,46 @@ export default function AdminClientes() {
         </div>
         </div>
       </div>
+
+      {/* Modal Templates */}
+      {showTemplates && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-800">📨 Templates de Mensagens</h2>
+              <button
+                onClick={() => setShowTemplates(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600 mb-4">
+                Envie mensagens padronizadas para todos os clientes ativos de uma vez.
+              </p>
+              
+              {templates.map((template, index) => (
+                <div key={index} className="border border-gray-200 rounded-lg p-4 hover:border-green-300 transition-colors">
+                  <div className="flex items-start justify-between mb-2">
+                    <h3 className="font-bold text-gray-800">{template.titulo}</h3>
+                    <button
+                      onClick={() => enviarTemplateMassivo(index)}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      Enviar para Todos
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+                    {template.mensagem('[Nome do Cliente]')}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

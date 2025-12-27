@@ -18,6 +18,9 @@ export default function DashboardCliente() {
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [loadingUsuarios, setLoadingUsuarios] = useState(false);
   const [showTableDetails, setShowTableDetails] = useState(false);
+  const [editandoFinanceiro, setEditandoFinanceiro] = useState(false);
+  const [valorPlano, setValorPlano] = useState('');
+  const [dataVencimento, setDataVencimento] = useState('');
   const [cliente, setCliente] = useState<any>(null);
   const [usageData, setUsageData] = useState<any>(null);
   const [totalDatabaseSize, setTotalDatabaseSize] = useState<string>('');
@@ -205,6 +208,64 @@ export default function DashboardCliente() {
     }
   };
 
+  const abrirWhatsApp = (mensagem: string) => {
+    if (!cliente?.telefone) {
+      alert('Cliente não tem telefone cadastrado!');
+      return;
+    }
+    const numero = cliente.telefone.replace(/\D/g, '');
+    const mensagemFormatada = encodeURIComponent(mensagem.replace('[Nome]', cliente.nome));
+    window.open(`https://wa.me/55${numero}?text=${mensagemFormatada}`, '_blank');
+  };
+
+  const salvarDadosFinanceiros = async () => {
+    try {
+      const { error } = await supabase
+        .from('clientes')
+        .update({
+          valor_plano: parseFloat(valorPlano) || 0,
+          data_vencimento: dataVencimento || null
+        })
+        .eq('id', clienteId);
+
+      if (error) throw error;
+      
+      alert('Dados financeiros atualizados com sucesso!');
+      setEditandoFinanceiro(false);
+      await carregarCliente();
+    } catch (error) {
+      console.error('Erro ao salvar:', error);
+      alert('Erro ao salvar dados financeiros!');
+    }
+  };
+
+  const templates = [
+    {
+      titulo: '🔔 Vencimento Próximo',
+      mensagem: `Olá [Nome]! Seu plano está próximo do vencimento. Para evitar o bloqueio do acesso, faça a renovação o quanto antes. Qualquer dúvida, estamos à disposição!`
+    },
+    {
+      titulo: '🎁 Propaganda/Oferta',
+      mensagem: `Olá [Nome]! Temos uma oferta especial de upgrade para você! Entre em contato para saber mais e aproveitar condições exclusivas.`
+    },
+    {
+      titulo: '👋 Boas-vindas',
+      mensagem: `Olá [Nome]! Seja bem-vindo(a) ao PelADM! Seu acesso já está liberado. Qualquer dúvida, estamos à disposição para ajudar!`
+    },
+    {
+      titulo: '✅ Pagamento Confirmado',
+      mensagem: `Olá [Nome]! Seu pagamento foi confirmado com sucesso! Seu acesso está renovado. Obrigado pela confiança!`
+    },
+    {
+      titulo: '💬 Suporte Técnico',
+      mensagem: `Olá [Nome]! Identificamos que você pode estar com dúvidas. Estamos aqui para ajudar! Me conte como posso te auxiliar.`
+    },
+    {
+      titulo: '⚠️ Lembrete de Atraso',
+      mensagem: `Olá [Nome]! Identificamos que seu pagamento está em atraso. Para manter seu acesso ativo, regularize sua situação o quanto antes. Estamos à disposição!`
+    }
+  ];
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -372,6 +433,119 @@ export default function DashboardCliente() {
             )}
           </div>
         )}
+
+        {/* Controle Financeiro */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800 flex items-center space-x-2">
+                <span>💰</span>
+                <span>Controle Financeiro</span>
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">Gerencie valores e vencimentos</p>
+            </div>
+            {!editandoFinanceiro && (
+              <button
+                onClick={() => {
+                  setEditandoFinanceiro(true);
+                  setValorPlano(cliente.valor_plano?.toString() || '0');
+                  setDataVencimento(cliente.data_vencimento || '');
+                }}
+                className="text-2xl hover:scale-110 transition-all"
+                title="Editar"
+              >
+                ✏️
+              </button>
+            )}
+          </div>
+
+          {editandoFinanceiro ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Valor do Plano (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={valorPlano}
+                  onChange={(e) => setValorPlano(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Data de Vencimento</label>
+                <input
+                  type="date"
+                  value={dataVencimento}
+                  onChange={(e) => setDataVencimento(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={salvarDadosFinanceiros}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                >
+                  💾 Salvar
+                </button>
+                <button
+                  onClick={() => setEditandoFinanceiro(false)}
+                  className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg font-semibold transition-colors"
+                >
+                  ✕ Cancelar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-2 border-green-200">
+                <div className="text-sm text-gray-600 mb-1">Valor do Plano</div>
+                <div className="text-2xl font-bold text-green-700">
+                  R$ {(cliente.valor_plano || 0).toFixed(2).replace('.', ',')}
+                </div>
+              </div>
+              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-lg border-2 border-blue-200">
+                <div className="text-sm text-gray-600 mb-1">Vencimento</div>
+                <div className="text-2xl font-bold text-blue-700">
+                  {cliente.data_vencimento 
+                    ? new Date(cliente.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR')
+                    : 'Não definido'}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Quadro de Avisos */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center space-x-2">
+              <span>📢</span>
+              <span>Quadro de Avisos</span>
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">Envie mensagens padronizadas via WhatsApp</p>
+          </div>
+
+          <div className="space-y-3">
+            {templates.map((template, index) => (
+              <div key={index} className="border border-gray-200 rounded-lg p-4 hover:border-green-300 transition-colors">
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-bold text-gray-800 text-sm">{template.titulo}</h3>
+                  <button
+                    onClick={() => abrirWhatsApp(template.mensagem)}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center space-x-1"
+                  >
+                    <span>💬</span>
+                    <span>Enviar</span>
+                  </button>
+                </div>
+                <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                  {template.mensagem.replace('[Nome]', cliente.nome)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Usuários do Cliente */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
