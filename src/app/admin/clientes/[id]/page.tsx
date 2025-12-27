@@ -69,23 +69,32 @@ export default function DashboardCliente() {
         ? createClient(dadosCliente.supabase_url, dadosCliente.supabase_anon_key)
         : supabase; // Banco principal
 
-      // MÉTODO 1: Buscar tamanho TOTAL do banco
+      console.log('🔍 Buscando dados do banco...');
+
+      // Buscar tamanho TOTAL do banco
       const { data: totalSizeData, error: totalSizeError } = await clienteSupabase
         .rpc('get_database_total_size');
 
-      if (!totalSizeError && totalSizeData && totalSizeData.length > 0) {
-        setTotalDatabaseSize(totalSizeData[0].total_size_formatted);
-        console.log('✅ Tamanho total do banco:', totalSizeData[0].total_size_formatted);
-      } else {
-        console.log('⚠️ Função get_database_total_size() não encontrada', totalSizeError);
+      if (totalSizeError) {
+        console.error('❌ Erro ao buscar tamanho total:', totalSizeError);
+        throw new Error(`Função get_database_total_size() falhou: ${totalSizeError.message}`);
       }
 
-      // MÉTODO 2: Buscar detalhamento por tabela
+      if (totalSizeData && totalSizeData.length > 0) {
+        setTotalDatabaseSize(totalSizeData[0].total_size_formatted);
+        console.log('✅ Tamanho total do banco:', totalSizeData[0].total_size_formatted);
+      }
+
+      // Buscar detalhamento por tabela
       const { data: tableSizeData, error: rpcError } = await clienteSupabase
         .rpc('get_tables_size');
 
-      if (!rpcError && tableSizeData && tableSizeData.length > 0) {
-        // Sucesso! Usa dados reais do PostgreSQL
+      if (rpcError) {
+        console.error('❌ Erro ao buscar tamanho das tabelas:', rpcError);
+        throw new Error(`Função get_tables_size() falhou: ${rpcError.message}`);
+      }
+
+      if (tableSizeData && tableSizeData.length > 0) {
         const usageInfo = tableSizeData.map((table: any) => {
           const totalSize = parseInt(table.total_size) || 0;
           const rowCount = parseInt(table.row_count) || 0;
@@ -106,63 +115,10 @@ export default function DashboardCliente() {
         });
 
         setUsageData(usageInfo);
-        console.log('✅ Tamanho por tabela obtido via SQL function');
-        return;
+        console.log('✅ Tamanho por tabela obtido com sucesso');
+      } else {
+        setUsageData(null);
       }
-
-      // MÉTODO 3: Fallback - estimativa melhorada
-      console.log('⚠️ Função get_tables_size() não encontrada, usando estimativa');
-      
-      const tables = ['jogadores', 'sessoes', 'fila', 'jogos', 'gols', 'regras', 'fila_snapshot'];
-      const usageInfo = [];
-      let totalEstimatedBytes = 0;
-
-      for (const tableName of tables) {
-        try {
-          const { count, error } = await clienteSupabase
-            .from(tableName)
-            .select('*', { count: 'exact', head: true });
-
-          if (!error && count !== null) {
-            // Estimativa calibrada baseada em testes reais
-            let bytesPerRow = 2048;
-            
-            if (tableName === 'regras') bytesPerRow = 512;
-            else if (tableName === 'jogadores' || tableName === 'sessoes') bytesPerRow = 1536;
-            else if (tableName === 'jogos' || tableName === 'gols') bytesPerRow = 3072;
-            else if (tableName === 'fila' || tableName === 'fila_snapshot') bytesPerRow = 2560;
-            
-            const estimatedBytes = count * bytesPerRow;
-            totalEstimatedBytes += estimatedBytes;
-
-            const size = estimatedBytes > 1024 * 1024
-              ? `${(estimatedBytes / (1024 * 1024)).toFixed(2)} MB`
-              : estimatedBytes > 1024
-              ? `${(estimatedBytes / 1024).toFixed(2)} KB`
-              : `${estimatedBytes} bytes`;
-
-            usageInfo.push({
-              tablename: tableName,
-              size: `${count} reg (~${size})`,
-              size_bytes: estimatedBytes,
-              row_count: count
-            });
-          }
-        } catch (err) {
-          console.log(`Erro ao buscar tabela ${tableName}:`, err);
-        }
-      }
-
-      // Calcular e definir o total estimado
-      if (usageInfo.length > 0) {
-        const totalFormatted = totalEstimatedBytes > 1024 * 1024
-          ? `${(totalEstimatedBytes / (1024 * 1024)).toFixed(2)} MB`
-          : `${(totalEstimatedBytes / 1024).toFixed(2)} KB`;
-        setTotalDatabaseSize(totalFormatted);
-        console.log('✅ Total estimado do banco:', totalFormatted);
-      }
-
-      setUsageData(usageInfo.length > 0 ? usageInfo : null);
     } catch (error: any) {
       console.error('Erro:', error);
       alert(`Erro: ${error.message}`);
