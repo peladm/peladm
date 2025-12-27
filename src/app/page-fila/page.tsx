@@ -24,6 +24,7 @@ interface JogadorFila {
 
 interface Regras {
   jogadores_por_time: number;
+  tempo_partida?: number;
 }
 
 export default function FilaPage() {
