@@ -477,7 +477,27 @@ export default function EstatisticasPage() {
         .eq('pelada_id', peladaId);
 
       if (todosJogadores) {
-        const estatisticasTodosJogadores = [];
+        interface EstatisticasRanking {
+          nome: string;
+          gols: number;
+          vitorias: number;
+          partidas: number;
+          pontuacaoRei: number;
+          mediaGols: number;
+          taxaVitoria: number;
+          presenca: number;
+          regularidade: number;
+          jogosMVP: number;
+          hatTricks: number;
+          golsDecisivos: number;
+          sequenciaSemPerder: number;
+          sequenciaSemVencer: number;
+          jogosRuins: number;
+          jogosSemMarcar: number;
+          [key: string]: string | number; // Index signature para acesso dinâmico
+        }
+
+        const estatisticasTodosJogadores: EstatisticasRanking[] = [];
 
         for (const jogador of todosJogadores) {
           const jogosJogador = jogos.filter(jogo =>
