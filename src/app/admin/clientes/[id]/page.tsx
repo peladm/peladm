@@ -154,8 +154,7 @@ export default function DashboardCliente() {
       const { data, error } = await supabase
         .from('usuarios')
         .select('*')
-        .eq('pelada_id', clienteId)
-        .order('created_at', { ascending: false });
+        .eq('pelada_id', clienteId);
 
       if (error) throw error;
 
