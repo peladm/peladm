@@ -319,8 +319,19 @@ export default function DashboardCliente() {
             </div>
 
             {!cliente.supabase_url || !cliente.supabase_anon_key ? (
-              <div className="text-center py-8 text-gray-500">
-                <p className="text-sm">⚠️ Supabase não configurado</p>
+              <div className="text-center py-8">
+                <div className="text-4xl mb-3">🏢</div>
+                <p className="text-gray-700 font-medium mb-2">Cliente usando banco compartilhado</p>
+                <p className="text-sm text-gray-500 mb-4">
+                  Este cliente usa o banco de dados principal do sistema.<br/>
+                  Para ter banco dedicado, configure as credenciais Supabase.
+                </p>
+                <button
+                  onClick={() => router.push(`/admin/clientes/cadastrar?id=${clienteId}`)}
+                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  ⚙️ Configurar banco dedicado
+                </button>
               </div>
             ) : loadingUsage && !usageData ? (
               <div className="text-center py-8 text-gray-500">
