@@ -629,7 +629,15 @@ export default function SorteioPage() {
       console.log('✅ Fila anterior limpa');
       
       // 5. INSERIR TODOS OS JOGADORES NA FILA (algoritmo correto)
-      const filaInserts = [];
+      interface FilaInsert {
+        pelada_id: string;
+        sessao_id: string;
+        jogador_id: string;
+        status: string;
+        posicao_fila: number;
+      }
+      
+      const filaInserts: FilaInsert[] = [];
       let posicaoAtual = 1;
       
       // 5.1. JOGADORES DOS TIMES SORTEADOS - todos com status 'fila' em ordem sequencial
