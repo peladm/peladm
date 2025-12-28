@@ -9,7 +9,7 @@ interface AdBannerProps {
 }
 
 export default function AdBanner({ position = 'bottom' }: AdBannerProps) {
-  const { possuiPermissao, planoUsuario } = usePermissions();
+  const { possuiPermissao, plano } = usePermissions();
   const pathname = usePathname();
 
   useEffect(() => {
@@ -25,12 +25,12 @@ export default function AdBanner({ position = 'bottom' }: AdBannerProps) {
   }, [possuiPermissao]);
 
   // Premium: não mostrar anúncios
-  if (planoUsuario === 'Premium') {
+  if (plano === 'Premium') {
     return null;
   }
 
   // Gold: não mostrar banner na página de fila
-  if (planoUsuario === 'Gold' && (pathname === '/fila' || pathname === '/page-fila')) {
+  if (plano === 'Gold' && (pathname === '/fila' || pathname === '/page-fila')) {
     return null;
   }
 

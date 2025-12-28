@@ -11,7 +11,7 @@ interface AdInterstitialManager {
 const AD_FREQUENCY_FREE = 4; // FREE: a cada 4 ações
 
 export function useAdInterstitial(): AdInterstitialManager {
-  const { possuiPermissao, planoUsuario } = usePermissions();
+  const { possuiPermissao, plano } = usePermissions();
   const [actionCounter, setActionCounter] = useState(0);
   const [shouldShowInterstitial, setShouldShowInterstitial] = useState(false);
 
@@ -25,12 +25,12 @@ export function useAdInterstitial(): AdInterstitialManager {
 
   const incrementActionCounter = () => {
     // Premium não mostra anúncios
-    if (planoUsuario === 'Premium') {
+    if (plano === 'Premium') {
       return;
     }
 
     // Gold não mostra anúncios de ação (só ao encerrar pelada)
-    if (planoUsuario === 'Gold') {
+    if (plano === 'Gold') {
       return;
     }
 
@@ -52,7 +52,7 @@ export function useAdInterstitial(): AdInterstitialManager {
 
   const showAdOnPeladaEnd = () => {
     // Premium não mostra anúncios
-    if (planoUsuario === 'Premium') {
+    if (plano === 'Premium') {
       return;
     }
 
