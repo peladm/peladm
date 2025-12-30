@@ -28,7 +28,7 @@ interface Regras {
 
 export default function FilaPage() {
   const { possuiPermissao } = usePermissions();
-  const { shouldShowInterstitial, incrementActionCounter, resetInterstitial, showAdOnPeladaEnd, showAdOnPartidaEnd } = useAdInterstitial();
+  const { shouldShowInterstitial, resetInterstitial, showAdOnPeladaEnd, showAdOnPartidaEnd } = useAdInterstitial();
   const [filaCompleta, setFilaCompleta] = useState<JogadorFila[]>([]);
   const [jogadoresJogando, setJogadoresJogando] = useState<JogadorFila[]>([]);
   const [jogadoresFila, setJogadoresFila] = useState<JogadorFila[]>([]);
