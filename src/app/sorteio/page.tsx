@@ -28,7 +28,7 @@ interface Regras {
 
 export default function SorteioPage() {
   const { possuiPermissao } = usePermissions();
-  const { shouldShowInterstitial, incrementActionCounter, resetInterstitial } = useAdInterstitial();
+  const { shouldShowInterstitial, resetInterstitial } = useAdInterstitial();
   const [jogadoresDisponiveis, setJogadoresDisponiveis] = useState<Jogador[]>([]);
   const [jogadoresSelecionados, setJogadoresSelecionados] = useState<string[]>([]);
   const [timesFormados, setTimesFormados] = useState<Time[]>([]);
@@ -708,9 +708,6 @@ export default function SorteioPage() {
       }));
       
       setMessage('✅ Pelada iniciada com sucesso!');
-      
-      // Incrementar contador de ações para anúncios (só para FREE)
-      incrementActionCounter();
       
       // Redirecionar para a fila (única página de fila)
       console.log('🎯 Redirecionando para: /page-fila');
