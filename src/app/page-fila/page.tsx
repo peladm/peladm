@@ -2880,9 +2880,6 @@ export default function FilaPage() {
       
       console.log('✅ Partida finalizada com sucesso!');
 
-      // Incrementar contador de ações para anúncios (apenas FREE)
-      incrementActionCounter();
-
       // === 7. Verificar limites de partidas por plano ===
       const { data: partidasFinalizadas } = await supabase
         .from('jogos')
