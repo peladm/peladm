@@ -5,23 +5,24 @@ import { usePermissions } from '../lib/usePermissions';
 
 interface AdInterstitialProps {
   onClose: () => void;
+  motivo?: 'navegacao' | 'partida' | 'pelada'; // Para logs/analytics
 }
 
-export default function AdInterstitial({ onClose }: AdInterstitialProps) {
-  const { possuiPermissao } = usePermissions();
+export default function AdInterstitial({ onClose, motivo = 'navegacao' }: AdInterstitialProps) {
+  const { plano } = usePermissions();
   const [countdown, setCountdown] = useState(5);
 
   useEffect(() => {
+    console.log(`🎬 Interstitial exibido - Plano: ${plano}, Motivo: ${motivo}`);
+    
     // Carregar anúncio interstitial do AdMob
-    if (!possuiPermissao('removerAnuncios')) {
-      try {
-        // @ts-ignore
-        (window.adsbygoogle = window.adsbygoogle || []).push({});
-      } catch (err) {
-        console.error('Erro ao carregar interstitial:', err);
-      }
+    try {
+      // @ts-ignore
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+    } catch (err) {
+      console.error('Erro ao carregar interstitial:', err);
     }
-  }, [possuiPermissao]);
+  }, []);
 
   useEffect(() => {
     // Countdown para fechar
@@ -31,8 +32,8 @@ export default function AdInterstitial({ onClose }: AdInterstitialProps) {
     }
   }, [countdown]);
 
-  // Não renderizar se o usuário tem permissão para remover anúncios
-  if (possuiPermissao('removerAnuncios')) {
+  // Premium: NUNCA renderizar
+  if (plano === 'Premium') {
     return null;
   }
 

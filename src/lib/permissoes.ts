@@ -127,7 +127,7 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     compartilharWhatsApp: true, // Disponível no Gold
     
     // Anúncios
-    removerAnuncios: true, // Gold sem anúncios
+    removerAnuncios: false, // Gold tem anúncios limitados
     
     // Admin
     gerenciarUsuarios: true,

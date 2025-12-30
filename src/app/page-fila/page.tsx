@@ -5,7 +5,6 @@ import { supabase, validarSenhaPelada } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { useAdInterstitial } from '../../lib/useAdInterstitial';
 import AdInterstitial from '../../components/AdInterstitial';
-import AdBanner from '../../components/AdBanner';
 
 interface Jogador {
   id: string;
@@ -29,7 +28,7 @@ interface Regras {
 
 export default function FilaPage() {
   const { possuiPermissao } = usePermissions();
-  const { shouldShowInterstitial, incrementActionCounter, resetInterstitial, showAdOnPeladaEnd } = useAdInterstitial();
+  const { shouldShowInterstitial, incrementActionCounter, resetInterstitial, showAdOnPeladaEnd, showAdOnPartidaEnd } = useAdInterstitial();
   const [filaCompleta, setFilaCompleta] = useState<JogadorFila[]>([]);
   const [jogadoresJogando, setJogadoresJogando] = useState<JogadorFila[]>([]);
   const [jogadoresFila, setJogadoresFila] = useState<JogadorFila[]>([]);
@@ -2903,6 +2902,9 @@ export default function FilaPage() {
         console.log('⚠️ GOLD: Limite de 15 partidas atingido!');
         setShowModalLimiteFree(true);
       }
+
+      // Mostrar anúncio ao finalizar partida (apenas FREE)
+      showAdOnPartidaEnd();
 
     } catch (error) {
       console.error('❌ Erro ao finalizar partida:', error);
@@ -6024,16 +6026,35 @@ export default function FilaPage() {
 
                 <button
                   onClick={async () => {
-                    // Confirmar - manter mudanças (NÃO apaga snapshot)
-                    setShowResumoMudancasModal(false);
-                    
-                    // Sair do modo edição
-                    setModoEdicao(false);
-                    setMudancasPendentes([]);
-                    setJogadorSelecionadoTroca(null);
-                    await carregarDados();
-                    
-                    console.log('✅ Mudanças mantidas (snapshot preservado para próximo evento)');
+                    try {
+                      console.log('✅ Aplicando mudanças pendentes...', mudancasPendentes);
+                      
+                      // Aplicar todas as mudanças pendentes no banco
+                      for (const mudanca of mudancasPendentes) {
+                        if (mudanca.tipo === 'remover') {
+                          console.log('🗑️ Removendo:', mudanca.jogador.nome);
+                          await removerDaFila(mudanca.jogador, true); // aplicarAgora = true
+                        } else if (mudanca.tipo === 'voltar') {
+                          console.log('⬅️ Voltando para fila:', mudanca.jogador.nome);
+                          await voltarParaFila(mudanca.jogador, true); // aplicarAgora = true
+                        } else if (mudanca.tipo === 'trocar') {
+                          console.log('🔄 Trocando jogadores:', mudanca.jogador1.nome, '↔️', mudanca.jogador2.nome);
+                          // Implementar lógica de trocar se necessário
+                        }
+                      }
+                      
+                      // Fechar modal e limpar
+                      setShowResumoMudancasModal(false);
+                      setModoEdicao(false);
+                      setMudancasPendentes([]);
+                      setJogadorSelecionadoTroca(null);
+                      await carregarDados();
+                      
+                      console.log('✅ Mudanças aplicadas com sucesso!');
+                    } catch (error) {
+                      console.error('❌ Erro ao aplicar mudanças:', error);
+                      alert('Erro ao salvar alterações!');
+                    }
                   }}
                   style={{
                     flex: 1,
@@ -8125,11 +8146,8 @@ export default function FilaPage() {
 
         {/* Anúncio Interstitial (apenas FREE) */}
         {shouldShowInterstitial && (
-          <AdInterstitial onClose={resetInterstitial} />
+          <AdInterstitial onClose={resetInterstitial} motivo="navegacao" />
         )}
-
-        {/* Banner fixo de anúncio (apenas FREE) */}
-        <AdBanner position="bottom" />
       </div>
       
       </>

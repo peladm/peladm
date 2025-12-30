@@ -6,6 +6,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '../lib/supabase';
 import { obterUsuario, temAcessoCompleto, ehVisitante, ehAdmin } from '../lib/verificarAcesso';
 import AdBanner from './AdBanner';
+import AdInterstitial from './AdInterstitial';
+import { useAdInterstitial } from '../lib/useAdInterstitial';
 import { CONTATO } from '../config/contato';
 
 interface LayoutProps {
@@ -19,6 +21,9 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
   const router = useRouter();
   const pathname = usePathname();
   
+  // Hook para gerenciar interstitials
+  const { shouldShowInterstitial, resetInterstitial } = useAdInterstitial();
+  
   // Estado do usuário
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userEmail, setUserEmail] = useState('');
@@ -28,6 +33,15 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
   const [tipoAcesso, setTipoAcesso] = useState<'completo' | 'visitante' | null>(null);
   const [isClient, setIsClient] = useState(false); // Evitar hydration mismatch
   const [isCheckingAuth, setIsCheckingAuth] = useState(true); // Estado de verificação de autenticação
+
+  // Função para normalizar o plano do banco (lowercase) para o formato de exibição (capitalizado)
+  const normalizarPlano = (plano: string): string => {
+    const planoLower = plano?.toLowerCase();
+    if (planoLower === 'premium') return 'Premium';
+    if (planoLower === 'gold') return 'Gold';
+    if (planoLower === 'free') return 'Free';
+    return 'Free'; // fallback
+  };
 
   // Marcar quando estiver no cliente
   useEffect(() => {
@@ -69,7 +83,7 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
         if (ehVisitante()) {
           setUserName('Visitante');
           setUserEmail('');
-          setUserPlan(usuario.plano || 'Free');
+          setUserPlan(normalizarPlano(usuario.plano || 'Free'));
           setClienteData(usuario);
           return;
         }
@@ -86,19 +100,19 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             console.error('Erro ao buscar dados do cliente:', error);
             setUserEmail(usuario.email || '');
             setUserName(usuario.usuario_pelada || usuario.nome);
-            setUserPlan(usuario.plano || 'Free');
+            setUserPlan(normalizarPlano(usuario.plano || 'Free'));
             setClienteData(usuario);
           } else {
             setUserEmail(cliente.email);
             setUserName(usuario.usuario_pelada || cliente.nome);
-            setUserPlan(cliente.plano || 'Free');
+            setUserPlan(normalizarPlano(cliente.plano || 'Free'));
             setClienteData(cliente);
           }
         } catch (err) {
           console.error('Erro na consulta:', err);
           setUserEmail(usuario.email || '');
           setUserName(usuario.usuario_pelada || usuario.nome);
-          setUserPlan(usuario.plano || 'Free');
+          setUserPlan(normalizarPlano(usuario.plano || 'Free'));
           setClienteData(usuario);
         }
       }
@@ -233,12 +247,13 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             <div className="px-6 pb-4">
               <button
                 onClick={() => {
-                  const possuiPermissao = clienteData?.plano === 'premium' || clienteData?.plano === 'gold';
+                  const planoLower = clienteData?.plano?.toLowerCase() || 'free';
+                  const possuiPermissao = planoLower === 'premium' || planoLower === 'gold';
                   if (possuiPermissao) {
                     navigateTo('usuarios');
                     toggleSidebar();
                   } else {
-                    const nomePlano = clienteData?.plano === 'free' ? 'Free' : clienteData?.plano === 'silver' ? 'Silver' : 'Free';
+                    const nomePlano = normalizarPlano(clienteData?.plano || 'free');
                     alert(`👑 Gerenciamento de usuários disponível nos planos Gold e Premium!\n\nPlano atual: ${nomePlano}\n\nFaça upgrade para ter múltiplos usuários!`);
                   }
                 }}
@@ -306,12 +321,12 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
         </header>
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 pb-20 md:pb-8" style={{ paddingBottom: '164px' }}>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 pb-20 md:pb-8" style={{ paddingBottom: userPlan === 'Free' ? '224px' : '164px' }}>
           {children}
         </main>
 
         {/* Footer Mobile */}
-        <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden z-30 safe-area-padding">
+        <footer className="fixed left-0 right-0 bg-white border-t border-gray-200 md:hidden z-30 safe-area-padding" style={{ bottom: userPlan === 'Free' ? '60px' : '0' }}>
           <nav className="flex py-2 px-4" style={{ minHeight: '84px' }}>
             {/* Rodapé varia baseado na página atual */}
             {title === 'Home' || title === 'PeladM' ? (
@@ -552,6 +567,14 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
 
         {/* Banner de Anúncio Fixo (apenas FREE) */}
         <AdBanner position="bottom" />
+        
+        {/* Interstitial de Anúncio (tela cheia) */}
+        {shouldShowInterstitial && (
+          <AdInterstitial 
+            onClose={resetInterstitial}
+            motivo="navegacao"
+          />
+        )}
       </div>
     </>
   );

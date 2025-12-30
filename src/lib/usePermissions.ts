@@ -42,7 +42,15 @@ export function usePermissions(): UsePermissionsReturn {
       if (error || !cliente) {
         setPlano('Free');
       } else {
-        setPlano(cliente.plano as Plano);
+        // Normalizar plano do banco (lowercase) para o formato TypeScript (capitalizado)
+        const planoNormalizado = cliente.plano?.toLowerCase();
+        let planoFinal: Plano = 'Free';
+        
+        if (planoNormalizado === 'premium') planoFinal = 'Premium';
+        else if (planoNormalizado === 'gold') planoFinal = 'Gold';
+        else if (planoNormalizado === 'free') planoFinal = 'Free';
+        
+        setPlano(planoFinal);
       }
     } catch (err) {
       console.error('Erro ao carregar plano:', err);

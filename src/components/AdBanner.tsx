@@ -24,45 +24,44 @@ export default function AdBanner({ position = 'bottom' }: AdBannerProps) {
     }
   }, [possuiPermissao]);
 
-  // Premium: não mostrar anúncios
+  // Premium: SEM anúncios
   if (plano === 'Premium') {
     return null;
   }
 
-  // Gold: não mostrar banner na página de fila
-  if (plano === 'Gold' && (pathname === '/fila' || pathname === '/page-fila')) {
+  // Login: NUNCA mostrar banner
+  if (pathname === '/login' || pathname === '/cadastro-free') {
     return null;
   }
 
-  // Free: mostrar em todas as páginas
+  // Gold: banner APENAS em home, cadastro, sorteio e regras
+  if (plano === 'Gold') {
+    const paginasComBanner = ['/', '/cadastro', '/sorteio', '/regras'];
+    if (!paginasComBanner.includes(pathname)) {
+      return null;
+    }
+  }
+
+  // Free: banner em todas as páginas (exceto login)
 
   return (
     <div
       style={{
         position: 'fixed',
-        [position]: position === 'bottom' ? '0' : '0',
+        bottom: 0, // Totalmente embaixo
         left: 0,
         right: 0,
         height: '60px',
         background: '#f8f9fa',
-        borderTop: position === 'bottom' ? '1px solid #e5e7eb' : 'none',
-        borderBottom: position === 'top' ? '1px solid #e5e7eb' : 'none',
-        zIndex: 25,
+        borderTop: '1px solid #e5e7eb',
+        zIndex: 20, // Abaixo do footer
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         boxShadow: '0 -2px 10px rgba(0,0,0,0.05)'
       }}
     >
-      {/* Banner AdMob 320x50 */}
-      <ins
-        className="adsbygoogle"
-        style={{ display: 'inline-block', width: '320px', height: '50px' }}
-        data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" // Substitua pelo seu ID do AdMob
-        data-ad-slot="1234567890" // Substitua pelo ID do Ad Unit
-      />
-      
-      {/* Placeholder visual para desenvolvimento */}
+      {/* Placeholder visual para desenvolvimento - sempre visível */}
       <div style={{
         width: '320px',
         height: '50px',
@@ -74,10 +73,20 @@ export default function AdBanner({ position = 'bottom' }: AdBannerProps) {
         color: '#fff',
         fontSize: '12px',
         fontWeight: 'bold',
-        border: '2px dashed rgba(255,255,255,0.3)'
+        border: '2px dashed rgba(255,255,255,0.3)',
+        position: 'relative',
+        zIndex: 1
       }}>
-        📢 Anúncio 320x50
+        📢 Anúncio Banner 320x50
       </div>
+
+      {/* Banner AdMob 320x50 - desabilitado em dev */}
+      {/* <ins
+        className="adsbygoogle"
+        style={{ display: 'inline-block', width: '320px', height: '50px', position: 'absolute' }}
+        data-ad-client="ca-pub-1309259002546007"
+        data-ad-slot="1234567890"
+      /> */}
     </div>
   );
 }
