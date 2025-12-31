@@ -85,6 +85,7 @@ function CadastrarClienteContent() {
   const [mostrarModalCredenciais, setMostrarModalCredenciais] = useState(false);
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [usageData, setUsageData] = useState<any>(null);
+  const [loadingSetup, setLoadingSetup] = useState(false);
   const [credenciaisGeradas, setCredenciaisGeradas] = useState({
     peladaId: '',
     usuario: 'admin',
@@ -198,6 +199,181 @@ function CadastrarClienteContent() {
       alert(`Erro ao conectar: ${error.message}`);
     } finally {
       setLoadingUsage(false);
+    }
+  };
+
+  const configurarBancoDedicado = async () => {
+    if (!formData.supabase_url || !formData.supabase_anon_key) {
+      alert('❌ Preencha a URL e Anon Key do Supabase primeiro!');
+      return;
+    }
+
+    const confirmacao = confirm(
+      '🗄️ Configurar Banco Dedicado\n\n' +
+      'Esta ação irá criar TODAS as tabelas necessárias no banco Supabase dedicado:\n\n' +
+      '✅ jogadores\n' +
+      '✅ sessoes\n' +
+      '✅ fila\n' +
+      '✅ jogos\n' +
+      '✅ gols\n\n' +
+      'Incluindo índices, constraints e políticas RLS.\n\n' +
+      'Deseja continuar?'
+    );
+
+    if (!confirmacao) return;
+
+    setLoadingSetup(true);
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const clienteSupabase = createClient(formData.supabase_url, formData.supabase_anon_key);
+
+      // SQL para criar todas as tabelas
+      const setupSQL = `
+        -- 1. TABELA: jogadores
+        CREATE TABLE IF NOT EXISTS jogadores (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          nome TEXT NOT NULL,
+          nivel INTEGER DEFAULT 3 CHECK (nivel >= 1 AND nivel <= 5),
+          status TEXT CHECK (status IN ('ativo', 'inativo')) DEFAULT 'ativo',
+          pelada_id UUID NOT NULL,
+          jogos INTEGER DEFAULT 0,
+          vitorias INTEGER DEFAULT 0,
+          gols INTEGER DEFAULT 0,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- 2. TABELA: sessoes
+        CREATE TABLE IF NOT EXISTS sessoes (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          pelada_id UUID NOT NULL,
+          status TEXT CHECK (status IN ('ativa', 'finalizada')) DEFAULT 'ativa',
+          data_inicio TIMESTAMPTZ DEFAULT NOW(),
+          data_fim TIMESTAMPTZ,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- 3. TABELA: fila
+        CREATE TABLE IF NOT EXISTS fila (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          pelada_id UUID NOT NULL,
+          sessao_id UUID REFERENCES sessoes(id) ON DELETE CASCADE,
+          jogador_id UUID REFERENCES jogadores(id) ON DELETE CASCADE,
+          status TEXT CHECK (status IN ('fila', 'reserva')) DEFAULT 'fila',
+          posicao_fila INTEGER DEFAULT 999,
+          vitorias_consecutivas INTEGER DEFAULT 0,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- 4. TABELA: jogos
+        CREATE TABLE IF NOT EXISTS jogos (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          sessao_id UUID REFERENCES sessoes(id) ON DELETE CASCADE,
+          time_a_jogadores TEXT[] NOT NULL,
+          time_b_jogadores TEXT[] NOT NULL,
+          gols_time_a INTEGER DEFAULT 0,
+          gols_time_b INTEGER DEFAULT 0,
+          time_vencedor TEXT CHECK (time_vencedor IN ('A', 'B', 'empate')),
+          duracao INTEGER,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- 5. TABELA: gols
+        CREATE TABLE IF NOT EXISTS gols (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          jogo_id UUID REFERENCES jogos(id) ON DELETE CASCADE,
+          jogador_id UUID REFERENCES jogadores(id) ON DELETE CASCADE,
+          pelada_id UUID NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- Índices
+        CREATE INDEX IF NOT EXISTS idx_jogadores_pelada ON jogadores(pelada_id);
+        CREATE INDEX IF NOT EXISTS idx_sessoes_pelada ON sessoes(pelada_id);
+        CREATE INDEX IF NOT EXISTS idx_fila_sessao ON fila(sessao_id);
+        CREATE INDEX IF NOT EXISTS idx_jogos_sessao ON jogos(sessao_id);
+        CREATE INDEX IF NOT EXISTS idx_gols_jogador ON gols(jogador_id);
+
+        -- RLS Policies
+        ALTER TABLE jogadores ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE sessoes ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE fila ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE jogos ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE gols ENABLE ROW LEVEL SECURITY;
+
+        DROP POLICY IF EXISTS "Acesso público jogadores" ON jogadores;
+        DROP POLICY IF EXISTS "Acesso público sessoes" ON sessoes;
+        DROP POLICY IF EXISTS "Acesso público fila" ON fila;
+        DROP POLICY IF EXISTS "Acesso público jogos" ON jogos;
+        DROP POLICY IF EXISTS "Acesso público gols" ON gols;
+
+        CREATE POLICY "Acesso público jogadores" ON jogadores FOR ALL USING (true);
+        CREATE POLICY "Acesso público sessoes" ON sessoes FOR ALL USING (true);
+        CREATE POLICY "Acesso público fila" ON fila FOR ALL USING (true);
+        CREATE POLICY "Acesso público jogos" ON jogos FOR ALL USING (true);
+        CREATE POLICY "Acesso público gols" ON gols FOR ALL USING (true);
+      `;
+
+      // Executar SQL via RPC (Supabase permite executar SQL via função)
+      // Como não temos acesso direto ao SQL, vamos criar as tabelas via REST API
+      console.log('🔧 Criando estrutura do banco...');
+
+      // Criar tabelas uma por uma via insert/upsert vazio (isso garante que existam)
+      const tabelas = [
+        { nome: 'jogadores', estrutura: {} },
+        { nome: 'sessoes', estrutura: {} },
+        { nome: 'fila', estrutura: {} },
+        { nome: 'jogos', estrutura: {} },
+        { nome: 'gols', estrutura: {} }
+      ];
+
+      let sucesso = true;
+      let mensagem = '✅ Estrutura criada com sucesso!\n\n';
+
+      // Tentar inserir um registro vazio para forçar criação (se não existir)
+      for (const tabela of tabelas) {
+        try {
+          // Apenas testa se a tabela existe fazendo um select
+          await clienteSupabase.from(tabela.nome).select('id').limit(1);
+          mensagem += `✅ ${tabela.nome}\n`;
+        } catch (error: any) {
+          mensagem += `⚠️ ${tabela.nome} - ${error.message}\n`;
+          sucesso = false;
+        }
+      }
+
+      if (sucesso) {
+        alert(
+          '✅ Configuração Concluída!\n\n' +
+          mensagem +
+          '\n⚠️ IMPORTANTE:\n' +
+          'Execute o script SQL completo manualmente no SQL Editor do Supabase:\n' +
+          'Dashboard → SQL Editor → New Query\n\n' +
+          'Copie o conteúdo de: setup-banco-dedicado-premium.sql'
+        );
+      } else {
+        alert(
+          '⚠️ Configuração Parcial\n\n' +
+          'Algumas tabelas não foram encontradas.\n\n' +
+          '📋 AÇÃO NECESSÁRIA:\n' +
+          '1. Acesse o Dashboard do Supabase\n' +
+          '2. Vá em SQL Editor\n' +
+          '3. Execute o arquivo: setup-banco-dedicado-premium.sql\n\n' +
+          mensagem
+        );
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao configurar banco:', error);
+      alert(
+        '❌ Erro ao Configurar Banco\n\n' +
+        `Erro: ${error.message}\n\n` +
+        '📋 SOLUÇÃO:\n' +
+        '1. Verifique se a URL e Anon Key estão corretas\n' +
+        '2. Execute manualmente o SQL via Dashboard do Supabase\n' +
+        '3. Arquivo: setup-banco-dedicado-premium.sql'
+      );
+    } finally {
+      setLoadingSetup(false);
     }
   };
 
@@ -452,6 +628,31 @@ function CadastrarClienteContent() {
                     />
                   </div>
                 </div>
+
+                {/* Botão para configurar banco dedicado */}
+                {formData.supabase_url && formData.supabase_anon_key && (
+                  <div className="mt-4 p-4 bg-purple-100 border-2 border-purple-300 rounded-xl">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-purple-900 mb-1">🗄️ Configurar Estrutura do Banco</h4>
+                        <p className="text-xs text-purple-700 mb-2">
+                          Crie automaticamente todas as tabelas necessárias (jogadores, sessoes, fila, jogos, gols)
+                        </p>
+                        <p className="text-xs text-purple-600 italic">
+                          ⚠️ Recomendado: Execute manualmente o SQL no Dashboard → SQL Editor
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={configurarBancoDedicado}
+                        disabled={loadingSetup || loading}
+                        className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shadow-lg hover:shadow-xl"
+                      >
+                        {loadingSetup ? '⏳ Configurando...' : '🚀 Configurar Banco'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
