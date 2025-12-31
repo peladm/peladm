@@ -792,13 +792,6 @@ export default function RegrasPage() {
                   <label className="block text-sm font-bold text-gray-800 mb-2">
                     🔄 Modo de Sincronização
                   </label>
-                  <div className="mb-3 text-xs text-gray-600 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="font-medium mb-1">💡 Escolha como deseja sincronizar seus dados:</p>
-                    <ul className="space-y-1 ml-4 mt-2">
-                      <li>• <strong>Tempo Real:</strong> Multi-usuário, sync contínuo (requer internet)</li>
-                      <li>• <strong>Rápido:</strong> Mais veloz, funciona offline, sync ao finalizar</li>
-                    </ul>
-                  </div>
                   <div className="space-y-2">
                     <button
                       type="button"
@@ -809,18 +802,18 @@ export default function RegrasPage() {
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      🔄 Tempo Real (Multi-usuário)
+                      Tempo Real (Multi-usuário)
                     </button>
                     <button
                       type="button"
                       onClick={() => setRegras({ ...regras, modo_sincronizacao: 'local_first' })}
                       className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all ${
                         regras.modo_sincronizacao === 'local_first'
-                          ? 'bg-orange-500 text-white shadow-lg'
+                          ? 'bg-purple-500 text-white shadow-lg'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      ⚡ Rápido (Offline + Sync ao finalizar)
+                      Rápido (Offline + Sync ao finalizar)
                     </button>
                   </div>
                 </div>
