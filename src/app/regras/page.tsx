@@ -15,6 +15,7 @@ interface Regras {
   regra_apos_empate: 'desempate_decide' | 'mesclar_times';
   empate_conta_vitoria: boolean;
   tipo_fila: 'modo_partida' | 'modo_prancheta';
+  modo_sincronizacao?: 'tempo_real' | 'local_first';
 }
 
 export default function RegrasPage() {
@@ -29,7 +30,8 @@ export default function RegrasPage() {
     regra_empate: 'ambos_saem',
     regra_apos_empate: 'desempate_decide',
     empate_conta_vitoria: false,
-    tipo_fila: 'modo_prancheta'
+    tipo_fila: 'modo_prancheta',
+    modo_sincronizacao: 'tempo_real'
   });
   const [activeTab, setActiveTab] = useState<'4x4' | '5x5' | '6x6' | '7x7'>('5x5');
   const [isLoading, setIsLoading] = useState(false);
@@ -107,7 +109,8 @@ export default function RegrasPage() {
           regra_empate: regrasSupabase.regra_empate || 'ambos_saem',
           regra_apos_empate: regrasSupabase.regra_apos_empate || 'desempate_decide',
           empate_conta_vitoria: regrasSupabase.empate_conta_vitoria || false,
-          tipo_fila: tipoFilaAtual as 'modo_partida' | 'modo_prancheta'
+          tipo_fila: tipoFilaAtual as 'modo_partida' | 'modo_prancheta',
+          modo_sincronizacao: regrasSupabase.modo_sincronizacao || 'tempo_real'
         });
         console.log('✅ Regras carregadas do Supabase:', regrasSupabase);
       }
@@ -782,6 +785,46 @@ export default function RegrasPage() {
                   </button>
                 </div>
               </div>
+
+              {/* Modo de Sincronização (Gold/Premium) */}
+              {possuiPermissao('usarSupabase') && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-gray-800 mb-2">
+                    🔄 Modo de Sincronização
+                  </label>
+                  <div className="mb-3 text-xs text-gray-600 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="font-medium mb-1">💡 Escolha como deseja sincronizar seus dados:</p>
+                    <ul className="space-y-1 ml-4 mt-2">
+                      <li>• <strong>Tempo Real:</strong> Multi-usuário, sync contínuo (requer internet)</li>
+                      <li>• <strong>Rápido:</strong> Mais veloz, funciona offline, sync ao finalizar</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setRegras({ ...regras, modo_sincronizacao: 'tempo_real' })}
+                      className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all ${
+                        regras.modo_sincronizacao === 'tempo_real'
+                          ? 'bg-green-500 text-white shadow-lg'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      🔄 Tempo Real (Multi-usuário)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegras({ ...regras, modo_sincronizacao: 'local_first' })}
+                      className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all ${
+                        regras.modo_sincronizacao === 'local_first'
+                          ? 'bg-orange-500 text-white shadow-lg'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      ⚡ Rápido (Offline + Sync ao finalizar)
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Botões de Ação */}
               <div className="flex gap-3 pt-4">
