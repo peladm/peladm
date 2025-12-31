@@ -1,69 +1,86 @@
 // Service Worker para PWA - PelADM
-const CACHE_NAME = 'peladm-v1';
+const APP_VERSION = '2.1.0';
+const CACHE_NAME = `peladm-v${APP_VERSION}`;
 const urlsToCache = [
   '/',
   '/login',
   '/cadastro-free',
-  '/logo.png',
   '/manifest.json'
 ];
 
-// Instalação do Service Worker
+// Instalação do Service Worker - força ativação imediata
 self.addEventListener('install', (event) => {
+  console.log(`[SW] Instalando versão ${APP_VERSION}`);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Cache aberto');
+        console.log('[SW] Cache aberto');
         return cache.addAll(urlsToCache);
+      })
+      .then(() => {
+        // Força o SW a ser ativado imediatamente
+        return self.skipWaiting();
       })
   );
 });
 
-// Ativação do Service Worker
+// Ativação do Service Worker - limpa caches antigos
 self.addEventListener('activate', (event) => {
+  console.log(`[SW] Ativando versão ${APP_VERSION}`);
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            console.log('Removendo cache antigo:', cacheName);
+            console.log('[SW] Removendo cache antigo:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
     })
+    .then(() => {
+      // Força o SW a controlar todas as páginas imediatamente
+      return self.clients.claim();
+    })
+    .then(() => {
+      // Notifica todas as páginas abertas sobre a nova versão
+      return self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+          client.postMessage({
+            type: 'SW_UPDATED',
+            version: APP_VERSION
+          });
+        });
+      });
+    })
   );
 });
 
-// Interceptar requisições
+// Estratégia: Network First (sempre busca da rede primeiro, cache apenas como fallback)
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request)
+    fetch(event.request)
       .then((response) => {
-        // Cache hit - retorna a resposta do cache
-        if (response) {
-          return response;
-        }
+        // Clone da resposta para armazenar no cache
+        const responseToCache = response.clone();
         
-        // Clone da requisição
-        const fetchRequest = event.request.clone();
+        caches.open(CACHE_NAME)
+          .then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
         
-        return fetch(fetchRequest).then((response) => {
-          // Verifica se recebemos uma resposta válida
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
-          
-          // Clone da resposta
-          const responseToCache = response.clone();
-          
-          caches.open(CACHE_NAME)
-            .then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          
-          return response;
-        });
+        return response;
+      })
+      .catch(() => {
+        // Se a rede falhar, tenta buscar do cache
+        return caches.match(event.request);
       })
   );
+});
+
+// Verifica atualizações periodicamente
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });

@@ -1,0 +1,38 @@
+{
+  "version": "2.1.0",
+  "releaseDate": "2025-12-31",
+  "changelog": {
+    "2.1.0": {
+      "date": "31/12/2025",
+      "title": "Sistema de Sincronização Local-First",
+      "features": [
+        "🔄 Novo modo de sincronização: Tempo Real ou Rápido",
+        "⚡ Modo Rápido funciona offline e sincroniza ao finalizar",
+        "💾 Cache local inteligente para melhor performance",
+        "🌐 Detecção automática de status online/offline",
+        "🔄 Sincronização automática quando volta online",
+        "📊 Contador de itens pendentes de sincronização"
+      ],
+      "improvements": [
+        "✨ Padronização visual da página de regras",
+        "🎨 Badges indicadores do modo ativo",
+        "🚀 Melhor performance na gestão da fila"
+      ],
+      "fixes": [
+        "🐛 Correção no jogadoresService para Free",
+        "🔧 Status correto na tabela jogadores",
+        "💾 Limpeza adequada de cache ao finalizar pelada"
+      ]
+    },
+    "2.0.0": {
+      "date": "20/12/2025",
+      "title": "Grande Atualização - Sistema Completo",
+      "features": [
+        "🎲 Sistema de sorteio profissional",
+        "📊 Estatísticas em tempo real",
+        "👥 Gestão avançada de usuários",
+        "💳 Sistema de planos (Free/Gold/Premium)"
+      ]
+    }
+  }
+}

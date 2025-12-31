@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import UpdateNotification from "../components/UpdateNotification";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -59,6 +60,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <UpdateNotification />
         {children}
         <script dangerouslySetInnerHTML={{
           __html: `
@@ -66,10 +68,29 @@ export default function RootLayout({
               window.addEventListener('load', function() {
                 navigator.serviceWorker.register('/sw.js').then(
                   function(registration) {
-                    console.log('SW registered: ', registration);
+                    console.log('[SW] Registrado com sucesso:', registration.scope);
+                    
+                    // Verifica atualizações a cada 30 segundos
+                    setInterval(() => {
+                      registration.update();
+                    }, 30000);
+                    
+                    // Escuta mudanças no Service Worker
+                    registration.addEventListener('updatefound', () => {
+                      const newWorker = registration.installing;
+                      console.log('[SW] Nova versão encontrada!');
+                      
+                      if (newWorker) {
+                        newWorker.addEventListener('statechange', () => {
+                          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            console.log('[SW] Nova versão instalada e pronta!');
+                          }
+                        });
+                      }
+                    });
                   },
                   function(err) {
-                    console.log('SW registration failed: ', err);
+                    console.log('[SW] Falha ao registrar:', err);
                   }
                 );
               });

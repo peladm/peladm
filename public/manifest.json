@@ -2,7 +2,7 @@
   "name": "PelADM - Gerenciador de Peladas",
   "short_name": "PelADM",
   "description": "Sistema completo para gerenciar suas peladas de futebol",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
