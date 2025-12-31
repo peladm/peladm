@@ -11,10 +11,14 @@ export interface SyncQueueItem {
   tipo: 'criar_jogador' | 'atualizar_jogador' | 'excluir_jogador' | 
         'atualizar_fila' | 'inserir_jogo' | 'inserir_gols' | 
         'atualizar_regras' | 'finalizar_sessao';
-  tabela: string;
-  dados: any;
   timestamp: number;
   tentativas: number;
+  // Campos específicos por tipo
+  pelada_id?: string;
+  jogador_id?: string;
+  sessao_id?: string;
+  jogo_id?: string;
+  dados: any;
 }
 
 const SYNC_QUEUE_KEY = 'fila_sincronizacao';
@@ -23,7 +27,7 @@ const MAX_TENTATIVAS = 3;
 /**
  * Adiciona item à fila de sincronização
  */
-export function addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'tentativas' | 'timestamp'>): void {
+export async function addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'tentativas' | 'timestamp'>): Promise<void> {
   const queue = getSyncQueue();
   
   const newItem: SyncQueueItem = {
@@ -40,7 +44,7 @@ export function addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'tentativas' | '
   
   // Tenta sincronizar imediatamente se estiver online
   if (isOnline()) {
-    syncQueue();
+    await syncQueue();
   }
 }
 
@@ -152,68 +156,115 @@ async function syncItem(item: SyncQueueItem): Promise<void> {
 /**
  * Funções de sincronização específicas
  */
-async function syncCriarJogador(dados: any): Promise<void> {
-  const { _tempId, _pendente_sync, ...jogadorData } = dados;
+async function syncCriarJogador(item: SyncQueueItem): Promise<void> {
+  const { pelada_id, dados } = item;
+  const { id, _tempId, _pendente_sync, ...jogadorData } = dados;
+  
+  // Remover id se for local (começa com 'local_')
+  const insertData = id && id.startsWith('local_') 
+    ? { ...jogadorData, pelada_id }
+    : { ...jogadorData, id, pelada_id };
   
   const { error } = await supabase
     .from('jogadores')
-    .insert([jogadorData]);
+    .insert([insertData]);
   
   if (error) throw error;
 }
 
-async function syncAtualizarJogador(dados: any): Promise<void> {
-  const { id, ...updates } = dados;
+async function syncAtualizarJogador(item: SyncQueueItem): Promise<void> {
+  const { jogador_id, dados } = item;
   
-  const { error } = await supabase
-    .from('jogadores')
-    .update(updates)
-    .eq('id', id);
-  
-  if (error) throw error;
-}
-
-async function syncExcluirJogador(dados: any): Promise<void> {
-  const { error } = await supabase
-    .from('jogadores')
-    .delete()
-    .eq('id', dados.id);
-  
-  if (error) throw error;
-}
-
-async function syncInserirJogo(dados: any): Promise<void> {
-  const { error } = await supabase
-    .from('jogos')
-    .insert([dados]);
-  
-  if (error) throw error;
-}
-
-async function syncInserirGols(dados: any): Promise<void> {
-  const { error } = await supabase
-    .from('gols')
-    .insert(dados.gols);
-  
-  if (error) throw error;
-}
-
-async function syncAtualizarFila(dados: any): Promise<void> {
-  // Sync em batch de múltiplos jogadores da fila
-  for (const item of dados.itens) {
+  // Se são incrementos, buscar valores atuais primeiro
+  if (dados.jogos_increment || dados.vitorias_increment || dados.gols_increment) {
+    const { data: jogadorAtual } = await supabase
+      .from('jogadores')
+      .select('jogos, vitorias, gols')
+      .eq('id', jogador_id)
+      .single();
+    
+    const updates = {
+      jogos: (jogadorAtual?.jogos || 0) + (dados.jogos_increment || 0),
+      vitorias: (jogadorAtual?.vitorias || 0) + (dados.vitorias_increment || 0),
+      gols: (jogadorAtual?.gols || 0) + (dados.gols_increment || 0)
+    };
+    
     const { error } = await supabase
-      .from('fila')
-      .upsert(item);
+      .from('jogadores')
+      .update(updates)
+      .eq('id', jogador_id);
+    
+    if (error) throw error;
+  } else {
+    // Atualização normal
+    const { error } = await supabase
+      .from('jogadores')
+      .update(dados)
+      .eq('id', jogador_id);
     
     if (error) throw error;
   }
 }
 
-async function syncFinalizarSessao(dados: any): Promise<void> {
+async function syncExcluirJogador(item: SyncQueueItem): Promise<void> {
+  const { jogador_id } = item;
+  
+  const { error } = await supabase
+    .from('jogadores')
+    .delete()
+    .eq('id', jogador_id);
+  
+  if (error) throw error;
+}
+
+async function syncInserirJogo(item: SyncQueueItem): Promise<void> {
+  const { sessao_id, dados } = item;
+  const { id, ...jogoData } = dados;
+  
+  // Remover id se for local
+  const insertData = id && id.startsWith('local_')
+    ? { ...jogoData, sessao_id }
+    : { ...jogoData, id, sessao_id };
+  
+  const { error } = await supabase
+    .from('jogos')
+    .insert([insertData]);
+  
+  if (error) throw error;
+}
+
+async function syncInserirGols(item: SyncQueueItem): Promise<void> {
+  const { jogo_id, dados } = item;
+  
+  // O jogo_id pode ser local, então precisamos buscar o jogo real
+  // Por enquanto, vamos inserir direto
+  const { error } = await supabase
+    .from('gols')
+    .insert([{ ...dados, jogo_id }]);
+  
+  if (error) throw error;
+}
+
+async function syncAtualizarFila(item: SyncQueueItem): Promise<void> {
+  const { jogador_id, pelada_id, sessao_id, dados } = item;
+  
+  const { error } = await supabase
+    .from('fila')
+    .update(dados)
+    .eq('jogador_id', jogador_id)
+    .eq('pelada_id', pelada_id)
+    .eq('sessao_id', sessao_id);
+  
+  if (error) throw error;
+}
+
+async function syncFinalizarSessao(item: SyncQueueItem): Promise<void> {
+  const { sessao_id, dados } = item;
+  
   const { error } = await supabase
     .from('sessoes')
-    .update({ status: 'encerrada', data_fim: dados.data_fim })
-    .eq('id', dados.sessao_id);
+    .update({ status: 'finalizada', data_fim: dados.data_fim })
+    .eq('id', sessao_id);
   
   if (error) throw error;
 }
