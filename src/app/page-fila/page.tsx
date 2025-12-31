@@ -1037,24 +1037,45 @@ export default function FilaPage() {
   const carregarPorStatus = async (peladaId: string) => {
     console.log('🔄 Carregando por status (fallback)...');
     
-    const { data: jogadoresData, error: jogadoresError } = await supabase
+    // ⚠️ CORREÇÃO: Buscar da tabela FILA, não jogadores!
+    // A tabela jogadores não tem status 'fila'/'jogando'/'reserva'
+    const { data: filaData, error: filaError } = await supabase
+      .from('fila')
+      .select('*')
+      .eq('pelada_id', peladaId);
+    
+    if (filaError) {
+      console.error('💥 Erro no fallback:', filaError);
+      return;
+    }
+    
+    // Buscar dados dos jogadores para enriquecer a lista
+    const { data: jogadoresData } = await supabase
       .from('jogadores')
       .select('*')
       .eq('pelada_id', peladaId);
     
-    if (jogadoresError) {
-      console.error('💥 Erro no fallback:', jogadoresError);
-      return;
-    }
+    const todosJogadores = jogadoresData || [];
+    const fila = filaData || [];
     
-    const jogadores = jogadoresData || [];
-    const jogando = jogadores.filter(j => j.status === 'jogando');
-    const fila = jogadores.filter(j => j.status === 'fila');
+    // Filtrar por status na tabela fila e enriquecer com dados dos jogadores
+    const jogandoItems = fila.filter(item => item.status === 'jogando' || item.posicao_fila <= regras.jogadores_por_time * 2);
+    const filaItems = fila.filter(item => item.status === 'fila');
+    
+    const jogando = jogandoItems.map(item => {
+      const jogador = todosJogadores.find(j => j.id === item.jogador_id);
+      return { ...jogador, ...item };
+    });
+    
+    const filaLista = filaItems.map(item => {
+      const jogador = todosJogadores.find(j => j.id === item.jogador_id);
+      return { ...jogador, ...item };
+    });
     
     setJogadoresJogando(jogando);
-    setJogadoresFila(fila);
+    setJogadoresFila(filaLista);
     
-    console.log(`📊 Fallback: ${jogando.length} jogando, ${fila.length} na fila`);
+    console.log(`📊 Fallback: ${jogando.length} jogando, ${filaLista.length} na fila`);
   };
 
   const iniciarPartida = () => {
@@ -2123,11 +2144,8 @@ export default function FilaPage() {
     
     console.log(`📍 Maior posição: ${maiorPosicao}, adicionando na: ${proximaPosicao}`);
     
-    // Atualizar status na tabela jogadores
-    await supabase
-      .from('jogadores')
-      .update({ status: 'fila' })
-      .eq('id', jogador.id);
+    // ⚠️ NÃO atualizar tabela jogadores - ela deve manter status 'ativo'/'inativo' apenas!
+    // Status 'fila'/'reserva' pertencem APENAS à tabela 'fila'
     
     // IMPORTANTE: Fazer UPDATE em vez de INSERT para evitar duplicação
     const { error: updateError } = await supabase
