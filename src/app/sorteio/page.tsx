@@ -184,7 +184,7 @@ export default function SorteioPage() {
       const jogadoresData = await jogadoresService.buscarAtivos();
       
       // MANTER UUID ORIGINAL - não converter para numérico
-      const jogadoresFormatados = jogadoresData.map((jogador) => ({
+      const jogadoresFormatados = jogadoresData.map((jogador: any) => ({
         id: jogador.id, // UUID original do Supabase
         nome: jogador.nome,
         nivel: jogador.nivel
