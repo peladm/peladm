@@ -140,6 +140,29 @@ CREATE INDEX IF NOT EXISTS idx_gols_jogador ON gols(jogador_id);
 CREATE INDEX IF NOT EXISTS idx_gols_pelada ON gols(pelada_id);
 
 -- ========================================
+
+-- 6. TABELA: fila_snapshot
+-- Armazena snapshots da fila para funcionalidade de desfazer
+CREATE TABLE IF NOT EXISTS fila_snapshot (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pelada_id TEXT NOT NULL,
+  sessao_id UUID NOT NULL REFERENCES sessoes(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL CHECK (tipo IN ('pre_jogo', 'pos_jogo')),
+  snapshot JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE fila_snapshot IS 'Snapshots da fila para funcionalidade de desfazer';
+COMMENT ON COLUMN fila_snapshot.tipo IS 'Tipo do snapshot: pre_jogo (antes de iniciar) ou pos_jogo (depois de finalizar)';
+COMMENT ON COLUMN fila_snapshot.snapshot IS 'JSON com o estado completo da fila naquele momento';
+
+-- Índices para fila_snapshot
+CREATE INDEX IF NOT EXISTS idx_fila_snapshot_sessao ON fila_snapshot(sessao_id);
+CREATE INDEX IF NOT EXISTS idx_fila_snapshot_pelada ON fila_snapshot(pelada_id);
+CREATE INDEX IF NOT EXISTS idx_fila_snapshot_tipo ON fila_snapshot(sessao_id, tipo);
+CREATE INDEX IF NOT EXISTS idx_fila_snapshot_data ON fila_snapshot(created_at DESC);
+
+-- ========================================
 -- POLÍTICAS RLS (Row Level Security)
 -- ========================================
 -- IMPORTANTE: Ajustar conforme sua estratégia de autenticação
@@ -151,6 +174,7 @@ ALTER TABLE sessoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fila ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jogos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gols ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fila_snapshot ENABLE ROW LEVEL SECURITY;
 
 -- Políticas permissivas (ajustar conforme necessidade)
 CREATE POLICY "Acesso público jogadores" ON jogadores FOR ALL USING (true);
@@ -158,6 +182,7 @@ CREATE POLICY "Acesso público sessoes" ON sessoes FOR ALL USING (true);
 CREATE POLICY "Acesso público fila" ON fila FOR ALL USING (true);
 CREATE POLICY "Acesso público jogos" ON jogos FOR ALL USING (true);
 CREATE POLICY "Acesso público gols" ON gols FOR ALL USING (true);
+CREATE POLICY "Acesso público fila_snapshot" ON fila_snapshot FOR ALL USING (true);
 
 -- ========================================
 -- FUNÇÕES E TRIGGERS
@@ -176,33 +201,6 @@ CREATE TRIGGER update_jogadores_updated_at
 BEFORE UPDATE ON jogadores
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
-
--- ========================================
--- VIEWS ÚTEIS (Opcional)
--- ========================================
-
--- View: Estatísticas gerais por jogador
-CREATE OR REPLACE VIEW vw_estatisticas_jogadores AS
-SELECT 
-  j.id,
-  j.nome,
-  j.nivel,
-  j.status,
-  j.jogos,
-  j.vitorias,
-  j.gols,
-  CASE 
-    WHEN j.jogos > 0 THEN ROUND((j.vitorias::numeric / j.jogos::numeric) * 100, 2)
-    ELSE 0 
-  END as percentual_vitorias,
-  CASE 
-    WHEN j.jogos > 0 THEN ROUND(j.gols::numeric / j.jogos::numeric, 2)
-    ELSE 0 
-  END as media_gols
-FROM jogadores j
-WHERE j.status = 'ativo';
-
-COMMENT ON VIEW vw_estatisticas_jogadores IS 'Estatísticas calculadas dos jogadores ativos';
 
 -- ========================================
 -- DADOS INICIAIS (Opcional)
@@ -251,7 +249,24 @@ ORDER BY tablename, indexname;
 -- ✅ ESTRUTURA CRIADA COM SUCESSO!
 -- ========================================
 -- Próximos passos:
--- 1. Copiar supabase_url e supabase_anon_key deste banco
--- 2. Cadastrar no banco PRINCIPAL na tabela 'clientes'
--- 3. Testar aplicação com cliente Premium
--- ========================================
+-- 1. Copiar supabase_url e supabase_anon_key deste banco, 'fila_snapshot')
+ORDER BY tablename;
+
+-- Verificar constraints
+SELECT 
+  tc.table_name,
+  tc.constraint_name,
+  tc.constraint_type
+FROM information_schema.table_constraints tc
+WHERE tc.table_schema = 'public'
+  AND tc.table_name IN ('jogadores', 'sessoes', 'fila', 'jogos', 'gols', 'fila_snapshot')
+ORDER BY tc.table_name, tc.constraint_type;
+
+-- Verificar índices
+SELECT 
+  schemaname,
+  tablename,
+  indexname
+FROM pg_indexes
+WHERE schemaname = 'public'
+  AND tablename IN ('jogadores', 'sessoes', 'fila', 'jogos', 'gols', 'fila_snapshot
