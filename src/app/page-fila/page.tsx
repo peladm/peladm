@@ -1605,6 +1605,38 @@ export default function FilaPage() {
       
       const peladaId = user.id;
       
+      // MODO LOCAL FIRST: Sincronizar tudo antes de finalizar
+      if (modoSincronizacao === 'local_first') {
+        console.log('⚡ Modo local: sincronizando todos os dados antes de finalizar...');
+        setSincronizando(true);
+        
+        try {
+          // Verificar se está online
+          if (!statusOnline) {
+            alert('❌ Você está offline! Conecte-se à internet para finalizar a pelada.');
+            setSincronizando(false);
+            setSenhaEncerramento('');
+            return;
+          }
+          
+          // Sincronizar fila de pendências
+          await syncQueue();
+          
+          // Aguardar um momento para garantir que tudo foi sincronizado
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          console.log('✅ Sincronização completa!');
+        } catch (syncError) {
+          console.error('❌ Erro na sincronização:', syncError);
+          alert('❌ Erro ao sincronizar dados. Tente novamente.');
+          setSincronizando(false);
+          setSenhaEncerramento('');
+          return;
+        } finally {
+          setSincronizando(false);
+        }
+      }
+      
       // Buscar sessão ativa
       const { data: sessaoAtiva } = await supabase
         .from('sessoes')
@@ -1645,6 +1677,14 @@ export default function FilaPage() {
       localStorage.removeItem('partida_em_andamento');
       localStorage.removeItem('cronometro_partida');
       localStorage.removeItem('coresPartida');
+      
+      // Limpar cache local de sincronização (se modo local_first)
+      if (modoSincronizacao === 'local_first' && sessaoAtiva) {
+        console.log('🧹 Limpando cache local do modo local_first...');
+        localStorage.removeItem(`fila_${sessaoAtiva.id}`);
+        localStorage.removeItem(`jogadores_${peladaId}`);
+        localStorage.removeItem('syncQueue');
+      }
       
       // 5. PLANO FREE: Limpar jogadores do localStorage (forçar recadastro na próxima pelada)
       if (plano === 'Free') {
@@ -2492,38 +2532,81 @@ export default function FilaPage() {
       console.log('✅ Usando sessão:', sessao.id);
 
       // 2. SEGUNDO: Cadastrar jogador na tabela jogadores
-      const { data: novoJogador, error: jogadorError } = await supabase
-        .from('jogadores')
-        .insert({
-          nome: novoJogadorNome.trim(),
-          nivel: novoJogadorEstrelas,
-          status: 'ativo',
-          pelada_id: peladaId
-        })
-        .select()
-        .single();
+      // Usar o jogadoresService que já respeita Free/Paid
+      const resultCriar = await jogadoresService.criar({
+        nome: novoJogadorNome.trim(),
+        nivel: novoJogadorEstrelas,
+        status: 'ativo',
+        pelada_id: peladaId
+      });
 
-      if (jogadorError) {
-        console.error('❌ Erro ao cadastrar jogador:', jogadorError);
+      if (!resultCriar.success || !resultCriar.data) {
+        console.error('❌ Erro ao cadastrar jogador');
         alert('Erro ao cadastrar jogador!');
         return;
       }
 
-      // 3. TERCEIRO: Adicionar na fila como reserva (COM sessao_id)
-      const { error: filaError } = await supabase
-        .from('fila')
-        .insert({
+      const novoJogador = resultCriar.data;
+
+      // 3. TERCEIRO: Adicionar na fila como reserva
+      if (modoSincronizacao === 'local_first') {
+        // MODO LOCAL FIRST: Adicionar ao cache local e à fila de sync
+        console.log('⚡ Modo local: adicionando ao cache e agendando sync');
+        
+        const filaLocal = localStorage.getItem(`fila_${sessao.id}`);
+        const fila = filaLocal ? JSON.parse(filaLocal) : [];
+        
+        fila.push({
           jogador_id: novoJogador.id,
           pelada_id: peladaId,
           sessao_id: sessao.id,
           status: 'reserva',
           posicao_fila: 999
         });
+        
+        localStorage.setItem(`fila_${sessao.id}`, JSON.stringify(fila));
+        
+        // Adicionar jogadores ao cache local também
+        const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
+        const jogadores = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
+        jogadores.push(novoJogador);
+        localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
+        
+        // Adicionar à fila de sincronização
+        await addToSyncQueue({
+          tipo: 'criar_jogador',
+          pelada_id: peladaId,
+          dados: novoJogador
+        });
+        
+        await addToSyncQueue({
+          tipo: 'atualizar_fila',
+          jogador_id: novoJogador.id,
+          pelada_id: peladaId,
+          sessao_id: sessao.id,
+          dados: { status: 'reserva', posicao_fila: 999 }
+        });
+        
+        const pendentes = await getSyncQueueCount();
+        setItensPendentesSync(pendentes);
+        
+      } else {
+        // MODO TEMPO REAL: Inserir direto no Supabase
+        const { error: filaError } = await supabase
+          .from('fila')
+          .insert({
+            jogador_id: novoJogador.id,
+            pelada_id: peladaId,
+            sessao_id: sessao.id,
+            status: 'reserva',
+            posicao_fila: 999
+          });
 
-      if (filaError) {
-        console.error('❌ Erro ao adicionar na fila:', filaError);
-        alert('Jogador cadastrado mas erro ao adicionar na fila!');
-        return;
+        if (filaError) {
+          console.error('❌ Erro ao adicionar na fila:', filaError);
+          alert('Jogador cadastrado mas erro ao adicionar na fila!');
+          return;
+        }
       }
 
       // 4. QUARTO: Limpar form e fechar modal
