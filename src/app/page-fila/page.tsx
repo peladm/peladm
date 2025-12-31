@@ -5,6 +5,8 @@ import { supabase, validarSenhaPelada } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { useAdInterstitial } from '../../lib/useAdInterstitial';
 import AdInterstitial from '../../components/AdInterstitial';
+import { getRegrasWithCache, isOnline, onConnectionChange } from '../../lib/cacheService';
+import { addToSyncQueue, syncQueue, getSyncQueueCount } from '../../lib/syncService';
 
 interface Jogador {
   id: string;
@@ -95,6 +97,12 @@ export default function FilaPage() {
   
   // State para modal de resumo de mudanças
   const [showResumoMudancasModal, setShowResumoMudancasModal] = useState(false);
+
+  // States para modo de sincronização
+  const [modoSincronizacao, setModoSincronizacao] = useState<'tempo_real' | 'local_first'>('tempo_real');
+  const [statusOnline, setStatusOnline] = useState(true);
+  const [itensPendentesSync, setItensPendentesSync] = useState(0);
+  const [sincronizando, setSincronizando] = useState(false);
 
   // States para modo partida
   const [modoPartida, setModoPartida] = useState(false);
@@ -722,6 +730,44 @@ export default function FilaPage() {
     }
   }, []);
 
+  // Monitorar status online/offline e sincronizar quando volta online
+  useEffect(() => {
+    setStatusOnline(isOnline());
+    
+    const cleanup = onConnectionChange((online) => {
+      setStatusOnline(online);
+      
+      if (online && modoSincronizacao === 'local_first') {
+        console.log('🌐 Conexão restaurada - iniciando sincronização...');
+        handleSyncQueue();
+      }
+    });
+    
+    return cleanup;
+  }, [modoSincronizacao]);
+
+  // Atualizar contagem de itens pendentes de sync
+  useEffect(() => {
+    if (modoSincronizacao === 'local_first') {
+      const count = getSyncQueueCount();
+      setItensPendentesSync(count);
+    }
+  }, [modoSincronizacao]);
+
+  // Função para sincronizar fila
+  const handleSyncQueue = async () => {
+    setSincronizando(true);
+    try {
+      await syncQueue();
+      setItensPendentesSync(getSyncQueueCount());
+      console.log('✅ Sincronização concluída');
+    } catch (error) {
+      console.error('❌ Erro na sincronização:', error);
+    } finally {
+      setSincronizando(false);
+    }
+  };
+
   // Bloquear/desbloquear scroll do body quando modal abre/fecha
   useEffect(() => {
     if (showManagementModal) {
@@ -754,16 +800,18 @@ export default function FilaPage() {
       const peladaId = user.id;
       const planoUsuario = user.plano || 'free';
       
-      console.log('📋 Carregando fila do Supabase...');
+      console.log('📋 Carregando fila...');
       
-      // 1. CARREGAR REGRAS
-      const { data: regrasData } = await supabase
-        .from('regras')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .single();
+      // 1. CARREGAR REGRAS (com cache se aplicável)
+      const regrasResult = await getRegrasWithCache(peladaId);
+      const regrasData = regrasResult.success ? regrasResult.data : null;
       
       if (regrasData) {
+        // Definir modo de sincronização
+        const modoSync = regrasData.modo_sincronizacao || 'tempo_real';
+        setModoSincronizacao(modoSync);
+        console.log('🔄 Modo de sincronização:', modoSync);
+        
         // Armazenar tipo de modo configurado
         let tipoModo = regrasData.tipo_fila || 'modo_prancheta';
         // Compatibilizar valores antigos
@@ -823,41 +871,70 @@ export default function FilaPage() {
       setSessaoAtual(sessao);
       setPeladaIdAtual(peladaId);
       
-      // 🔧 MIGRAÇÃO: Converter status 'jogando' antigo para 'fila'
-      console.log('🔧 Migrando dados antigos...');
-      await supabase
-        .from('fila')
-        .update({ status: 'fila' })
-        .eq('pelada_id', peladaId)
-        .eq('status', 'jogando');
-      console.log('✅ Migração concluída: jogando → fila');
+      let filaData: any[] = [];
+      let todosJogadores: any[] = [];
       
-      // 3. CARREGAR DA TABELA FILA (sem JOIN - igual Pelada 3)
-      const { data: filaData, error: filaError } = await supabase
-        .from('fila')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('sessao_id', sessao.id)
-        .order('posicao_fila');
+      // Verificar modo de sincronização
+      const modoSync = modoSincronizacao || 'tempo_real';
       
-      if (filaError) {
-        console.error('💥 Erro ao carregar fila:', filaError);
-        await carregarPorStatus(peladaId);
-        return;
-      }
-      
-      console.log('📊 Dados da fila carregados:', filaData);
-      
-      // 3. CARREGAR DADOS DOS JOGADORES SEPARADAMENTE
-      const { data: todosJogadores, error: jogadoresError } = await supabase
-        .from('jogadores')
-        .select('*')
-        .eq('pelada_id', peladaId);
-      
-      if (jogadoresError) {
-        console.error('💥 Erro ao carregar jogadores:', jogadoresError);
-        await carregarPorStatus(peladaId);
-        return;
+      if (modoSync === 'local_first') {
+        // MODO LOCAL FIRST: Carregar do localStorage
+        console.log('⚡ Modo local_first: carregando do cache local');
+        
+        const filaLocal = localStorage.getItem(`fila_${sessao.id}`);
+        const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
+        
+        filaData = filaLocal ? JSON.parse(filaLocal) : [];
+        todosJogadores = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
+        
+        console.log('📊 Dados carregados do cache local');
+      } else {
+        // MODO TEMPO REAL: Carregar do Supabase
+        console.log('🔄 Modo tempo_real: carregando do Supabase');
+        
+        // 🔧 MIGRAÇÃO: Converter status 'jogando' antigo para 'fila'
+        console.log('🔧 Migrando dados antigos...');
+        await supabase
+          .from('fila')
+          .update({ status: 'fila' })
+          .eq('pelada_id', peladaId)
+          .eq('status', 'jogando');
+        console.log('✅ Migração concluída: jogando → fila');
+        
+        // 3. CARREGAR DA TABELA FILA (sem JOIN - igual Pelada 3)
+        const { data: filaSupabase, error: filaError } = await supabase
+          .from('fila')
+          .select('*')
+          .eq('pelada_id', peladaId)
+          .eq('sessao_id', sessao.id)
+          .order('posicao_fila');
+        
+        if (filaError) {
+          console.error('💥 Erro ao carregar fila:', filaError);
+          await carregarPorStatus(peladaId);
+          return;
+        }
+        
+        filaData = filaSupabase || [];
+        console.log('📊 Dados da fila carregados:', filaData);
+        
+        // 3. CARREGAR DADOS DOS JOGADORES SEPARADAMENTE
+        const { data: jogadoresSupabase, error: jogadoresError } = await supabase
+          .from('jogadores')
+          .select('*')
+          .eq('pelada_id', peladaId);
+        
+        if (jogadoresError) {
+          console.error('💥 Erro ao carregar jogadores:', jogadoresError);
+          await carregarPorStatus(peladaId);
+          return;
+        }
+        
+        todosJogadores = jogadoresSupabase || [];
+        
+        // Salvar no cache local para modo local_first
+        localStorage.setItem(`fila_${sessao.id}`, JSON.stringify(filaData));
+        localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(todosJogadores));
       }
       
       // 5. JOGADORES NA FILA (todos com status 'fila')
@@ -1701,35 +1778,98 @@ export default function FilaPage() {
     
     const posicaoRemovida = jogadorRemovido?.posicao_fila;
     
-    // Atualizar APENAS na tabela FILA (status e posição para reserva)
-    await supabase
-      .from('fila')
-      .update({ 
-        status: 'reserva',
-        posicao_fila: 999 
-      })
-      .eq('jogador_id', jogador.id);
-    
-    // Reorganizar posições: todos após a posição removida sobem 1 posição
-    if (posicaoRemovida !== undefined && posicaoRemovida !== null) {
-      const { data: jogadoresParaAtualizar } = await supabase
-        .from('fila')
-        .select('jogador_id, posicao_fila')
-        .eq('pelada_id', peladaId)
-        .eq('sessao_id', sessao.id)
-        .eq('status', 'fila')
-        .gt('posicao_fila', posicaoRemovida)
-        .order('posicao_fila', { ascending: true });
+    if (modoSincronizacao === 'local_first') {
+      // MODO LOCAL FIRST: Atualizar localStorage e adicionar à fila de sync
+      console.log('⚡ Modo local: atualizando cache e agendando sync');
       
-      // Atualizar cada jogador individualmente
-      if (jogadoresParaAtualizar && jogadoresParaAtualizar.length > 0) {
-        for (const jog of jogadoresParaAtualizar) {
-          await supabase
-            .from('fila')
-            .update({ posicao_fila: jog.posicao_fila - 1 })
-            .eq('jogador_id', jog.jogador_id)
-            .eq('pelada_id', peladaId)
-            .eq('sessao_id', sessao.id);
+      const filaLocal = localStorage.getItem(`fila_${sessao.id}`);
+      const fila = filaLocal ? JSON.parse(filaLocal) : [];
+      
+      // Buscar posição do jogador removido
+      const jogadorItem = fila.find((item: any) => item.jogador_id === jogador.id && item.status === 'fila');
+      const posicaoRemovida = jogadorItem?.posicao_fila;
+      
+      // Atualizar status para reserva
+      let filaAtualizada = fila.map((item: any) => 
+        item.jogador_id === jogador.id 
+          ? { ...item, status: 'reserva', posicao_fila: 999 }
+          : item
+      );
+      
+      // Reorganizar posições (subir jogadores após posição removida)
+      if (posicaoRemovida !== undefined) {
+        filaAtualizada = filaAtualizada.map((item: any) => 
+          item.status === 'fila' && item.posicao_fila > posicaoRemovida
+            ? { ...item, posicao_fila: item.posicao_fila - 1 }
+            : item
+        );
+      }
+      
+      localStorage.setItem(`fila_${sessao.id}`, JSON.stringify(filaAtualizada));
+      
+      // Adicionar à fila de sincronização
+      await addToSyncQueue({
+        tipo: 'atualizar_fila',
+        jogador_id: jogador.id,
+        pelada_id: peladaId,
+        sessao_id: sessao.id,
+        dados: { status: 'reserva', posicao_fila: 999 }
+      });
+      
+      // Se houve reorganização, adicionar batch de atualizações
+      if (posicaoRemovida !== undefined) {
+        const jogadoresReorganizados = filaAtualizada.filter(
+          (item: any) => item.status === 'fila' && item.posicao_fila >= posicaoRemovida
+        );
+        
+        for (const item of jogadoresReorganizados) {
+          await addToSyncQueue({
+            tipo: 'atualizar_fila',
+            jogador_id: item.jogador_id,
+            pelada_id: peladaId,
+            sessao_id: sessao.id,
+            dados: { posicao_fila: item.posicao_fila }
+          });
+        }
+      }
+      
+      const pendentes = await getSyncQueueCount();
+      setItensPendentesSync(pendentes);
+      
+    } else {
+      // MODO TEMPO REAL: Atualizar direto no Supabase
+      console.log('🔄 Modo tempo real: atualizando Supabase');
+      
+      // Atualizar APENAS na tabela FILA (status e posição para reserva)
+      await supabase
+        .from('fila')
+        .update({ 
+          status: 'reserva',
+          posicao_fila: 999 
+        })
+        .eq('jogador_id', jogador.id);
+      
+      // Reorganizar posições: todos após a posição removida sobem 1 posição
+      if (posicaoRemovida !== undefined && posicaoRemovida !== null) {
+        const { data: jogadoresParaAtualizar } = await supabase
+          .from('fila')
+          .select('jogador_id, posicao_fila')
+          .eq('pelada_id', peladaId)
+          .eq('sessao_id', sessao.id)
+          .eq('status', 'fila')
+          .gt('posicao_fila', posicaoRemovida)
+          .order('posicao_fila', { ascending: true });
+        
+        // Atualizar cada jogador individualmente
+        if (jogadoresParaAtualizar && jogadoresParaAtualizar.length > 0) {
+          for (const jog of jogadoresParaAtualizar) {
+            await supabase
+              .from('fila')
+              .update({ posicao_fila: jog.posicao_fila - 1 })
+              .eq('jogador_id', jog.jogador_id)
+              .eq('pelada_id', peladaId)
+              .eq('sessao_id', sessao.id);
+          }
         }
       }
     }
@@ -2415,41 +2555,83 @@ export default function FilaPage() {
       const peladaId = peladaIdAtual;
       const sessaoId = sessaoAtual.id;
       
-      // 1. Buscar a MAIOR posição atual na fila da sessão ativa
-      const { data: jogadoresNaFila } = await supabase
-        .from('fila')
-        .select('posicao_fila')
-        .eq('pelada_id', peladaId)
-        .eq('sessao_id', sessaoId)
-        .eq('status', 'fila')
-        .order('posicao_fila', { ascending: false })
-        .limit(1);
-      
-      // Próxima posição = maior posição atual + 1 (ou 1 se não houver ninguém)
-      const maiorPosicao = jogadoresNaFila?.[0]?.posicao_fila || 0;
-      const proximaPosicao = maiorPosicao + 1;
-      
-      console.log(`📍 Maior posição atual: ${maiorPosicao}, próxima: ${proximaPosicao}`);
-      
-      // 2. Atualizar APENAS o registro com status='reserva' para 'fila'
-      const { error: updateError } = await supabase
-        .from('fila')
-        .update({ 
-          status: 'fila',
-          posicao_fila: proximaPosicao
-        })
-        .eq('jogador_id', jogadorId)
-        .eq('pelada_id', peladaId)
-        .eq('sessao_id', sessaoId)
-        .eq('status', 'reserva'); // Filtrar apenas registros de reserva
-      
-      if (updateError) {
-        console.error('❌ Erro ao mover para fila:', updateError);
-        alert('❌ Erro ao adicionar jogador à fila!');
-        return;
+      if (modoSincronizacao === 'local_first') {
+        // MODO LOCAL FIRST: Atualizar localStorage e adicionar à fila de sync
+        console.log('⚡ Modo local: atualizando cache e agendando sync');
+        
+        // Buscar dados locais
+        const filaLocal = localStorage.getItem(`fila_${sessaoId}`);
+        const fila = filaLocal ? JSON.parse(filaLocal) : [];
+        
+        // Buscar maior posição na fila
+        const jogadoresNaFila = fila.filter((item: any) => item.status === 'fila');
+        const maiorPosicao = jogadoresNaFila.reduce((max: number, item: any) => 
+          Math.max(max, item.posicao_fila || 0), 0);
+        const proximaPosicao = maiorPosicao + 1;
+        
+        // Atualizar item local
+        const filaAtualizada = fila.map((item: any) => 
+          item.jogador_id === jogadorId && item.status === 'reserva' 
+            ? { ...item, status: 'fila', posicao_fila: proximaPosicao }
+            : item
+        );
+        
+        localStorage.setItem(`fila_${sessaoId}`, JSON.stringify(filaAtualizada));
+        
+        // Adicionar à fila de sincronização
+        await addToSyncQueue({
+          tipo: 'atualizar_fila',
+          jogador_id: jogadorId,
+          pelada_id: peladaId,
+          sessao_id: sessaoId,
+          dados: { status: 'fila', posicao_fila: proximaPosicao }
+        });
+        
+        // Atualizar contador
+        const pendentes = await getSyncQueueCount();
+        setItensPendentesSync(pendentes);
+        
+        console.log(`✅ Jogador movido localmente para posição ${proximaPosicao}`);
+      } else {
+        // MODO TEMPO REAL: Atualizar direto no Supabase
+        console.log('🔄 Modo tempo real: atualizando Supabase');
+        
+        // 1. Buscar a MAIOR posição atual na fila da sessão ativa
+        const { data: jogadoresNaFila } = await supabase
+          .from('fila')
+          .select('posicao_fila')
+          .eq('pelada_id', peladaId)
+          .eq('sessao_id', sessaoId)
+          .eq('status', 'fila')
+          .order('posicao_fila', { ascending: false })
+          .limit(1);
+        
+        // Próxima posição = maior posição atual + 1 (ou 1 se não houver ninguém)
+        const maiorPosicao = jogadoresNaFila?.[0]?.posicao_fila || 0;
+        const proximaPosicao = maiorPosicao + 1;
+        
+        console.log(`📍 Maior posição atual: ${maiorPosicao}, próxima: ${proximaPosicao}`);
+        
+        // 2. Atualizar APENAS o registro com status='reserva' para 'fila'
+        const { error: updateError } = await supabase
+          .from('fila')
+          .update({ 
+            status: 'fila',
+            posicao_fila: proximaPosicao
+          })
+          .eq('jogador_id', jogadorId)
+          .eq('pelada_id', peladaId)
+          .eq('sessao_id', sessaoId)
+          .eq('status', 'reserva'); // Filtrar apenas registros de reserva
+        
+        if (updateError) {
+          console.error('❌ Erro ao mover para fila:', updateError);
+          alert('❌ Erro ao adicionar jogador à fila!');
+          return;
+        }
+        
+        console.log(`✅ Jogador movido para fila na posição ${proximaPosicao}`);
       }
-      
-      console.log(`✅ Jogador movido para fila na posição ${proximaPosicao}`);
       
       // 3. Recarregar dados
       await carregarDados();
@@ -3385,6 +3567,42 @@ export default function FilaPage() {
               )}
               <div className="status-info">
                 {formatarData()} • <span style={{color: '#dc3545'}}>{jogadoresJogando.length + jogadoresFila.length} jogadores</span>
+                
+                {/* Badge do Modo de Sincronização */}
+                {modoSincronizacao && (
+                  <span style={{
+                    marginLeft: '12px',
+                    padding: '4px 12px',
+                    borderRadius: '12px',
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    background: modoSincronizacao === 'local_first' 
+                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                      : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                    color: '#fff',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                  }}>
+                    {modoSincronizacao === 'local_first' ? '⚡ Modo Rápido' : '🔄 Tempo Real'}
+                    {!statusOnline && modoSincronizacao === 'local_first' && (
+                      <span style={{ fontSize: '0.7rem' }}>• Offline</span>
+                    )}
+                    {itensPendentesSync > 0 && (
+                      <span style={{
+                        background: '#fff',
+                        color: '#000',
+                        borderRadius: '10px',
+                        padding: '2px 6px',
+                        fontSize: '0.7rem',
+                        fontWeight: '700'
+                      }}>
+                        {itensPendentesSync}
+                      </span>
+                    )}
+                  </span>
+                )}
               </div>
           </div>
             {jogadorSelecionadoTroca && (
@@ -8140,6 +8358,55 @@ export default function FilaPage() {
         {/* Anúncio Interstitial (apenas FREE) */}
         {shouldShowInterstitial && (
           <AdInterstitial onClose={resetInterstitial} motivo="navegacao" />
+        )}
+        
+        {/* Botão de Sincronização Manual (Modo Local First) */}
+        {modoSincronizacao === 'local_first' && itensPendentesSync > 0 && statusOnline && (
+          <button
+            onClick={handleSyncQueue}
+            disabled={sincronizando}
+            style={{
+              position: 'fixed',
+              bottom: '80px',
+              right: '20px',
+              background: sincronizando 
+                ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 100%)'
+                : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '50px',
+              padding: '14px 24px',
+              fontSize: '0.9rem',
+              fontWeight: '700',
+              cursor: sincronizando ? 'not-allowed' : 'pointer',
+              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)',
+              zIndex: 1000,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.3s ease',
+              animation: sincronizando ? 'none' : 'pulse 2s infinite'
+            }}
+            onMouseEnter={(e) => {
+              if (!sincronizando) {
+                e.currentTarget.style.transform = 'scale(1.05)';
+                e.currentTarget.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.5)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!sincronizando) {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
+              }
+            }}
+          >
+            <span style={{ fontSize: '1.2rem' }}>
+              {sincronizando ? '⏳' : '🔄'}
+            </span>
+            <span>
+              {sincronizando ? 'Sincronizando...' : `Sincronizar (${itensPendentesSync})`}
+            </span>
+          </button>
         )}
       </div>
       
