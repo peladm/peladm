@@ -192,7 +192,7 @@ export default function SorteioPage() {
 
       setJogadoresDisponiveis(jogadoresFormatados);
       console.log(`✅ ${jogadoresFormatados.length} jogadores ativos carregados para sorteio`);
-      console.log('🔍 Primeiros jogadores:', jogadoresFormatados.slice(0, 3).map(j => `${j.nome} (${j.id})`));
+      console.log('🔍 Primeiros jogadores:', jogadoresFormatados.slice(0, 3).map((j: any) => `${j.nome} (${j.id})`));
 
       if (jogadoresFormatados.length === 0) {
         mostrarMensagem('⚠️ Nenhum jogador ativo cadastrado ainda para sorteio', 5000);
