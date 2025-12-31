@@ -3015,9 +3015,14 @@ export default function FilaPage() {
       }
       
       // === 1. SALVAR JOGO NA TABELA jogos ===
-      const { data: novoJogo, error: erroJogo } = await supabase
-        .from('jogos')
-        .insert({
+      let jogoId: string;
+      
+      if (modoSincronizacao === 'local_first') {
+        // MODO LOCAL FIRST: Gerar ID local e adicionar à fila de sync
+        jogoId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        const dadosJogo = {
+          id: jogoId,
           sessao_id: sessaoId,
           time_a: time1.map((j) => j.id),
           time_b: time2.map((j) => j.id),
@@ -3026,15 +3031,41 @@ export default function FilaPage() {
           status: 'finalizado',
           data_inicio: new Date().toISOString(),
           data_fim: new Date().toISOString(),
-          time_vencedor: timeVencedor // Será null em empate
-        })
-        .select()
-        .single();
-      
-      if (erroJogo || !novoJogo) {
-        console.error('Erro ao salvar jogo:', erroJogo);
-        alert('❌ Erro ao finalizar partida!');
-        return;
+          time_vencedor: timeVencedor
+        };
+        
+        await addToSyncQueue({
+          tipo: 'inserir_jogo',
+          sessao_id: sessaoId,
+          dados: dadosJogo
+        });
+        
+        console.log('⚡ Jogo adicionado à fila de sync local');
+      } else {
+        // MODO TEMPO REAL: Inserir direto no Supabase
+        const { data: novoJogo, error: erroJogo } = await supabase
+          .from('jogos')
+          .insert({
+            sessao_id: sessaoId,
+            time_a: time1.map((j) => j.id),
+            time_b: time2.map((j) => j.id),
+            placar_a: placarTimeA,
+            placar_b: placarTimeB,
+            status: 'finalizado',
+            data_inicio: new Date().toISOString(),
+            data_fim: new Date().toISOString(),
+            time_vencedor: timeVencedor
+          })
+          .select()
+          .single();
+        
+        if (erroJogo || !novoJogo) {
+          console.error('Erro ao salvar jogo:', erroJogo);
+          alert('❌ Erro ao finalizar partida!');
+          return;
+        }
+        
+        jogoId = novoJogo.id;
       }
       
       // === 2. SALVAR GOLS NA TABELA gols ===
@@ -3042,7 +3073,7 @@ export default function FilaPage() {
       
       if (historicoAcoes && historicoAcoes.length > 0) {
         const golsParaSalvar = historicoAcoes.map((gol) => ({
-          jogo_id: novoJogo.id,
+          jogo_id: jogoId,
           jogador_id: gol.jogadorId,
           time: gol.time,
           created_at: new Date().toISOString()
@@ -3050,14 +3081,27 @@ export default function FilaPage() {
         
         console.log('💾 Gols para salvar:', golsParaSalvar);
         
-        const { error: erroGols } = await supabase
-          .from('gols')
-          .insert(golsParaSalvar);
-        
-        if (erroGols) {
-          console.error('Erro ao salvar gols:', erroGols);
+        if (modoSincronizacao === 'local_first') {
+          // MODO LOCAL FIRST: Adicionar gols à fila de sync
+          for (const gol of golsParaSalvar) {
+            await addToSyncQueue({
+              tipo: 'inserir_gols',
+              jogo_id: jogoId,
+              dados: gol
+            });
+          }
+          console.log('⚡ Gols adicionados à fila de sync local');
         } else {
-          console.log('✅ Gols salvos com sucesso!');
+          // MODO TEMPO REAL: Inserir direto no Supabase
+          const { error: erroGols } = await supabase
+            .from('gols')
+            .insert(golsParaSalvar);
+          
+          if (erroGols) {
+            console.error('Erro ao salvar gols:', erroGols);
+          } else {
+            console.log('✅ Gols salvos com sucesso!');
+          }
         }
       } else {
         console.log('⚠️ Nenhum gol para salvar');
@@ -3093,22 +3137,49 @@ export default function FilaPage() {
         
         console.log(`👤 ${jogador.nome}: time=${timeJogador}, venceu estatística=${venceu}`);
         
-        // Buscar estatísticas atuais
-        const { data: jogadorAtual } = await supabase
-          .from('jogadores')
-          .select('jogos, vitorias, gols')
-          .eq('id', jogador.id)
-          .single();
-        
-        // Atualizar estatísticas
-        await supabase
-          .from('jogadores')
-          .update({
-            jogos: (jogadorAtual?.jogos || 0) + 1,
-            vitorias: (jogadorAtual?.vitorias || 0) + (venceu ? 1 : 0),
-            gols: (jogadorAtual?.gols || 0) + golsJogador
-          })
-          .eq('id', jogador.id);
+        if (modoSincronizacao === 'local_first') {
+          // MODO LOCAL FIRST: Atualizar cache local e adicionar à fila de sync
+          const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
+          const jogadores = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
+          
+          const jogadorLocal = jogadores.find((j: any) => j.id === jogador.id);
+          if (jogadorLocal) {
+            jogadorLocal.jogos = (jogadorLocal.jogos || 0) + 1;
+            jogadorLocal.vitorias = (jogadorLocal.vitorias || 0) + (venceu ? 1 : 0);
+            jogadorLocal.gols = (jogadorLocal.gols || 0) + golsJogador;
+            localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
+          }
+          
+          // Adicionar à fila de sync
+          await addToSyncQueue({
+            tipo: 'atualizar_jogador',
+            jogador_id: jogador.id,
+            pelada_id: peladaId,
+            dados: {
+              jogos_increment: 1,
+              vitorias_increment: venceu ? 1 : 0,
+              gols_increment: golsJogador
+            }
+          });
+        } else {
+          // MODO TEMPO REAL: Atualizar direto no Supabase
+          // Buscar estatísticas atuais
+          const { data: jogadorAtual } = await supabase
+            .from('jogadores')
+            .select('jogos, vitorias, gols')
+            .eq('id', jogador.id)
+            .single();
+          
+          // Atualizar estatísticas
+          await supabase
+            .from('jogadores')
+            .update({
+              jogos: (jogadorAtual?.jogos || 0) + 1,
+              vitorias: (jogadorAtual?.vitorias || 0) + (venceu ? 1 : 0),
+              gols: (jogadorAtual?.gols || 0) + golsJogador
+            })
+            .eq('id', jogador.id);
+        }
       }
       
       // === 4. ROTACIONAR FILA ===
@@ -3120,6 +3191,13 @@ export default function FilaPage() {
       console.log('🔍 Verificação empate_retorno:', regrasEmpate.empate_retorno);
       await rotacionarFila(peladaId, sessaoId, timeVencedor, timeEscolhidoDesempate);
       console.log('✅ Rotação concluída!');
+      
+      // Atualizar contador de sync se modo local_first
+      if (modoSincronizacao === 'local_first') {
+        const pendentes = await getSyncQueueCount();
+        setItensPendentesSync(pendentes);
+        console.log(`⚡ ${pendentes} itens pendentes de sincronização`);
+      }
       
       // === 5. FECHAR MODAL E RESETAR MODO PARTIDA ===
       setShowModalFinalizacao(false);
