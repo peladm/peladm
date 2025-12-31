@@ -147,16 +147,20 @@ export default function DashboardCliente() {
   const carregarUsuarios = async () => {
     setLoadingUsuarios(true);
     try {
+      console.log('🔍 Buscando usuários para pelada_id:', clienteId);
+      
       const { data, error } = await supabase
         .from('usuarios')
         .select('*')
         .eq('pelada_id', clienteId);
 
+      console.log('📦 Resultado da busca:', { data, error });
+
       if (error) throw error;
 
       setUsuarios(data || []);
     } catch (error) {
-      console.error('Erro ao carregar usuários:', error);
+      console.error('❌ Erro ao carregar usuários:', error);
       setUsuarios([]);
     } finally {
       setLoadingUsuarios(false);
@@ -623,6 +627,64 @@ export default function DashboardCliente() {
                   <span>Confirmar Pagamento?</span>
                 </button>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Usuários Cadastrados */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center space-x-2">
+              <span>👥</span>
+              <span>Usuários Cadastrados</span>
+            </h2>
+            <button
+              onClick={carregarUsuarios}
+              disabled={loadingUsuarios}
+              className="text-2xl hover:scale-110 disabled:opacity-50 transition-all"
+              title="Atualizar lista"
+            >
+              {loadingUsuarios ? '⏳' : '🔄'}
+            </button>
+          </div>
+
+          {loadingUsuarios ? (
+            <div className="text-center py-8 text-gray-500">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-2"></div>
+              <p className="text-sm">Carregando usuários...</p>
+            </div>
+          ) : usuarios.length > 0 ? (
+            <div className="space-y-3">
+              {usuarios.map((usuario: any) => (
+                <div key={usuario.id} className="bg-white border border-gray-200 rounded p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-sm font-mono mb-1">
+                        <span className="font-semibold text-gray-700">Usuário:</span> {usuario.username || usuario.usuario_pelada}
+                      </p>
+                      <p className="text-sm font-mono">
+                        <span className="font-semibold text-gray-700">Senha:</span> {usuario.senha || usuario.senha_pelada}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const user = usuario.username || usuario.usuario_pelada;
+                        const pass = usuario.senha || usuario.senha_pelada;
+                        navigator.clipboard.writeText(`Usuário: ${user}\nSenha: ${pass}`);
+                        alert('✅ Credenciais copiadas!');
+                      }}
+                      className="ml-4 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-semibold transition-colors"
+                      title="Copiar credenciais"
+                    >
+                      📋 Copiar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <p className="text-sm">⚠️ Nenhum usuário encontrado</p>
             </div>
           )}
         </div>

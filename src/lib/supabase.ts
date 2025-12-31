@@ -93,6 +93,18 @@ const getPeladaId = (): string | null => {
   return null;
 };
 
+// Função para verificar se o plano é Free
+const isPlanoFree = (): boolean => {
+  if (typeof window !== 'undefined') {
+    const user = localStorage.getItem('user');
+    if (user) {
+      const userData = JSON.parse(user);
+      return userData.plano === 'Free';
+    }
+  }
+  return false;
+};
+
 // Função centralizada para validar senha da pelada
 export const validarSenhaPelada = async (senhaDigitada: string): Promise<boolean> => {
   if (typeof window === 'undefined') return false;
@@ -123,7 +135,7 @@ export const validarSenhaPelada = async (senhaDigitada: string): Promise<boolean
   }
 };
 
-// Funções de interação com a tabela jogadores (usa banco dedicado se Premium)
+// Funções de interação com a tabela jogadores (usa localStorage se Free, Supabase se Gold/Premium)
 export const jogadoresService = {
   // Buscar todos os jogadores
   async buscarTodos() {
@@ -132,6 +144,18 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
+    // Se for Free, buscar do localStorage
+    if (isPlanoFree()) {
+      const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
+      if (!jogadoresStr) return [];
+      try {
+        return JSON.parse(jogadoresStr);
+      } catch {
+        return [];
+      }
+    }
+    
+    // Gold/Premium: buscar do Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { data, error } = await clienteDb
@@ -155,6 +179,24 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
+    // Se for Free, salvar no localStorage
+    if (isPlanoFree()) {
+      const jogadores = await this.buscarTodos();
+      const novoJogador: Jogador = {
+        id: `jogador_${Date.now()}_${Math.random()}`,
+        nome: nome.trim(),
+        nivel,
+        status: 'ativo',
+        pelada_id: peladaId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      jogadores.push(novoJogador);
+      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
+      return novoJogador;
+    }
+    
+    // Gold/Premium: salvar no Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { data, error } = await clienteDb
@@ -185,6 +227,23 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
+    // Se for Free, atualizar no localStorage
+    if (isPlanoFree()) {
+      const jogadores = await this.buscarTodos();
+      const index = jogadores.findIndex((j: Jogador) => j.id === id);
+      if (index === -1) throw new Error('Jogador não encontrado');
+      
+      jogadores[index] = {
+        ...jogadores[index],
+        nome: nome.trim(),
+        nivel,
+        updated_at: new Date().toISOString()
+      };
+      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
+      return jogadores[index];
+    }
+    
+    // Gold/Premium: atualizar no Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { data, error } = await clienteDb
@@ -214,6 +273,22 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
+    // Se for Free, atualizar no localStorage
+    if (isPlanoFree()) {
+      const jogadores = await this.buscarTodos();
+      const index = jogadores.findIndex((j: Jogador) => j.id === id);
+      if (index === -1) throw new Error('Jogador não encontrado');
+      
+      jogadores[index] = {
+        ...jogadores[index],
+        status,
+        updated_at: new Date().toISOString()
+      };
+      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
+      return jogadores[index];
+    }
+    
+    // Gold/Premium: atualizar no Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { data, error } = await clienteDb
@@ -242,6 +317,15 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
+    // Se for Free, excluir do localStorage
+    if (isPlanoFree()) {
+      const jogadores = await this.buscarTodos();
+      const jogadoresFiltrados = jogadores.filter((j: Jogador) => j.id !== id);
+      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresFiltrados));
+      return true;
+    }
+    
+    // Gold/Premium: excluir do Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { error } = await clienteDb
@@ -265,6 +349,13 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
+    // Se for Free, filtrar do localStorage
+    if (isPlanoFree()) {
+      const jogadores = await this.buscarTodos();
+      return jogadores.filter((j: Jogador) => j.status === 'ativo');
+    }
+    
+    // Gold/Premium: buscar do Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { data, error } = await clienteDb

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
 import { supabase } from '../../lib/supabase';
+import { usePermissions } from '../../lib/usePermissions';
 
 interface Usuario {
   id: string;
@@ -18,10 +19,10 @@ export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [username, setUsername] = useState('');
   const [senha, setSenha] = useState('');
-  const [role, setRole] = useState<'admin' | 'organizer' | ''>('');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const { plano, permissoes } = usePermissions();
 
   useEffect(() => {
     carregarUsuarios();
@@ -66,7 +67,7 @@ export default function UsuariosPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!username.trim() || !senha.trim() || !role) {
+    if (!username.trim() || !senha.trim()) {
       mostrarMensagem('❌ Por favor, preencha todos os campos', 'error');
       return;
     }
@@ -81,6 +82,14 @@ export default function UsuariosPage() {
       return;
     }
     
+    // Verificar limite de usuários para plano Free (não pode criar novos)
+    if (!editandoId && plano === 'Free' && permissoes.limiteUsuarios !== null) {
+      if (usuarios.length >= permissoes.limiteUsuarios) {
+        mostrarMensagem('❌ Plano Free não permite cadastrar usuários adicionais. Faça upgrade para Gold ou Premium!', 'error');
+        return;
+      }
+    }
+    
     setIsLoading(true);
     
     try {
@@ -91,10 +100,19 @@ export default function UsuariosPage() {
       const user = JSON.parse(userData);
       const peladaId = user.id;
       
+      // Se está editando, manter o role original; senão, sempre criar como organizer
+      let roleUsuario: 'admin' | 'organizer' = 'organizer';
+      if (editandoId) {
+        const usuarioExistente = usuarios.find(u => u.id === editandoId);
+        if (usuarioExistente) {
+          roleUsuario = usuarioExistente.role;
+        }
+      }
+      
       const dadosUsuario = {
         username: username.trim(),
         senha: senha.trim(),
-        role: role as 'admin' | 'organizer',
+        role: roleUsuario,
         pelada_id: peladaId
       };
       
@@ -118,13 +136,18 @@ export default function UsuariosPage() {
       }
       
       // Limpar formulário
+      setEditandoId(null);
       setUsername('');
       setSenha('');
-      setRole('');
-      setEditandoId(null);
       
       // Recarregar lista
       await carregarUsuarios();
+      
+      // Forçar limpeza dos campos
+      setTimeout(() => {
+        setUsername('');
+        setSenha('');
+      }, 100);
       
     } catch (error: any) {
       console.error('💥 Erro ao salvar usuário:', error);
@@ -144,7 +167,6 @@ export default function UsuariosPage() {
     if (usuario) {
       setUsername(usuario.username);
       setSenha(usuario.senha);
-      setRole(usuario.role);
       setEditandoId(id);
       mostrarMensagem('✏️ Modo edição ativado');
       
@@ -182,10 +204,14 @@ export default function UsuariosPage() {
   };
 
   const cancelarEdicao = () => {
+    setEditandoId(null);
     setUsername('');
     setSenha('');
-    setRole('');
-    setEditandoId(null);
+    // Forçar limpeza dos campos
+    setTimeout(() => {
+      setUsername('');
+      setSenha('');
+    }, 0);
   };
 
   const getRoleDisplayName = (role: string) => {
@@ -216,38 +242,31 @@ export default function UsuariosPage() {
         <section className="bg-white border-2 border-gray-100 rounded-2xl p-6 mb-5 shadow-lg">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2 text-center">
+                Nome do Usuário
+              </label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Nome de usuário"
+                placeholder="Digite o nome de usuário"
                 className="w-full py-4 px-5 border-2 border-gray-100 rounded-2xl text-lg text-center bg-gray-50 focus:border-green-600 focus:bg-white transition-all duration-200"
                 required
               />
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2 text-center">
+                Senha
+              </label>
               <input
                 type="password"
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
-                placeholder="Senha"
+                placeholder="Digite a senha"
                 className="w-full py-4 px-5 border-2 border-gray-100 rounded-2xl text-lg text-center bg-gray-50 focus:border-green-600 focus:bg-white transition-all duration-200"
                 required
               />
-            </div>
-
-            <div>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as 'admin' | 'organizer' | '')}
-                className="w-full py-4 px-5 border-2 border-gray-100 rounded-2xl text-lg text-center bg-gray-50 focus:border-green-600 focus:bg-white transition-all duration-200"
-                required
-              >
-                <option value="">Selecione o tipo...</option>
-                <option value="admin">🔧 Administrador</option>
-                <option value="organizer">📋 Organizador</option>
-              </select>
             </div>
 
             <div className="flex gap-2">
@@ -285,31 +304,43 @@ export default function UsuariosPage() {
               </div>
             ) : (
               usuarios.map((usuario) => (
-                <div key={usuario.id} className="flex items-center justify-between p-4 mb-3 bg-gray-50 rounded-2xl border border-gray-200">
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-800 mb-1">@{usuario.username}</div>
-                    <div className={`text-sm px-2 py-1 rounded-lg inline-block ${
-                      usuario.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {getRoleDisplayName(usuario.role)}
+                <div key={usuario.id} className="p-3 mb-2 bg-gray-50 rounded-xl border border-gray-200">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 space-y-1">
+                      <div className="text-sm">
+                        <span className="text-gray-500">Usuário: </span>
+                        <span className="font-medium text-gray-800">{usuario.username}</span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-gray-500">Senha: </span>
+                        <span className="font-medium text-gray-800">{usuario.senha}</span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-gray-500">Tipo: </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-lg ${
+                          usuario.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {getRoleDisplayName(usuario.role)}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => editarUsuario(usuario.id)}
-                      className="p-2 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors duration-200"
-                      title="Editar usuário"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => excluirUsuario(usuario.id)}
-                      className="p-2 rounded-lg bg-red-50 hover:bg-red-100 transition-colors duration-200"
-                      title="Excluir usuário"
-                    >
-                      🗑️
-                    </button>
+                    
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => editarUsuario(usuario.id)}
+                        className="p-2 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors duration-200"
+                        title="Editar usuário"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => excluirUsuario(usuario.id)}
+                        className="p-2 rounded-lg bg-red-50 hover:bg-red-100 transition-colors duration-200"
+                        title="Excluir usuário"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))

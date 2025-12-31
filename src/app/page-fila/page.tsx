@@ -27,7 +27,7 @@ interface Regras {
 }
 
 export default function FilaPage() {
-  const { possuiPermissao } = usePermissions();
+  const { possuiPermissao, plano } = usePermissions();
   const { shouldShowInterstitial, resetInterstitial, showAdOnPeladaEnd, showAdOnPartidaEnd } = useAdInterstitial();
   const [filaCompleta, setFilaCompleta] = useState<JogadorFila[]>([]);
   const [jogadoresJogando, setJogadoresJogando] = useState<JogadorFila[]>([]);
@@ -1569,28 +1569,26 @@ export default function FilaPage() {
       localStorage.removeItem('cronometro_partida');
       localStorage.removeItem('coresPartida');
       
-      // 5. PLANO FREE: Limpar TODO o localStorage (forçar recadastro)
-      if (!possuiPermissao('usarSupabase')) {
-        console.log('🧹 FREE: Limpando TODO o localStorage...');
-        // Limpar TUDO relacionado ao app
+      // 5. PLANO FREE: Limpar jogadores do localStorage (forçar recadastro na próxima pelada)
+      if (plano === 'Free') {
+        console.log('🧹 FREE: Limpando jogadores do localStorage...');
+        
+        // Limpar localStorage de jogadores e fila
         const keysToRemove = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
           if (key && (
-            key.startsWith('pelada_') || 
             key.startsWith('jogador_') ||
+            key.startsWith('jogadores_') ||
+            key.startsWith('fila_') ||
             key.startsWith('sessao_') ||
-            key.startsWith('regras_') ||
-            key.startsWith('peladaStats') ||
-            key.startsWith('ad_action') ||
-            key === 'user' ||
-            key === 'plano'
+            key.startsWith('partida_')
           )) {
             keysToRemove.push(key);
           }
         }
         keysToRemove.forEach(key => localStorage.removeItem(key));
-        console.log(`✅ ${keysToRemove.length} itens removidos do localStorage`);
+        console.log(`✅ ${keysToRemove.length} itens do localStorage limpos (FREE)`);
       }
       
       setShowConfirmarSenhaModal(false);
@@ -1690,10 +1688,8 @@ export default function FilaPage() {
       return;
     }
     
-    await supabase
-      .from('jogadores')
-      .update({ status: 'reserva' })
-      .eq('id', jogador.id);
+    // ❌ REMOVIDO: update na tabela jogadores (status fila/reserva não pertencem aqui!)
+    // A tabela jogadores deve ter apenas: 'ativo' ou 'inativo'
     
     // Buscar a posição do jogador removido ANTES de alterar
     const { data: jogadorRemovido } = await supabase
@@ -1705,7 +1701,7 @@ export default function FilaPage() {
     
     const posicaoRemovida = jogadorRemovido?.posicao_fila;
     
-    // Atualizar o status e posição para reserva (posição 999)
+    // Atualizar APENAS na tabela FILA (status e posição para reserva)
     await supabase
       .from('fila')
       .update({ 

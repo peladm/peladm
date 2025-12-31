@@ -247,15 +247,8 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             <div className="px-6 pb-4">
               <button
                 onClick={() => {
-                  const planoLower = clienteData?.plano?.toLowerCase() || 'free';
-                  const possuiPermissao = planoLower === 'premium' || planoLower === 'gold';
-                  if (possuiPermissao) {
-                    navigateTo('usuarios');
-                    toggleSidebar();
-                  } else {
-                    const nomePlano = normalizarPlano(clienteData?.plano || 'free');
-                    alert(`👑 Gerenciamento de usuários disponível nos planos Gold e Premium!\n\nPlano atual: ${nomePlano}\n\nFaça upgrade para ter múltiplos usuários!`);
-                  }
+                  navigateTo('usuarios');
+                  toggleSidebar();
                 }}
                 className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 shadow-md"
               >
