@@ -237,7 +237,8 @@ export default function RegrasPage() {
         prioridade_retorno: regras.prioridade_retorno,
         regra_empate: regras.regra_empate,
         regra_apos_empate: regras.regra_apos_empate,
-        empate_conta_vitoria: regras.empate_conta_vitoria
+        empate_conta_vitoria: regras.empate_conta_vitoria,
+        modo_sincronizacao: regras.modo_sincronizacao || 'tempo_real'
       };
       
       let resultado;

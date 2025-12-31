@@ -3,7 +3,7 @@
  * Permite funcionamento offline com sync automático quando volta online
  */
 
-import { supabase } from './supabase';
+import { supabase, getClienteSupabase } from './supabase';
 import { isOnline } from './cacheService';
 
 export interface SyncQueueItem {
@@ -165,7 +165,8 @@ async function syncCriarJogador(item: SyncQueueItem): Promise<void> {
     ? { ...jogadorData, pelada_id }
     : { ...jogadorData, id, pelada_id };
   
-  const { error } = await supabase
+  const clienteDb = await getClienteSupabase(pelada_id);
+  const { error } = await clienteDb
     .from('jogadores')
     .insert([insertData]);
   
@@ -173,11 +174,15 @@ async function syncCriarJogador(item: SyncQueueItem): Promise<void> {
 }
 
 async function syncAtualizarJogador(item: SyncQueueItem): Promise<void> {
-  const { jogador_id, dados } = item;
+  const { jogador_id, pelada_id, dados } = item;
+  
+  if (!pelada_id) throw new Error('pelada_id é obrigatório para sync de jogador');
+  
+  const clienteDb = await getClienteSupabase(pelada_id);
   
   // Se são incrementos, buscar valores atuais primeiro
   if (dados.jogos_increment || dados.vitorias_increment || dados.gols_increment) {
-    const { data: jogadorAtual } = await supabase
+    const { data: jogadorAtual } = await clienteDb
       .from('jogadores')
       .select('jogos, vitorias, gols')
       .eq('id', jogador_id)
@@ -189,7 +194,7 @@ async function syncAtualizarJogador(item: SyncQueueItem): Promise<void> {
       gols: (jogadorAtual?.gols || 0) + (dados.gols_increment || 0)
     };
     
-    const { error } = await supabase
+    const { error } = await clienteDb
       .from('jogadores')
       .update(updates)
       .eq('id', jogador_id);
@@ -197,7 +202,7 @@ async function syncAtualizarJogador(item: SyncQueueItem): Promise<void> {
     if (error) throw error;
   } else {
     // Atualização normal
-    const { error } = await supabase
+    const { error } = await clienteDb
       .from('jogadores')
       .update(dados)
       .eq('id', jogador_id);
@@ -207,9 +212,12 @@ async function syncAtualizarJogador(item: SyncQueueItem): Promise<void> {
 }
 
 async function syncExcluirJogador(item: SyncQueueItem): Promise<void> {
-  const { jogador_id } = item;
+  const { jogador_id, pelada_id } = item;
   
-  const { error } = await supabase
+  if (!pelada_id) throw new Error('pelada_id é obrigatório para sync de jogador');
+  
+  const clienteDb = await getClienteSupabase(pelada_id);
+  const { error } = await clienteDb
     .from('jogadores')
     .delete()
     .eq('id', jogador_id);
@@ -218,15 +226,18 @@ async function syncExcluirJogador(item: SyncQueueItem): Promise<void> {
 }
 
 async function syncInserirJogo(item: SyncQueueItem): Promise<void> {
-  const { sessao_id, dados } = item;
+  const { sessao_id, pelada_id, dados } = item;
   const { id, ...jogoData } = dados;
+  
+  if (!pelada_id) throw new Error('pelada_id é obrigatório para sync de jogo');
   
   // Remover id se for local
   const insertData = id && id.startsWith('local_')
     ? { ...jogoData, sessao_id }
     : { ...jogoData, id, sessao_id };
   
-  const { error } = await supabase
+  const clienteDb = await getClienteSupabase(pelada_id);
+  const { error } = await clienteDb
     .from('jogos')
     .insert([insertData]);
   
@@ -234,11 +245,14 @@ async function syncInserirJogo(item: SyncQueueItem): Promise<void> {
 }
 
 async function syncInserirGols(item: SyncQueueItem): Promise<void> {
-  const { jogo_id, dados } = item;
+  const { jogo_id, pelada_id, dados } = item;
+  
+  if (!pelada_id) throw new Error('pelada_id é obrigatório para sync de gol');
   
   // O jogo_id pode ser local, então precisamos buscar o jogo real
   // Por enquanto, vamos inserir direto
-  const { error } = await supabase
+  const clienteDb = await getClienteSupabase(pelada_id);
+  const { error } = await clienteDb
     .from('gols')
     .insert([{ ...dados, jogo_id }]);
   
@@ -248,7 +262,10 @@ async function syncInserirGols(item: SyncQueueItem): Promise<void> {
 async function syncAtualizarFila(item: SyncQueueItem): Promise<void> {
   const { jogador_id, pelada_id, sessao_id, dados } = item;
   
-  const { error } = await supabase
+  if (!pelada_id) throw new Error('pelada_id é obrigatório para sync de fila');
+  
+  const clienteDb = await getClienteSupabase(pelada_id);
+  const { error } = await clienteDb
     .from('fila')
     .update(dados)
     .eq('jogador_id', jogador_id)
@@ -259,9 +276,12 @@ async function syncAtualizarFila(item: SyncQueueItem): Promise<void> {
 }
 
 async function syncFinalizarSessao(item: SyncQueueItem): Promise<void> {
-  const { sessao_id, dados } = item;
+  const { sessao_id, pelada_id, dados } = item;
   
-  const { error } = await supabase
+  if (!pelada_id) throw new Error('pelada_id é obrigatório para sync de sessão');
+  
+  const clienteDb = await getClienteSupabase(pelada_id);
+  const { error } = await clienteDb
     .from('sessoes')
     .update({ status: 'finalizada', data_fim: dados.data_fim })
     .eq('id', sessao_id);

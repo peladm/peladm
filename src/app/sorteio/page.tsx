@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from '../../components/Layout';
-import { jogadoresService, supabase, getSupabaseParaUsuarioLogado } from '../../lib/supabase';
+import { jogadoresService, supabase, getClienteSupabase, getSupabaseParaUsuarioLogado } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { useAdInterstitial } from '../../lib/useAdInterstitial';
 import AdInterstitial from '../../components/AdInterstitial';
@@ -566,7 +566,7 @@ export default function SorteioPage() {
       console.log('🔄 Iniciando pelada para:', peladaId);
       
       // Usar banco apropriado (dedicado se Premium)
-      const clienteDb = await getSupabaseParaUsuarioLogado();
+      const clienteDb = await getClienteSupabase(peladaId);
       
       // Não precisa mais buscar tipo_fila - agora só existe uma fila (page-fila)
       // Os modos (prancheta/partida) são escolhidos quando inicia a partida

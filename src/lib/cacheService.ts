@@ -3,7 +3,7 @@
  * Permite funcionamento offline e melhora performance
  */
 
-import { supabase } from './supabase';
+import { supabase, getClienteSupabase } from './supabase';
 
 export interface CacheOptions {
   forceRefresh?: boolean; // Força buscar do Supabase mesmo se tem cache
@@ -29,8 +29,9 @@ export async function getJogadoresWithCache(
   }
   
   try {
-    // Busca do Supabase
-    const { data, error } = await supabase
+    // Busca do Supabase (usa banco dedicado se Premium)
+    const clienteDb = await getClienteSupabase(peladaId);
+    const { data, error } = await clienteDb
       .from('jogadores')
       .select('*')
       .eq('pelada_id', peladaId)

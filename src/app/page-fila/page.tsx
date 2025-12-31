@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { supabase, validarSenhaPelada, jogadoresService } from '../../lib/supabase';
+import { supabase, getClienteSupabase, validarSenhaPelada, jogadoresService } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { useAdInterstitial } from '../../lib/useAdInterstitial';
 import AdInterstitial from '../../components/AdInterstitial';
@@ -190,7 +190,8 @@ export default function FilaPage() {
 
   // Buscar fila atual ordenada
   const buscarFilaAtual = async (peladaId: string, sessaoId: string) => {
-    const { data, error } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    const { data, error } = await clienteDb
       .from('fila')
       .select('*')
       .eq('pelada_id', peladaId)
@@ -204,8 +205,9 @@ export default function FilaPage() {
 
   // Atualizar posições na fila
   const atualizarPosicoesFila = async (peladaId: string, sessaoId: string, novaFila: any[], vitoriasNovoTime1: number = 0) => {
+    const clienteDb = await getClienteSupabase(peladaId);
     for (let i = 0; i < novaFila.length; i++) {
-      await supabase
+      await clienteDb
         .from('fila')
         .update({ 
           posicao_fila: i + 1,
@@ -226,7 +228,8 @@ export default function FilaPage() {
 
   // Resetar todas vitórias da fila
   const resetarTodasVitorias = async (peladaId: string, sessaoId: string) => {
-    await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    await clienteDb
       .from('fila')
       .update({ vitorias_consecutivas_time: 0 })
       .eq('pelada_id', peladaId)
@@ -844,7 +847,8 @@ export default function FilaPage() {
       
       // 2. BUSCAR SESSÃO ATIVA
       console.log('🔍 Buscando sessão ativa...');
-      const { data: sessoes, error: sessaoError } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessoes, error: sessaoError } = await clienteDb
         .from('sessoes')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -894,7 +898,7 @@ export default function FilaPage() {
         
         // 🔧 MIGRAÇÃO: Converter status 'jogando' antigo para 'fila'
         console.log('🔧 Migrando dados antigos...');
-        await supabase
+        await clienteDb
           .from('fila')
           .update({ status: 'fila' })
           .eq('pelada_id', peladaId)
@@ -902,7 +906,7 @@ export default function FilaPage() {
         console.log('✅ Migração concluída: jogando → fila');
         
         // 3. CARREGAR DA TABELA FILA (sem JOIN - igual Pelada 3)
-        const { data: filaSupabase, error: filaError } = await supabase
+        const { data: filaSupabase, error: filaError } = await clienteDb
           .from('fila')
           .select('*')
           .eq('pelada_id', peladaId)
@@ -919,7 +923,7 @@ export default function FilaPage() {
         console.log('📊 Dados da fila carregados:', filaData);
         
         // 3. CARREGAR DADOS DOS JOGADORES SEPARADAMENTE
-        const { data: jogadoresSupabase, error: jogadoresError } = await supabase
+        const { data: jogadoresSupabase, error: jogadoresError } = await clienteDb
           .from('jogadores')
           .select('*')
           .eq('pelada_id', peladaId);
@@ -988,7 +992,7 @@ export default function FilaPage() {
 
       // 8. BUSCAR ESTATÍSTICAS REAIS DO BANCO (SESSÃO ATIVA)
       if (sessao) {
-        const { data: jogosFinalizados } = await supabase
+        const { data: jogosFinalizados } = await clienteDb
           .from('jogos')
           .select('id, placar_a, placar_b')
           .eq('sessao_id', sessao.id)
@@ -1039,7 +1043,8 @@ export default function FilaPage() {
     
     // ⚠️ CORREÇÃO: Buscar da tabela FILA, não jogadores!
     // A tabela jogadores não tem status 'fila'/'jogando'/'reserva'
-    const { data: filaData, error: filaError } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    const { data: filaData, error: filaError } = await clienteDb
       .from('fila')
       .select('*')
       .eq('pelada_id', peladaId);
@@ -1050,7 +1055,7 @@ export default function FilaPage() {
     }
     
     // Buscar dados dos jogadores para enriquecer a lista
-    const { data: jogadoresData } = await supabase
+    const { data: jogadoresData } = await clienteDb
       .from('jogadores')
       .select('*')
       .eq('pelada_id', peladaId);
@@ -1116,7 +1121,8 @@ export default function FilaPage() {
       const peladaId = user.id;
 
       // Buscar sessão ativa
-      const { data: sessao, error: sessaoError } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessao, error: sessaoError } = await clienteDb
         .from('sessoes')
         .select('id')
         .eq('pelada_id', peladaId)
@@ -1130,7 +1136,7 @@ export default function FilaPage() {
       }
 
       // Buscar estatísticas da sessão
-      const { data: jogos, error: jogosError } = await supabase
+      const { data: jogos, error: jogosError } = await clienteDb
         .from('jogos')
         .select('id, placar_a, placar_b')
         .eq('sessao_id', sessao.id)
@@ -1173,7 +1179,8 @@ export default function FilaPage() {
       const peladaId = user.id;
 
       // Buscar sessão ativa
-      const { data: sessao } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessao } = await clienteDb
         .from('sessoes')
         .select('id')
         .eq('pelada_id', peladaId)
@@ -1183,7 +1190,7 @@ export default function FilaPage() {
       if (!sessao) return;
 
       // Buscar jogos finalizados da sessão
-      const { data: jogos, error: jogosError } = await supabase
+      const { data: jogos, error: jogosError } = await clienteDb
         .from('jogos')
         .select('*')
         .eq('sessao_id', sessao.id)
@@ -1212,7 +1219,8 @@ export default function FilaPage() {
       const peladaId = user.id;
 
       // Buscar sessão ativa
-      const { data: sessao } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessao } = await clienteDb
         .from('sessoes')
         .select('id')
         .eq('pelada_id', peladaId)
@@ -1222,7 +1230,7 @@ export default function FilaPage() {
       if (!sessao) return;
 
       // Buscar jogos finalizados da sessão
-      const { data: jogos } = await supabase
+      const { data: jogos } = await clienteDb
         .from('jogos')
         .select('id, time_a, time_b')
         .eq('sessao_id', sessao.id)
@@ -1238,7 +1246,7 @@ export default function FilaPage() {
       const jogosIds = jogos.map(j => j.id);
 
       // Buscar todos os gols
-      const { data: todosGols, error: golsError } = await supabase
+      const { data: todosGols, error: golsError } = await clienteDb
         .from('gols')
         .select('jogador_id')
         .in('jogo_id', jogosIds);
@@ -1253,7 +1261,7 @@ export default function FilaPage() {
       console.log('Total de gols:', todosGols?.length);
 
       // Buscar dados de todos os jogadores
-      const { data: todosJogadores } = await supabase
+      const { data: todosJogadores } = await clienteDb
         .from('jogadores')
         .select('id, nome')
         .eq('pelada_id', peladaId);
@@ -1432,7 +1440,8 @@ export default function FilaPage() {
       }
 
       // Buscar sessão ativa
-      const { data: sessao } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessao } = await clienteDb
         .from('sessoes')
         .select('id')
         .eq('pelada_id', peladaId)
@@ -1453,7 +1462,7 @@ export default function FilaPage() {
       console.log('📊 Restaurando fila com snapshot de edição:', snapshot.snapshot_data);
 
       // Deletar todos os registros atuais da fila
-      await supabase
+      await clienteDb
         .from('fila')
         .delete()
         .eq('pelada_id', peladaId)
@@ -1465,7 +1474,7 @@ export default function FilaPage() {
         return resto;
       });
 
-      const { error: insertError } = await supabase
+      const { error: insertError } = await clienteDb
         .from('fila')
         .insert(filaRestaurada);
       
@@ -1531,7 +1540,8 @@ export default function FilaPage() {
       }
 
       // 2. Buscar sessão ativa
-      const { data: sessao } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessao } = await clienteDb
         .from('sessoes')
         .select('id')
         .eq('pelada_id', peladaId)
@@ -1552,7 +1562,7 @@ export default function FilaPage() {
       console.log('📊 Restaurando fila com snapshot:', snapshot.snapshot_data);
 
       // 4. Deletar todos os registros atuais da fila
-      await supabase
+      await clienteDb
         .from('fila')
         .delete()
         .eq('pelada_id', peladaId)
@@ -1566,7 +1576,7 @@ export default function FilaPage() {
 
       console.log('🔄 Dados a serem restaurados:', filaRestaurada);
 
-      const { error: insertError } = await supabase
+      const { error: insertError } = await clienteDb
         .from('fila')
         .insert(filaRestaurada);
       
@@ -1577,13 +1587,13 @@ export default function FilaPage() {
       }
 
       // 6. Deletar gols da partida
-      await supabase
+      await clienteDb
         .from('gols')
         .delete()
         .eq('jogo_id', ultimaPartida.id);
 
       // 7. Marcar partida como desfeita (não deletar, manter histórico)
-      await supabase
+      await clienteDb
         .from('jogos')
         .update({ status: 'desfeito' })
         .eq('id', ultimaPartida.id);
@@ -1659,7 +1669,8 @@ export default function FilaPage() {
       }
       
       // Buscar sessão ativa
-      const { data: sessaoAtiva } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessaoAtiva } = await clienteDb
         .from('sessoes')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -1672,13 +1683,13 @@ export default function FilaPage() {
       }
       
       // 1. Finalizar sessão
-      await supabase
+      await clienteDb
         .from('sessoes')
         .update({ status: 'finalizada' })
         .eq('id', sessaoAtiva.id);
       
       // 2. Limpar fila (deletar todos registros da sessão)
-      await supabase
+      await clienteDb
         .from('fila')
         .delete()
         .eq('sessao_id', sessaoAtiva.id);
@@ -1814,7 +1825,8 @@ export default function FilaPage() {
     const peladaId = user.id;
     
     // Buscar sessão ativa
-    const { data: sessao } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    const { data: sessao } = await clienteDb
       .from('sessoes')
       .select('id')
       .eq('pelada_id', peladaId)
@@ -1830,7 +1842,7 @@ export default function FilaPage() {
     // A tabela jogadores deve ter apenas: 'ativo' ou 'inativo'
     
     // Buscar a posição do jogador removido ANTES de alterar
-    const { data: jogadorRemovido } = await supabase
+    const { data: jogadorRemovido } = await clienteDb
       .from('fila')
       .select('posicao_fila')
       .eq('jogador_id', jogador.id)
@@ -1902,7 +1914,7 @@ export default function FilaPage() {
       console.log('🔄 Modo tempo real: atualizando Supabase');
       
       // Atualizar APENAS na tabela FILA (status e posição para reserva)
-      await supabase
+      await clienteDb
         .from('fila')
         .update({ 
           status: 'reserva',
@@ -1912,7 +1924,7 @@ export default function FilaPage() {
       
       // Reorganizar posições: todos após a posição removida sobem 1 posição
       if (posicaoRemovida !== undefined && posicaoRemovida !== null) {
-        const { data: jogadoresParaAtualizar } = await supabase
+        const { data: jogadoresParaAtualizar } = await clienteDb
           .from('fila')
           .select('jogador_id, posicao_fila')
           .eq('pelada_id', peladaId)
@@ -1924,7 +1936,7 @@ export default function FilaPage() {
         // Atualizar cada jogador individualmente
         if (jogadoresParaAtualizar && jogadoresParaAtualizar.length > 0) {
           for (const jog of jogadoresParaAtualizar) {
-            await supabase
+            await clienteDb
               .from('fila')
               .update({ posicao_fila: jog.posicao_fila - 1 })
               .eq('jogador_id', jog.jogador_id)
@@ -1953,7 +1965,8 @@ export default function FilaPage() {
       const peladaId = user.id;
 
       // Buscar sessão ativa
-      const { data: sessoes } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessoes } = await clienteDb
         .from('sessoes')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -1968,7 +1981,7 @@ export default function FilaPage() {
       const sessao = sessoes[0];
 
       // Buscar todos os jogadores da fila
-      const { data: todosJogadores } = await supabase
+      const { data: todosJogadores } = await clienteDb
         .from('fila')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -1999,7 +2012,7 @@ export default function FilaPage() {
 
       // Atualizar todos os jogadores no banco EM TEMPO REAL
       for (const jog of novaLista) {
-        await supabase
+        await clienteDb
           .from('fila')
           .update({ posicao_fila: jog.posicao_fila })
           .eq('jogador_id', jog.jogador_id)
@@ -2046,15 +2059,20 @@ export default function FilaPage() {
     
     // CASO 1: Ambos na fila (não estão jogando)
     if (!jogador1Jogando && !jogador2Jogando) {
+      const userData = localStorage.getItem('user');
+      const user = JSON.parse(userData!);
+      const peladaId = user.id;
+      const clienteDb = await getClienteSupabase(peladaId);
+      
       const pos1 = jogador1.posicao_fila;
       const pos2 = jogador2.posicao_fila;
       
-      await supabase
+      await clienteDb
         .from('fila')
         .update({ posicao_fila: pos2 })
         .eq('jogador_id', jogador1.id);
       
-      await supabase
+      await clienteDb
         .from('fila')
         .update({ posicao_fila: pos1 })
         .eq('jogador_id', jogador2.id);
@@ -2179,7 +2197,8 @@ export default function FilaPage() {
     const peladaId = user.id;
     
     // Buscar sessão ativa
-    const { data: sessao } = await supabase
+    const clienteDb = await getClienteSupabase(peladaId);
+    const { data: sessao } = await clienteDb
       .from('sessoes')
       .select('id')
       .eq('pelada_id', peladaId)
@@ -2189,7 +2208,7 @@ export default function FilaPage() {
     if (!sessao) return;
     
     // Primeiro: colocar todos os jogadores com status 'reserva' na posição 999
-    await supabase
+    await clienteDb
       .from('fila')
       .update({ posicao_fila: 999 })
       .eq('pelada_id', peladaId)
@@ -2197,7 +2216,7 @@ export default function FilaPage() {
       .eq('status', 'reserva');
     
     // Buscar todos os jogadores com status 'fila', ordenados pela posição atual
-    const { data: jogadoresFila } = await supabase
+    const { data: jogadoresFila } = await clienteDb
       .from('fila')
       .select('jogador_id, posicao_fila')
       .eq('pelada_id', peladaId)
@@ -2213,7 +2232,7 @@ export default function FilaPage() {
       const novaPosicao = i + 1; // Começa em 1
       // Só atualiza se a posição estiver diferente
       if (jogador.posicao_fila !== novaPosicao) {
-        await supabase
+        await clienteDb
           .from('fila')
           .update({ posicao_fila: novaPosicao })
           .eq('jogador_id', jogador.jogador_id)
@@ -2241,7 +2260,8 @@ export default function FilaPage() {
       const peladaId = user.id;
       
       // 0. Salvar snapshot da fila ANTES de qualquer mudança
-      const { data: sessaoAtiva, error: sessaoError } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessaoAtiva, error: sessaoError } = await clienteDb
         .from('sessoes')
         .select('id')
         .eq('pelada_id', peladaId)
@@ -2254,7 +2274,7 @@ export default function FilaPage() {
         console.log('📸 Salvando snapshot da fila...');
         try {
           // Buscar estado completo da fila
-          const { data: snapshotFila, error: filaError } = await supabase
+          const { data: snapshotFila, error: filaError } = await clienteDb
             .from('fila')
             .select('*')
             .eq('pelada_id', peladaId)
@@ -2460,7 +2480,8 @@ export default function FilaPage() {
       const sessaoId = sessaoAtual.id;
       
       // 1. PRIMEIRO: Mudar o status do jogador para reserva IMEDIATAMENTE
-      const { error: updateError } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { error: updateError } = await clienteDb
         .from('fila')
         .update({ 
           status: 'reserva',
@@ -2477,7 +2498,7 @@ export default function FilaPage() {
       }
 
       // 2. SEGUNDO: Buscar todos os jogadores ativos ordenados por posição
-      const { data: jogadoresAtivos } = await supabase
+      const { data: jogadoresAtivos } = await clienteDb
         .from('fila')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -2489,7 +2510,7 @@ export default function FilaPage() {
       if (jogadoresAtivos && jogadoresAtivos.length > 0) {
         const updates = jogadoresAtivos.map((jogador, index) => {
           const posicaoSequencial = index + 1;
-          return supabase
+          return clienteDb
             .from('fila')
             .update({ posicao_fila: posicaoSequencial })
             .eq('jogador_id', jogador.jogador_id)
@@ -2527,7 +2548,8 @@ export default function FilaPage() {
 
       // 1. PRIMEIRO: Buscar sessão ativa (SEM .single() para evitar erro)
       console.log('🔍 Buscando sessão ativa...');
-      const { data: sessoes, error: sessaoError } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessoes, error: sessaoError } = await clienteDb
         .from('sessoes')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -2606,7 +2628,7 @@ export default function FilaPage() {
         
       } else {
         // MODO TEMPO REAL: Inserir direto no Supabase
-        const { error: filaError } = await supabase
+        const { error: filaError } = await clienteDb
           .from('fila')
           .insert({
             jogador_id: novoJogador.id,
@@ -2694,7 +2716,8 @@ export default function FilaPage() {
         console.log('🔄 Modo tempo real: atualizando Supabase');
         
         // 1. Buscar a MAIOR posição atual na fila da sessão ativa
-        const { data: jogadoresNaFila } = await supabase
+        const clienteDb = await getClienteSupabase(peladaId);
+        const { data: jogadoresNaFila } = await clienteDb
           .from('fila')
           .select('posicao_fila')
           .eq('pelada_id', peladaId)
@@ -2710,7 +2733,7 @@ export default function FilaPage() {
         console.log(`📍 Maior posição atual: ${maiorPosicao}, próxima: ${proximaPosicao}`);
         
         // 2. Atualizar APENAS o registro com status='reserva' para 'fila'
-        const { error: updateError } = await supabase
+        const { error: updateError } = await clienteDb
           .from('fila')
           .update({ 
             status: 'fila',
@@ -2877,10 +2900,11 @@ export default function FilaPage() {
         
         // 1. Salvar jogadores ativos (jogando + fila) - todos com status 'fila'
         const listaCompleta = [...localJogadoresJogando, ...localJogadoresFila];
+        const clienteDb = await getClienteSupabase(peladaId);
         const updatesAtivos = listaCompleta.map((jogador, index) => {
           const posicaoSequencial = index + 1;
           
-          return supabase
+          return clienteDb
             .from('fila')
             .update({ 
               posicao_fila: posicaoSequencial,
@@ -2896,7 +2920,7 @@ export default function FilaPage() {
         const idsRemovidos = idsOriginais.filter(id => !idsAtivosAtuais.includes(id));
         
         const updatesReserva = idsRemovidos.map(jogadorId => 
-          supabase
+          clienteDb
             .from('fila')
             .update({ 
               status: 'reserva',
@@ -3057,7 +3081,8 @@ export default function FilaPage() {
         console.log('⚡ Jogo adicionado à fila de sync local');
       } else {
         // MODO TEMPO REAL: Inserir direto no Supabase
-        const { data: novoJogo, error: erroJogo } = await supabase
+        const clienteDb = await getClienteSupabase(peladaId);
+        const { data: novoJogo, error: erroJogo } = await clienteDb
           .from('jogos')
           .insert({
             sessao_id: sessaoId,
@@ -3107,7 +3132,8 @@ export default function FilaPage() {
           console.log('⚡ Gols adicionados à fila de sync local');
         } else {
           // MODO TEMPO REAL: Inserir direto no Supabase
-          const { error: erroGols } = await supabase
+          const clienteDb = await getClienteSupabase(peladaId);
+          const { error: erroGols } = await clienteDb
             .from('gols')
             .insert(golsParaSalvar);
           
@@ -3234,7 +3260,8 @@ export default function FilaPage() {
       console.log('✅ Partida finalizada com sucesso!');
 
       // === 7. Verificar limites de partidas por plano ===
-      const { data: partidasFinalizadas } = await supabase
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: partidasFinalizadas } = await clienteDb
         .from('jogos')
         .select('id')
         .eq('sessao_id', sessaoAtual.id);
@@ -5053,7 +5080,8 @@ export default function FilaPage() {
                       const peladaId = user.id;
                       
                       // Buscar sessão ativa
-                      const { data: sessaoAtiva } = await supabase
+                      const clienteDb = await getClienteSupabase(peladaId);
+                      const { data: sessaoAtiva } = await clienteDb
                         .from('sessoes')
                         .select('id')
                         .eq('pelada_id', peladaId)
@@ -5062,7 +5090,7 @@ export default function FilaPage() {
                       
                       if (sessaoAtiva) {
                         // Buscar fila atual
-                        const { data: filaAtual } = await supabase
+                        const { data: filaAtual } = await clienteDb
                           .from('fila')
                           .select('*')
                           .eq('pelada_id', peladaId)
@@ -6356,7 +6384,8 @@ export default function FilaPage() {
                         console.log('🔄 Restaurando snapshot:', snapshotData);
                         
                         // Buscar sessão ativa
-                        const { data: sessoes } = await supabase
+                        const clienteDb = await getClienteSupabase(peladaId);
+                        const { data: sessoes } = await clienteDb
                           .from('sessoes')
                           .select('id')
                           .eq('pelada_id', peladaId)
@@ -6369,7 +6398,7 @@ export default function FilaPage() {
                           
                           // Restaurar cada jogador
                           for (const jogador of snapshotData.jogadores) {
-                            await supabase
+                            await clienteDb
                               .from('fila')
                               .update({
                                 posicao_fila: jogador.posicao_fila,
