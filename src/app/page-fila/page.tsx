@@ -2533,20 +2533,16 @@ export default function FilaPage() {
 
       // 2. SEGUNDO: Cadastrar jogador na tabela jogadores
       // Usar o jogadoresService que já respeita Free/Paid
-      const resultCriar = await jogadoresService.criar({
-        nome: novoJogadorNome.trim(),
-        nivel: novoJogadorEstrelas,
-        status: 'ativo',
-        pelada_id: peladaId
-      });
+      const novoJogador = await jogadoresService.criar(
+        novoJogadorNome.trim(),
+        novoJogadorEstrelas
+      );
 
-      if (!resultCriar.success || !resultCriar.data) {
+      if (!novoJogador) {
         console.error('❌ Erro ao cadastrar jogador');
         alert('Erro ao cadastrar jogador!');
         return;
       }
-
-      const novoJogador = resultCriar.data;
 
       // 3. TERCEIRO: Adicionar na fila como reserva
       if (modoSincronizacao === 'local_first') {
