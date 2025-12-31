@@ -18,6 +18,9 @@ interface LayoutProps {
 
 export default function Layout({ children, title = 'PeladM', onAdminClick }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [versionInfo, setVersionInfo] = useState<any>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   
@@ -142,6 +145,54 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
     setIsSidebarOpen(false);
   };
 
+  // Função para verificar atualizações manualmente
+  const checkForUpdates = async () => {
+    setCheckingUpdate(true);
+    try {
+      const response = await fetch('/version.json');
+      const data = await response.json();
+      setVersionInfo(data);
+      
+      const storedVersion = localStorage.getItem('app_version');
+      
+      if (storedVersion && storedVersion !== data.version) {
+        // Nova versão disponível
+        setShowUpdateModal(true);
+        setIsSidebarOpen(false);
+      } else if (!storedVersion) {
+        // Primeira instalação
+        localStorage.setItem('app_version', data.version);
+        alert(`✅ Você está usando a versão ${data.version} (mais recente)`);
+      } else {
+        // Já está na última versão
+        alert(`✅ Você já está usando a versão ${data.version} (mais recente)`);
+      }
+    } catch (error) {
+      console.error('Erro ao verificar atualizações:', error);
+      alert('❌ Erro ao verificar atualizações. Tente novamente.');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleUpdateNow = () => {
+    if (versionInfo) {
+      localStorage.setItem('app_version', versionInfo.version);
+    }
+    
+    // Limpa cache do Service Worker
+    if ('serviceWorker' in navigator) {
+      caches.keys().then(cacheNames => {
+        cacheNames.forEach(cacheName => {
+          caches.delete(cacheName);
+        });
+      });
+    }
+    
+    // Recarrega a página
+    window.location.reload();
+  };
+
   // Loading screen durante verificação de autenticação
   if (isCheckingAuth) {
     return (
@@ -257,6 +308,23 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
               </button>
             </div>
           )}
+
+          {/* Botão de Verificar Atualizações */}
+          <div className="px-6 pb-3">
+            <button
+              onClick={checkForUpdates}
+              disabled={checkingUpdate}
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 shadow-md"
+            >
+              <svg 
+                viewBox="0 0 24 24" 
+                className={`w-5 h-5 fill-current ${checkingUpdate ? 'animate-spin' : ''}`}
+              >
+                <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+              </svg>
+              <span>{checkingUpdate ? 'Verificando...' : 'Verificar Atualizações'}</span>
+            </button>
+          </div>
 
           {/* Botão de Suporte WhatsApp */}
           <div className="px-6 pb-4">
@@ -567,6 +635,133 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             onClose={resetInterstitial}
             motivo="navegacao"
           />
+        )}
+
+        {/* Modal de Atualização Manual */}
+        {showUpdateModal && versionInfo && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}>
+            <div style={{
+              backgroundColor: '#fff',
+              borderRadius: '20px',
+              maxWidth: '450px',
+              width: '100%',
+              padding: '32px 24px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '4rem', marginBottom: '16px' }}>🎉</div>
+              
+              <h2 style={{ 
+                fontSize: '1.5rem', 
+                fontWeight: 'bold',
+                marginBottom: '8px',
+                color: '#1a1a1a'
+              }}>
+                Nova Atualização Disponível!
+              </h2>
+              
+              <p style={{
+                fontSize: '1.1rem',
+                fontWeight: '600',
+                color: '#16a34a',
+                marginBottom: '16px'
+              }}>
+                Versão {versionInfo.version}
+              </p>
+
+              {versionInfo.changelog && versionInfo.changelog[versionInfo.version] && (
+                <div style={{
+                  background: '#f8f9fa',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  marginBottom: '24px',
+                  textAlign: 'left'
+                }}>
+                  <h3 style={{
+                    fontSize: '0.95rem',
+                    fontWeight: '700',
+                    color: '#1a1a1a',
+                    marginBottom: '12px'
+                  }}>
+                    {versionInfo.changelog[versionInfo.version].title}
+                  </h3>
+                  
+                  {versionInfo.changelog[versionInfo.version].features && (
+                    <div>
+                      {versionInfo.changelog[versionInfo.version].features.slice(0, 3).map((feature: string, idx: number) => (
+                        <div key={idx} style={{
+                          fontSize: '0.85rem',
+                          color: '#4b5563',
+                          marginBottom: '4px',
+                          lineHeight: '1.4'
+                        }}>
+                          {feature}
+                        </div>
+                      ))}
+                      {versionInfo.changelog[versionInfo.version].features.length > 3 && (
+                        <div style={{
+                          fontSize: '0.8rem',
+                          color: '#16a34a',
+                          marginTop: '8px',
+                          fontWeight: '600'
+                        }}>
+                          + {versionInfo.changelog[versionInfo.version].features.length - 3} novidades...
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button
+                  onClick={handleUpdateNow}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    fontSize: '1rem',
+                    fontWeight: '700',
+                    border: 'none',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(22, 163, 74, 0.3)'
+                  }}
+                >
+                  Atualizar Agora
+                </button>
+                
+                <button
+                  onClick={() => setShowUpdateModal(false)}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    fontSize: '0.9rem',
+                    fontWeight: '600',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '12px',
+                    background: '#fff',
+                    color: '#6b7280',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Agora Não
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </>
