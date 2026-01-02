@@ -215,9 +215,7 @@ export default function CadastroPage() {
             pelada_id: peladaId,
             jogos: 0,
             vitorias: 0,
-            gols: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            gols: 0
           };
           
           // Salvar no localStorage
