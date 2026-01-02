@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
-import { jogadoresService, Jogador, supabase, validarSenhaPelada } from '../../lib/supabase';
+import { jogadoresService, Jogador, supabase, validarSenhaPelada, getClienteSupabase } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
+import { addToSyncQueue } from '../../lib/syncService';
 
 export default function CadastroPage() {
   const { possuiPermissao, verificarLimite, nomePlano } = usePermissions();
@@ -67,7 +68,27 @@ export default function CadastroPage() {
       const userData = JSON.parse(user);
       console.log('🆔 ID do usuário:', userData.id);
       
-      const jogadoresData = await jogadoresService.buscarTodos();
+      // Verificar modo offline
+      const peladaId = userData.id;
+      const regrasStr = localStorage.getItem(`regras_${peladaId}`);
+      let modoOffline = false;
+      
+      if (regrasStr) {
+        const regras = JSON.parse(regrasStr);
+        modoOffline = regras.modo_sincronizacao === 'local_first';
+      }
+      
+      let jogadoresData: Jogador[];
+      
+      if (modoOffline) {
+        // MODO OFFLINE: Carregar do localStorage
+        console.log('⚡ Modo offline: carregando do cache local');
+        const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
+        jogadoresData = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
+      } else {
+        // MODO TEMPO REAL: Carregar do Supabase
+        jogadoresData = await jogadoresService.buscarTodos();
+      }
       
       setJogadores(jogadoresData);
       console.log(`✅ ${jogadoresData.length} jogadores carregados`);
@@ -116,16 +137,98 @@ export default function CadastroPage() {
     setIsLoading(true);
     
     try {
+      // Verificar modo offline
+      const userData = localStorage.getItem('user');
+      if (!userData) {
+        throw new Error('Usuário não encontrado');
+      }
+      
+      const user = JSON.parse(userData);
+      const peladaId = user.id;
+      const regrasStr = localStorage.getItem(`regras_${peladaId}`);
+      let modoOffline = false;
+      
+      if (regrasStr) {
+        const regras = JSON.parse(regrasStr);
+        modoOffline = regras.modo_sincronizacao === 'local_first';
+      }
+      
       if (editandoId) {
         // Atualizar jogador existente
         console.log('🔄 Atualizando jogador:', { id: editandoId, nome, nivel });
-        await jogadoresService.atualizar(editandoId, nome, nivel);
-        mostrarMensagem('✅ Jogador atualizado com sucesso!', 'success');
+        
+        if (modoOffline) {
+          // MODO OFFLINE: Atualizar localStorage + syncQueue
+          console.log('⚡ Modo offline: atualizando local');
+          
+          const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
+          if (jogadoresLocal) {
+            const jogadoresArray = JSON.parse(jogadoresLocal);
+            const index = jogadoresArray.findIndex((j: any) => j.id === editandoId);
+            if (index !== -1) {
+              jogadoresArray[index] = {
+                ...jogadoresArray[index],
+                nome: nome.trim(),
+                nivel
+              };
+              localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresArray));
+            }
+          }
+          
+          // Adicionar à fila de sync
+          await addToSyncQueue({
+            tipo: 'atualizar_jogador',
+            jogador_id: editandoId,
+            pelada_id: peladaId,
+            dados: { nome: nome.trim(), nivel }
+          });
+          
+          mostrarMensagem('✅ Jogador atualizado (sync pendente)', 'success');
+        } else {
+          // MODO TEMPO REAL: Salvar direto
+          await jogadoresService.atualizar(editandoId, nome, nivel);
+          mostrarMensagem('✅ Jogador atualizado com sucesso!', 'success');
+        }
       } else {
         // Criar novo jogador
         console.log('➕ Criando novo jogador:', { nome, nivel });
-        await jogadoresService.criar(nome, nivel);
-        mostrarMensagem('✅ Jogador cadastrado com sucesso!', 'success');
+        
+        if (modoOffline) {
+          // MODO OFFLINE: Salvar no localStorage + syncQueue
+          console.log('⚡ Modo offline: salvando local');
+          
+          const novoJogador = {
+            id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            nome: nome.trim(),
+            nivel,
+            status: 'ativo',
+            pelada_id: peladaId,
+            jogos: 0,
+            vitorias: 0,
+            gols: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          
+          // Salvar no localStorage
+          const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
+          const jogadoresArray = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
+          jogadoresArray.push(novoJogador);
+          localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresArray));
+          
+          // Adicionar à fila de sync
+          await addToSyncQueue({
+            tipo: 'criar_jogador',
+            pelada_id: peladaId,
+            dados: novoJogador
+          });
+          
+          mostrarMensagem('✅ Jogador cadastrado (sync pendente)', 'success');
+        } else {
+          // MODO TEMPO REAL: Salvar direto
+          await jogadoresService.criar(nome, nivel);
+          mostrarMensagem('✅ Jogador cadastrado com sucesso!', 'success');
+        }
       }
       
       // Limpar formulário e recarregar lista
