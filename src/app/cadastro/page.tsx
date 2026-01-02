@@ -149,6 +149,13 @@ export default function CadastroPage() {
       const regrasStr = localStorage.getItem(`regras_${peladaId}`);
       let modoOffline = false;
       
+      logger.log('🔍 DEBUG - Verificando modo:', {
+        peladaId,
+        chaveRegras: `regras_${peladaId}`,
+        temRegrasNoStorage: !!regrasStr,
+        regrasStr: regrasStr ? 'EXISTE' : 'NÃO EXISTE'
+      });
+      
       if (regrasStr) {
         const regras = JSON.parse(regrasStr);
         modoOffline = regras.modo_sincronizacao === 'local_first';
@@ -157,10 +164,12 @@ export default function CadastroPage() {
         logger.log('🔍 DEBUG Modo:', {
           modo_sincronizacao: regras.modo_sincronizacao,
           modoOffline,
-          temRegras: !!regrasStr
+          comparacao: `'${regras.modo_sincronizacao}' === 'local_first' = ${modoOffline}`
         });
       } else {
         logger.log('⚠️ ATENÇÃO: Nenhuma regra encontrada no localStorage!');
+        logger.log('⚠️ Chave procurada:', `regras_${peladaId}`);
+        logger.log('⚠️ Todas as chaves no localStorage:', Object.keys(localStorage));
       }
       
       if (editandoId) {
