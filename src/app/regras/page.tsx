@@ -119,8 +119,11 @@ export default function RegrasPage() {
     } catch (error) {
       console.warn('💥 Erro ao carregar regras:', error);
       // Fallback para localStorage se Supabase falhar
-      const regrasLocal = localStorage.getItem('regras_pelada');
-      if (regrasLocal) {
+      const user = localStorage.getItem('user');
+      if (user) {
+        const userData = JSON.parse(user);
+        const regrasLocal = localStorage.getItem(`regras_${userData.id}`);
+        if (regrasLocal) {
         const regrasCarregadas = JSON.parse(regrasLocal);
         setRegras({
           jogadores_por_time: regrasCarregadas.jogadores_por_time || 5,
@@ -134,6 +137,7 @@ export default function RegrasPage() {
           tipo_fila: regrasCarregadas.tipo_fila || 'modo_prancheta'
         });
         console.log('✅ Regras carregadas do localStorage (fallback)');
+        }
       }
     }
   };
@@ -199,10 +203,18 @@ export default function RegrasPage() {
     console.log('📋 Dados a serem salvos:', regras);
 
     try {
+      const userData = localStorage.getItem('user');
+      if (!userData) {
+        throw new Error('Usuário não encontrado');
+      }
+      
+      const user = JSON.parse(userData);
+      const peladaId = user.id;
+      
       // Plano FREE: salvar apenas no localStorage
       if (!possuiPermissao('usarSupabase')) {
         console.log('📦 Plano FREE: salvando regras no localStorage');
-        localStorage.setItem('regras_pelada', JSON.stringify(regras));
+        localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
         console.log('✅ Regras salvas no localStorage com sucesso');
         setMessage('💾 Regras salvas com sucesso!');
         setTimeout(() => setMessage(''), 3000);
@@ -211,15 +223,6 @@ export default function RegrasPage() {
 
       // Plano GOLD/PREMIUM: salvar no Supabase
       console.log('☁️ Plano GOLD/PREMIUM: salvando regras no Supabase');
-      
-      // Buscar ID do cliente logado
-      const userData = localStorage.getItem('user');
-      if (!userData) {
-        throw new Error('Usuário não logado');
-      }
-      
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
       
       // Detectar mudança de modo de sincronização
       const { data: regrasAtuais } = await supabase
@@ -305,8 +308,8 @@ export default function RegrasPage() {
         throw new Error(resultado.error.message);
       }
       
-      // Também salvar no localStorage como backup
-      localStorage.setItem('regras_pelada', JSON.stringify(regras));
+      // Também salvar no localStorage com a chave correta
+      localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
       
       console.log('✅ Regras salvas no Supabase com sucesso');
       setMessage('💾 Regras salvas com sucesso!');
