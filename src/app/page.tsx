@@ -86,24 +86,19 @@ export default function Home() {
       const user = JSON.parse(userData);
       const peladaId = user.id;
       
-      // Buscar sessão ativa
+      // Buscar sessão ativa (opcional, pode não existir)
       const { data: sessao } = await supabase
         .from('sessoes')
         .select('id')
         .eq('pelada_id', peladaId)
         .eq('status', 'ativa')
-        .single();
+        .maybeSingle();
       
-      if (!sessao) {
-        alert('❌ Nenhuma sessão ativa encontrada');
-        return;
-      }
-      
-      // Sync transacional
-      const syncResult = await syncQueueTransacional(peladaId, sessao.id);
+      // Sync transacional (funciona com ou sem sessão)
+      const syncResult = await syncQueueTransacional(peladaId, sessao?.id);
       
       if (syncResult.sucesso) {
-        alert('✅ Sincronização concluída com sucesso!');
+        alert(`✅ Sincronização concluída! ${syncResult.idMap.size} itens sincronizados`);
         setItensPendentesSync(0);
       } else {
         alert(`❌ Erro na sincronização: ${syncResult.erro}`);
