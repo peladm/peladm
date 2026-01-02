@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { logger } from './logger';
 
 // Configurações do Supabase PRINCIPAL (para autenticação e clientes)
 const supabaseUrl = 'https://ewcswczqvelhlwpbraea.supabase.co';
@@ -38,12 +39,12 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
 
   // Verifica se já tem conexão em cache
   if (clienteSupabaseCache[peladaId]) {
-    console.log('🔄 Usando conexão em cache para:', peladaId);
+    logger.log('🔄 Usando conexão em cache para:', peladaId);
     return clienteSupabaseCache[peladaId];
   }
 
   // Busca credenciais do cliente no banco principal
-  console.log('🔍 Buscando credenciais do banco dedicado para:', peladaId);
+  logger.log('🔍 Buscando credenciais do banco dedicado para:', peladaId);
   const { data: clienteData, error } = await supabase
     .from('clientes')
     .select('supabase_url, supabase_anon_key, plano')
@@ -56,9 +57,9 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
 
   // Se cliente Premium com banco dedicado, cria e cacheia conexão
   if (clienteData?.supabase_url && clienteData?.supabase_anon_key) {
-    console.log('✅ Cliente com banco dedicado encontrado!');
-    console.log('🔗 URL:', clienteData.supabase_url);
-    console.log('🔑 Key:', clienteData.supabase_anon_key.substring(0, 20) + '...');
+    logger.log('✅ Cliente com banco dedicado encontrado!');
+    logger.log('🔗 URL:', clienteData.supabase_url);
+    logger.log('🔑 Key:', clienteData.supabase_anon_key.substring(0, 20) + '...');
     
     const clienteSupabase = createClient(
       clienteData.supabase_url,
@@ -73,7 +74,7 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
   }
 
   // Cliente Free ou sem banco dedicado: usa banco principal
-  console.log('ℹ️ Usando banco principal para:', peladaId);
+  logger.log('ℹ️ Usando banco principal para:', peladaId);
   return supabase;
 };
 
@@ -392,3 +393,4 @@ export const getSupabaseParaUsuarioLogado = async () => {
 };
 
 export default supabase;
+

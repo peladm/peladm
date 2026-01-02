@@ -5,6 +5,7 @@
 
 import { supabase, getClienteSupabase } from './supabase';
 import { isOnline } from './cacheService';
+import { logger } from './logger';
 
 export interface SyncQueueItem {
   id: string;
@@ -40,7 +41,7 @@ export async function addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'tentativa
   queue.push(newItem);
   localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
   
-  console.log('📝 Adicionado à fila de sync:', newItem.tipo);
+  logger.log('📝 Adicionado à fila de sync:', newItem.tipo);
   
   // Tenta sincronizar imediatamente se estiver online
   if (isOnline()) {
@@ -72,11 +73,11 @@ export async function syncQueueTransacional(peladaId: string, sessaoId: string):
   const queue = getSyncQueue();
   
   if (queue.length === 0) {
-    console.log('✅ Fila de sincronização vazia');
+    logger.log('✅ Fila de sincronização vazia');
     return { sucesso: true, idMap: new Map() };
   }
   
-  console.log(`🔄 Sincronização transacional: ${queue.length} itens...`);
+  logger.log(`🔄 Sincronização transacional: ${queue.length} itens...`);
   
   const idMap = new Map<string, string>();
   const queueBackup = JSON.parse(JSON.stringify(queue)); // Backup para rollback
@@ -86,7 +87,7 @@ export async function syncQueueTransacional(peladaId: string, sessaoId: string):
     for (let i = 0; i < queue.length; i++) {
       const item = queue[i];
       
-      console.log(`  [${i + 1}/${queue.length}] Processando: ${item.tipo}`);
+      logger.log(`  [${i + 1}/${queue.length}] Processando: ${item.tipo}`);
       
       const resultado = await syncItemComRetorno(item, peladaId);
       
@@ -95,13 +96,13 @@ export async function syncQueueTransacional(peladaId: string, sessaoId: string):
         const idLocal = item.dados.id || item.dados._tempId;
         if (idLocal && idLocal.startsWith('local_')) {
           idMap.set(idLocal, resultado.id);
-          console.log(`    Mapeado: ${idLocal} → ${resultado.id}`);
+          logger.log(`    Mapeado: ${idLocal} → ${resultado.id}`);
         }
       }
     }
     
     // Se chegou aqui, TUDO deu certo! ✅
-    console.log(`✅ Sincronização transacional completa: ${queue.length} itens, ${idMap.size} IDs mapeados`);
+    logger.log(`✅ Sincronização transacional completa: ${queue.length} itens, ${idMap.size} IDs mapeados`);
     
     // Limpar fila de sincronização
     localStorage.removeItem(SYNC_QUEUE_KEY);
@@ -110,7 +111,7 @@ export async function syncQueueTransacional(peladaId: string, sessaoId: string):
     
   } catch (error: any) {
     // ROLLBACK: restaurar fila original
-    console.error('❌ Erro na sincronização transacional - fazendo rollback:', error);
+    logger.error('❌ Erro na sincronização transacional - fazendo rollback:', error);
     localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queueBackup));
     
     return { 
@@ -126,18 +127,18 @@ export async function syncQueueTransacional(peladaId: string, sessaoId: string):
  */
 export async function syncQueue(): Promise<boolean> {
   if (!isOnline()) {
-    console.log('⚠️ Offline - aguardando conexão para sincronizar');
+    logger.log('⚠️ Offline - aguardando conexão para sincronizar');
     return false;
   }
   
   const queue = getSyncQueue();
   
   if (queue.length === 0) {
-    console.log('✅ Fila de sincronização vazia');
+    logger.log('✅ Fila de sincronização vazia');
     return true;
   }
   
-  console.log(`🔄 Sincronizando ${queue.length} itens...`);
+  logger.log(`🔄 Sincronizando ${queue.length} itens...`);
   
   let sucessos = 0;
   let falhas = 0;
@@ -153,17 +154,17 @@ export async function syncQueue(): Promise<boolean> {
       i--; // Ajusta índice após remoção
       
       sucessos++;
-      console.log(`✅ Sincronizado: ${item.tipo}`);
+      logger.log(`✅ Sincronizado: ${item.tipo}`);
       
     } catch (error) {
-      console.error(`❌ Erro ao sincronizar ${item.tipo}:`, error);
+      logger.error(`❌ Erro ao sincronizar ${item.tipo}:`, error);
       
       // Incrementa tentativas
       item.tentativas++;
       
       // Se excedeu max tentativas, remove
       if (item.tentativas >= MAX_TENTATIVAS) {
-        console.error(`🚫 Item removido após ${MAX_TENTATIVAS} tentativas:`, item.tipo);
+        logger.error(`🚫 Item removido após ${MAX_TENTATIVAS} tentativas:`, item.tipo);
         queue.splice(i, 1);
         i--;
       }
@@ -175,7 +176,7 @@ export async function syncQueue(): Promise<boolean> {
   // Atualiza fila
   localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
   
-  console.log(`📊 Sincronização: ${sucessos} sucessos, ${falhas} falhas, ${queue.length} pendentes`);
+  logger.log(`📊 Sincronização: ${sucessos} sucessos, ${falhas} falhas, ${queue.length} pendentes`);
   
   return queue.length === 0;
 }
@@ -438,7 +439,7 @@ async function syncFinalizarSessao(item: SyncQueueItem): Promise<void> {
  */
 export function clearSyncQueue(): void {
   localStorage.removeItem(SYNC_QUEUE_KEY);
-  console.log('🗑️ Fila de sincronização limpa');
+  logger.log('🗑️ Fila de sincronização limpa');
 }
 
 /**
@@ -464,7 +465,7 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
     regras: number;
   };
 }> {
-  console.log('📥 Iniciando download de TODAS as tabelas para modo offline...');
+  logger.log('📥 Iniciando download de TODAS as tabelas para modo offline...');
   
   try {
     if (!isOnline()) {
@@ -482,7 +483,7 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
     };
     
     // 1. Baixar TODOS os jogadores (ativos e inativos)
-    console.log('  📥 Baixando jogadores...');
+    logger.log('  📥 Baixando jogadores...');
     const { data: jogadores, error: jogadoresError } = await clienteDb
       .from('jogadores')
       .select('*')
@@ -491,10 +492,10 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
     if (jogadoresError) throw new Error(`Erro ao baixar jogadores: ${jogadoresError.message}`);
     localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores || []));
     tabelas.jogadores = jogadores?.length || 0;
-    console.log(`    ✅ ${tabelas.jogadores} jogadores baixados`);
+    logger.log(`    ✅ ${tabelas.jogadores} jogadores baixados`);
     
     // 2. Baixar sessão ativa (se houver)
-    console.log('  📥 Baixando sessão ativa...');
+    logger.log('  📥 Baixando sessão ativa...');
     const { data: sessoes, error: sessoesError } = await clienteDb
       .from('sessoes')
       .select('*')
@@ -507,10 +508,10 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
       const sessaoAtiva = sessoes[0];
       localStorage.setItem(`sessao_ativa_${peladaId}`, JSON.stringify(sessaoAtiva));
       tabelas.sessoes = 1;
-      console.log(`    ✅ Sessão ativa baixada (${sessaoAtiva.id})`);
+      logger.log(`    ✅ Sessão ativa baixada (${sessaoAtiva.id})`);
       
       // 3. Baixar fila da sessão ativa
-      console.log('  📥 Baixando fila...');
+      logger.log('  📥 Baixando fila...');
       const { data: fila, error: filaError } = await clienteDb
         .from('fila')
         .select('*')
@@ -519,10 +520,10 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
       if (filaError) throw new Error(`Erro ao baixar fila: ${filaError.message}`);
       localStorage.setItem(`fila_${sessaoAtiva.id}`, JSON.stringify(fila || []));
       tabelas.fila = fila?.length || 0;
-      console.log(`    ✅ ${tabelas.fila} itens da fila baixados`);
+      logger.log(`    ✅ ${tabelas.fila} itens da fila baixados`);
       
       // 4. Baixar jogos da sessão
-      console.log('  📥 Baixando jogos...');
+      logger.log('  📥 Baixando jogos...');
       const { data: jogos, error: jogosError } = await clienteDb
         .from('jogos')
         .select('*')
@@ -531,11 +532,11 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
       if (jogosError) throw new Error(`Erro ao baixar jogos: ${jogosError.message}`);
       localStorage.setItem(`jogos_${sessaoAtiva.id}`, JSON.stringify(jogos || []));
       tabelas.jogos = jogos?.length || 0;
-      console.log(`    ✅ ${tabelas.jogos} jogos baixados`);
+      logger.log(`    ✅ ${tabelas.jogos} jogos baixados`);
       
       // 5. Baixar gols dos jogos
       if (jogos && jogos.length > 0) {
-        console.log('  📥 Baixando gols...');
+        logger.log('  📥 Baixando gols...');
         const jogoIds = jogos.map(j => j.id);
         const { data: gols, error: golsError } = await clienteDb
           .from('gols')
@@ -545,14 +546,14 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
         if (golsError) throw new Error(`Erro ao baixar gols: ${golsError.message}`);
         localStorage.setItem(`gols_${sessaoAtiva.id}`, JSON.stringify(gols || []));
         tabelas.gols = gols?.length || 0;
-        console.log(`    ✅ ${tabelas.gols} gols baixados`);
+        logger.log(`    ✅ ${tabelas.gols} gols baixados`);
       }
     } else {
-      console.log('    ⚠️ Nenhuma sessão ativa encontrada');
+      logger.log('    ⚠️ Nenhuma sessão ativa encontrada');
     }
     
     // 6. Baixar regras (do banco principal)
-    console.log('  📥 Baixando regras...');
+    logger.log('  📥 Baixando regras...');
     const { data: regras, error: regrasError } = await supabase
       .from('regras')
       .select('*')
@@ -562,16 +563,16 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
     if (regrasError) throw new Error(`Erro ao baixar regras: ${regrasError.message}`);
     localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
     tabelas.regras = 1;
-    console.log(`    ✅ Regras baixadas`);
+    logger.log(`    ✅ Regras baixadas`);
     
     // Marcar como inicializado
     localStorage.setItem(`modo_offline_inicializado_${peladaId}`, Date.now().toString());
     
-    console.log('✅ Download completo! Modo offline pronto.');
+    logger.log('✅ Download completo! Modo offline pronto.');
     return { sucesso: true, tabelas };
     
   } catch (error: any) {
-    console.error('❌ Erro ao baixar tabelas:', error);
+    logger.error('❌ Erro ao baixar tabelas:', error);
     return { sucesso: false, erro: error.message || 'Erro desconhecido' };
   }
 }
@@ -581,7 +582,7 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
  * Chamado ao DESABILITAR modo offline
  */
 export function limparCacheOffline(peladaId: string, sessaoId?: string): void {
-  console.log('🧹 Limpando cache do modo offline...');
+  logger.log('🧹 Limpando cache do modo offline...');
   
   localStorage.removeItem(`jogadores_${peladaId}`);
   localStorage.removeItem(`sessao_ativa_${peladaId}`);
@@ -595,7 +596,7 @@ export function limparCacheOffline(peladaId: string, sessaoId?: string): void {
     localStorage.removeItem(`gols_${sessaoId}`);
   }
   
-  console.log('✅ Cache offline limpo');
+  logger.log('✅ Cache offline limpo');
 }
 
 /**
@@ -603,7 +604,10 @@ export function limparCacheOffline(peladaId: string, sessaoId?: string): void {
  */
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
-    console.log('🌐 Conexão restaurada - sincronizando...');
+    logger.log('🌐 Conexão restaurada - sincronizando...');
     syncQueue();
   });
 }
+
+
+

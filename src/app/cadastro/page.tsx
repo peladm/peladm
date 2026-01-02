@@ -5,6 +5,7 @@ import Layout from '../../components/Layout';
 import { jogadoresService, Jogador, supabase, validarSenhaPelada, getClienteSupabase } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { addToSyncQueue } from '../../lib/syncService';
+import { logger } from '../../lib/logger';
 
 export default function CadastroPage() {
   const { possuiPermissao, verificarLimite, nomePlano } = usePermissions();
@@ -50,14 +51,14 @@ export default function CadastroPage() {
   const carregarJogadores = async () => {
     try {
       setIsLoading(true);
-      console.log('🔍 Carregando jogadores do Supabase...');
+      logger.log('🔍 Carregando jogadores do Supabase...');
       
       // Debug: verificar se usuário está logado
       const user = localStorage.getItem('user');
-      console.log('👤 Usuário logado:', user ? 'SIM' : 'NÃO');
+      logger.log('👤 Usuário logado:', user ? 'SIM' : 'NÃO');
       
       if (!user) {
-        console.log('❌ Usuário não está logado, redirecionando para login...');
+        logger.log('❌ Usuário não está logado, redirecionando para login...');
         mostrarMensagem('❌ Você precisa fazer login primeiro', 'error');
         setTimeout(() => {
           window.location.href = '/login';
@@ -66,7 +67,7 @@ export default function CadastroPage() {
       }
       
       const userData = JSON.parse(user);
-      console.log('🆔 ID do usuário:', userData.id);
+      logger.log('🆔 ID do usuário:', userData.id);
       
       // Verificar modo offline
       const peladaId = userData.id;
@@ -82,7 +83,7 @@ export default function CadastroPage() {
       
       if (modoOffline) {
         // MODO OFFLINE: Carregar do localStorage
-        console.log('⚡ Modo offline: carregando do cache local');
+        logger.log('⚡ Modo offline: carregando do cache local');
         const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
         jogadoresData = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
       } else {
@@ -91,14 +92,14 @@ export default function CadastroPage() {
       }
       
       setJogadores(jogadoresData);
-      console.log(`✅ ${jogadoresData.length} jogadores carregados`);
+      logger.log(`✅ ${jogadoresData.length} jogadores carregados`);
       
       if (jogadoresData.length === 0) {
         mostrarMensagem('😴 Nenhum jogador cadastrado ainda', 'info');
       }
       
     } catch (error: any) {
-      console.error('💥 Erro ao carregar jogadores:', error);
+      logger.error('💥 Erro ao carregar jogadores:', error);
       if (error.message?.includes('não está logado')) {
         mostrarMensagem('❌ Sessão expirou. Faça login novamente.', 'error');
         setTimeout(() => {
@@ -155,11 +156,11 @@ export default function CadastroPage() {
       
       if (editandoId) {
         // Atualizar jogador existente
-        console.log('🔄 Atualizando jogador:', { id: editandoId, nome, nivel });
+        logger.log('🔄 Atualizando jogador:', { id: editandoId, nome, nivel });
         
         if (modoOffline) {
           // MODO OFFLINE: Atualizar localStorage + syncQueue
-          console.log('⚡ Modo offline: atualizando local');
+          logger.log('⚡ Modo offline: atualizando local');
           
           const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
           if (jogadoresLocal) {
@@ -191,11 +192,11 @@ export default function CadastroPage() {
         }
       } else {
         // Criar novo jogador
-        console.log('➕ Criando novo jogador:', { nome, nivel });
+        logger.log('➕ Criando novo jogador:', { nome, nivel });
         
         if (modoOffline) {
           // MODO OFFLINE: Salvar no localStorage + syncQueue
-          console.log('⚡ Modo offline: salvando local');
+          logger.log('⚡ Modo offline: salvando local');
           
           const novoJogador = {
             id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -238,7 +239,7 @@ export default function CadastroPage() {
       await carregarJogadores();
       
     } catch (error: any) {
-      console.error('💥 Erro ao salvar jogador:', error);
+      logger.error('💥 Erro ao salvar jogador:', error);
       
       if (error.message?.includes('duplicate') || error.code === '23505') {
         mostrarMensagem('❌ Já existe um jogador com este nome', 'error');
@@ -287,14 +288,14 @@ export default function CadastroPage() {
     
     try {
       setIsLoading(true);
-      console.log(`🔄 ${acao} jogador:`, { id, novoStatus });
+      logger.log(`🔄 ${acao} jogador:`, { id, novoStatus });
       
       await jogadoresService.alterarStatus(id, novoStatus as 'ativo' | 'inativo');
       mostrarMensagem(`${emoji} Jogador ${acao}do com sucesso!`, 'success');
       await carregarJogadores();
       
     } catch (error: any) {
-      console.error(`💥 Erro ao ${acao} jogador:`, error);
+      logger.error(`💥 Erro ao ${acao} jogador:`, error);
       mostrarMensagem(`❌ Erro ao ${acao} jogador`, 'error');
     } finally {
       setIsLoading(false);
@@ -335,14 +336,14 @@ export default function CadastroPage() {
     
     try {
       setIsLoading(true);
-      console.log('🗑️ Excluindo jogador:', jogadorParaExcluir);
+      logger.log('🗑️ Excluindo jogador:', jogadorParaExcluir);
       
       await jogadoresService.excluir(jogadorParaExcluir.id);
       mostrarMensagem('🗑️ Jogador excluído com sucesso!', 'success');
       await carregarJogadores();
       
     } catch (error: any) {
-      console.error('💥 Erro ao excluir jogador:', error);
+      logger.error('💥 Erro ao excluir jogador:', error);
       
       if (error.message?.includes('violates foreign key constraint')) {
         mostrarMensagem('❌ Não é possível excluir: jogador está em uso no sistema', 'error');
