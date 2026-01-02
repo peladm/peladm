@@ -146,37 +146,43 @@ self.addEventListener('fetch', (event) => {
   }
   
   // Para requisições de API (Supabase): Network First (tenta online primeiro)
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        // Salva response em cache apenas se for bem sucedida
-        if (response && response.status === 200) {
-          const responseToCache = response.clone();
-          caches.open(CACHE_ASSETS)
-            .then((cache) => {
-              cache.put(request, responseToCache);
-            });
-        }
-        return response;
-      })
-      .catch(() => {
-        // Se falhar, tenta buscar do cache
-        return caches.match(request).then((cachedResponse) => {
-          if (cachedResponse) {
-            console.log('[SW] API offline - usando cache:', request.url);
-            return cachedResponse;
+  // IMPORTANTE: Só tenta cachear requisições GET
+  if (request.method === 'GET') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // Salva response em cache apenas se for bem sucedida
+          if (response && response.status === 200) {
+            const responseToCache = response.clone();
+            caches.open(CACHE_ASSETS)
+              .then((cache) => {
+                cache.put(request, responseToCache);
+              })
+              .catch((error) => {
+                console.log('[SW] Não foi possível cachear:', error);
+              });
           }
-          // Não tem no cache, retorna erro
-          return new Response(
-            JSON.stringify({ error: 'Offline - dados não disponíveis em cache' }),
-            { 
-              status: 503,
-              headers: { 'Content-Type': 'application/json' }
+          return response;
+        })
+        .catch(() => {
+          // Se falhar, tenta buscar do cache
+          return caches.match(request).then((cachedResponse) => {
+            if (cachedResponse) {
+              console.log('[SW] API offline - usando cache:', request.url);
+              return cachedResponse;
             }
-          );
-        });
-      })
-  );
+            // Não tem no cache, retorna erro
+            return new Response(
+              JSON.stringify({ error: 'Offline - dados não disponíveis em cache' }),
+              { 
+                status: 503,
+                headers: { 'Content-Type': 'application/json' }
+              }
+            );
+          });
+        })
+    );
+  }
 });
 
 // Verifica atualizações periodicamente

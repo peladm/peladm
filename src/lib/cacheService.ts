@@ -65,18 +65,22 @@ export async function getJogadoresWithCache(
 export async function getRegrasWithCache(
   peladaId: string,
   options: CacheOptions = {}
-): Promise<any> {
+): Promise<{ success: boolean; data: any }> {
   const cacheKey = `regras_${peladaId}`;
+  
+  console.log('🔍 [CACHE] Buscando regras para pelada_id:', peladaId);
   
   if (!options.forceRefresh) {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
-      console.log('📦 Usando regras do cache');
-      return JSON.parse(cached);
+      const cachedData = JSON.parse(cached);
+      console.log('📦 [CACHE] Usando regras do cache:', cachedData);
+      return { success: true, data: cachedData };
     }
   }
   
   try {
+    console.log('🌐 [CACHE] Buscando regras do Supabase...');
     const { data, error } = await supabase
       .from('regras')
       .select('*')
@@ -85,21 +89,23 @@ export async function getRegrasWithCache(
     
     if (error) throw error;
     
+    console.log('✅ [CACHE] Regras encontradas no Supabase:', data);
     localStorage.setItem(cacheKey, JSON.stringify(data));
-    console.log('✅ Cache de regras atualizado');
+    console.log('✅ [CACHE] Cache de regras atualizado');
     
-    return data;
+    return { success: true, data };
     
   } catch (error) {
-    console.error('❌ Erro ao buscar regras:', error);
+    console.error('❌ [CACHE] Erro ao buscar regras:', error);
     
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
-      console.log('⚠️ Usando cache de regras (offline)');
-      return JSON.parse(cached);
+      const cachedData = JSON.parse(cached);
+      console.log('⚠️ [CACHE] Usando cache de regras (offline):', cachedData);
+      return { success: true, data: cachedData };
     }
     
-    return null;
+    return { success: false, data: null };
   }
 }
 

@@ -199,6 +199,22 @@ export default function CadastroPage() {
   };
 
   const excluirJogador = async (id: string, nome: string) => {
+    // Verificar se está em modo offline
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      const user = JSON.parse(userData);
+      const peladaId = user.id;
+      const regrasStr = localStorage.getItem(`regras_${peladaId}`);
+      
+      if (regrasStr) {
+        const regras = JSON.parse(regrasStr);
+        if (regras.modo_sincronizacao === 'local_first') {
+          mostrarMensagem('🚫 Exclusão bloqueada no modo offline! Desabilite o modo offline nas Regras para excluir jogadores.', 'error');
+          return;
+        }
+      }
+    }
+    
     if (!isAdmin) {
       const senhaCorreta = await solicitarSenhaAdmin();
       if (!senhaCorreta) return;

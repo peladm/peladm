@@ -38,18 +38,28 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
 
   // Verifica se já tem conexão em cache
   if (clienteSupabaseCache[peladaId]) {
+    console.log('🔄 Usando conexão em cache para:', peladaId);
     return clienteSupabaseCache[peladaId];
   }
 
   // Busca credenciais do cliente no banco principal
-  const { data: clienteData } = await supabase
+  console.log('🔍 Buscando credenciais do banco dedicado para:', peladaId);
+  const { data: clienteData, error } = await supabase
     .from('clientes')
     .select('supabase_url, supabase_anon_key, plano')
     .eq('id', peladaId)
     .single();
 
+  if (error) {
+    console.error('❌ Erro ao buscar cliente:', error);
+  }
+
   // Se cliente Premium com banco dedicado, cria e cacheia conexão
   if (clienteData?.supabase_url && clienteData?.supabase_anon_key) {
+    console.log('✅ Cliente com banco dedicado encontrado!');
+    console.log('🔗 URL:', clienteData.supabase_url);
+    console.log('🔑 Key:', clienteData.supabase_anon_key.substring(0, 20) + '...');
+    
     const clienteSupabase = createClient(
       clienteData.supabase_url,
       clienteData.supabase_anon_key,
@@ -63,6 +73,7 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
   }
 
   // Cliente Free ou sem banco dedicado: usa banco principal
+  console.log('ℹ️ Usando banco principal para:', peladaId);
   return supabase;
 };
 
@@ -80,13 +91,13 @@ export interface Jogador {
   gols?: number;
 }
 
-// Função para obter pelada_id do usuário logado (ID do cliente)
+// Função para obter pelada_id do usuário logado (código do cliente)
 const getPeladaId = (): string | null => {
   if (typeof window !== 'undefined') {
     const user = localStorage.getItem('user');
     if (user) {
       const userData = JSON.parse(user);
-      // O pelada_id é o próprio ID do cliente logado
+      // Retorna o id do cliente (ex: "GD3974")
       return userData.id || null;
     }
   }

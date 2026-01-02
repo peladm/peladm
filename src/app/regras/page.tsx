@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
 import { supabase, validarSenhaPelada } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
+import { baixarTodasTabelasParaOffline, limparCacheOffline } from '../../lib/syncService';
 
 interface Regras {
   jogadores_por_time: number;
@@ -219,6 +220,48 @@ export default function RegrasPage() {
       
       const user = JSON.parse(userData);
       const peladaId = user.id;
+      
+      // Detectar mudança de modo de sincronização
+      const { data: regrasAtuais } = await supabase
+        .from('regras')
+        .select('modo_sincronizacao')
+        .eq('pelada_id', peladaId)
+        .single();
+      
+      const modoAtual = regrasAtuais?.modo_sincronizacao || 'tempo_real';
+      const modoNovo = regras.modo_sincronizacao || 'tempo_real';
+      
+      // Se HABILITOU modo offline: baixar todas as tabelas
+      if (modoAtual === 'tempo_real' && modoNovo === 'local_first') {
+        console.log('📥 Habilitando modo offline: baixando todas as tabelas...');
+        setMessage('📥 Preparando modo offline... Aguarde.');
+        
+        const downloadResult = await baixarTodasTabelasParaOffline(peladaId);
+        
+        if (!downloadResult.sucesso) {
+          throw new Error(`Falha ao preparar modo offline: ${downloadResult.erro}`);
+        }
+        
+        console.log('✅ Modo offline pronto!', downloadResult.tabelas);
+        setMessage('✅ Modo offline ativado! Todas as tabelas baixadas.');
+      }
+      
+      // Se DESABILITOU modo offline: limpar cache
+      if (modoAtual === 'local_first' && modoNovo === 'tempo_real') {
+        console.log('🧹 Desabilitando modo offline: limpando cache...');
+        
+        // Buscar sessão ativa para limpar cache completo
+        const { data: sessaoAtiva } = await supabase
+          .from('sessoes')
+          .select('id')
+          .eq('pelada_id', peladaId)
+          .eq('status', 'ativa')
+          .single();
+        
+        limparCacheOffline(peladaId, sessaoAtiva?.id);
+        console.log('✅ Modo tempo real restaurado!');
+        setMessage('✅ Modo tempo real restaurado! Cache limpo.');
+      }
       
       // Verificar se já existe configuração para este cliente
       const { data: regrasExistentes } = await supabase

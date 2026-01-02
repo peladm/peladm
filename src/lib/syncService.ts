@@ -57,7 +57,72 @@ export function getSyncQueue(): SyncQueueItem[] {
 }
 
 /**
- * Sincroniza fila de itens pendentes
+ * Sincroniza fila de itens pendentes (versão transacional)
+ * Retorna mapeamento de IDs locais → IDs reais
+ */
+export async function syncQueueTransacional(peladaId: string, sessaoId: string): Promise<{
+  sucesso: boolean;
+  idMap: Map<string, string>;
+  erro?: string;
+}> {
+  if (!isOnline()) {
+    return { sucesso: false, idMap: new Map(), erro: 'Sem conexão com internet' };
+  }
+  
+  const queue = getSyncQueue();
+  
+  if (queue.length === 0) {
+    console.log('✅ Fila de sincronização vazia');
+    return { sucesso: true, idMap: new Map() };
+  }
+  
+  console.log(`🔄 Sincronização transacional: ${queue.length} itens...`);
+  
+  const idMap = new Map<string, string>();
+  const queueBackup = JSON.parse(JSON.stringify(queue)); // Backup para rollback
+  
+  try {
+    // Processar todos os itens em ORDEM
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i];
+      
+      console.log(`  [${i + 1}/${queue.length}] Processando: ${item.tipo}`);
+      
+      const resultado = await syncItemComRetorno(item, peladaId);
+      
+      // Se criar jogador, mapear ID local → ID real
+      if (item.tipo === 'criar_jogador' && resultado.id) {
+        const idLocal = item.dados.id || item.dados._tempId;
+        if (idLocal && idLocal.startsWith('local_')) {
+          idMap.set(idLocal, resultado.id);
+          console.log(`    Mapeado: ${idLocal} → ${resultado.id}`);
+        }
+      }
+    }
+    
+    // Se chegou aqui, TUDO deu certo! ✅
+    console.log(`✅ Sincronização transacional completa: ${queue.length} itens, ${idMap.size} IDs mapeados`);
+    
+    // Limpar fila de sincronização
+    localStorage.removeItem(SYNC_QUEUE_KEY);
+    
+    return { sucesso: true, idMap };
+    
+  } catch (error: any) {
+    // ROLLBACK: restaurar fila original
+    console.error('❌ Erro na sincronização transacional - fazendo rollback:', error);
+    localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queueBackup));
+    
+    return { 
+      sucesso: false, 
+      idMap: new Map(), 
+      erro: error.message || 'Erro desconhecido' 
+    };
+  }
+}
+
+/**
+ * Sincroniza fila de itens pendentes (versão antiga - mantida para compatibilidade)
  */
 export async function syncQueue(): Promise<boolean> {
   if (!isOnline()) {
@@ -116,7 +181,43 @@ export async function syncQueue(): Promise<boolean> {
 }
 
 /**
- * Sincroniza um item específico
+ * Sincroniza um item específico (versão com retorno de dados)
+ */
+async function syncItemComRetorno(item: SyncQueueItem, peladaId: string): Promise<any> {
+  switch (item.tipo) {
+    case 'criar_jogador':
+      return await syncCriarJogadorComRetorno(item, peladaId);
+      
+    case 'atualizar_jogador':
+      await syncAtualizarJogador(item);
+      return {};
+      
+    case 'excluir_jogador':
+      await syncExcluirJogador(item);
+      return {};
+      
+    case 'inserir_jogo':
+      return await syncInserirJogoComRetorno(item, peladaId);
+      
+    case 'inserir_gols':
+      await syncInserirGols(item);
+      return {};
+      
+    case 'atualizar_fila':
+      await syncAtualizarFila(item);
+      return {};
+      
+    case 'finalizar_sessao':
+      await syncFinalizarSessao(item);
+      return {};
+      
+    default:
+      throw new Error(`Tipo de sync desconhecido: ${(item as any).tipo}`);
+  }
+}
+
+/**
+ * Sincroniza um item específico (versão antiga - sem retorno)
  */
 async function syncItem(item: SyncQueueItem): Promise<void> {
   switch (item.tipo) {
@@ -154,7 +255,50 @@ async function syncItem(item: SyncQueueItem): Promise<void> {
 }
 
 /**
- * Funções de sincronização específicas
+ * Funções de sincronização específicas (versão com retorno)
+ */
+async function syncCriarJogadorComRetorno(item: SyncQueueItem, peladaId: string): Promise<{ id: string }> {
+  const { dados } = item;
+  const { id, _tempId, _pendente_sync, ...jogadorData } = dados;
+  
+  // Remover id se for local (começa com 'local_')
+  const insertData = id && id.startsWith('local_') 
+    ? { ...jogadorData, pelada_id: peladaId }
+    : { ...jogadorData, id, pelada_id: peladaId };
+  
+  const clienteDb = await getClienteSupabase(peladaId);
+  const { data, error } = await clienteDb
+    .from('jogadores')
+    .insert([insertData])
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return { id: data.id };
+}
+
+async function syncInserirJogoComRetorno(item: SyncQueueItem, peladaId: string): Promise<{ id: string }> {
+  const { sessao_id, dados } = item;
+  const { id, ...jogoData } = dados;
+  
+  // Remover id se for local
+  const insertData = id && id.startsWith('local_')
+    ? { ...jogoData, sessao_id }
+    : { ...jogoData, id, sessao_id };
+  
+  const clienteDb = await getClienteSupabase(peladaId);
+  const { data, error } = await clienteDb
+    .from('jogos')
+    .insert([insertData])
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return { id: data.id };
+}
+
+/**
+ * Funções de sincronização específicas (versão antiga - sem retorno)
  */
 async function syncCriarJogador(item: SyncQueueItem): Promise<void> {
   const { pelada_id, dados } = item;
@@ -302,6 +446,156 @@ export function clearSyncQueue(): void {
  */
 export function getSyncQueueCount(): number {
   return getSyncQueue().length;
+}
+
+/**
+ * Baixa TODAS as tabelas necessárias do Supabase para localStorage
+ * Chamado ao HABILITAR modo offline nas regras
+ */
+export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
+  sucesso: boolean;
+  erro?: string;
+  tabelas?: {
+    jogadores: number;
+    sessoes: number;
+    fila: number;
+    jogos: number;
+    gols: number;
+    regras: number;
+  };
+}> {
+  console.log('📥 Iniciando download de TODAS as tabelas para modo offline...');
+  
+  try {
+    if (!isOnline()) {
+      throw new Error('Sem conexão com internet. Conecte-se para habilitar modo offline.');
+    }
+    
+    const clienteDb = await getClienteSupabase(peladaId);
+    const tabelas = {
+      jogadores: 0,
+      sessoes: 0,
+      fila: 0,
+      jogos: 0,
+      gols: 0,
+      regras: 0
+    };
+    
+    // 1. Baixar TODOS os jogadores (ativos e inativos)
+    console.log('  📥 Baixando jogadores...');
+    const { data: jogadores, error: jogadoresError } = await clienteDb
+      .from('jogadores')
+      .select('*')
+      .eq('pelada_id', peladaId);
+    
+    if (jogadoresError) throw new Error(`Erro ao baixar jogadores: ${jogadoresError.message}`);
+    localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores || []));
+    tabelas.jogadores = jogadores?.length || 0;
+    console.log(`    ✅ ${tabelas.jogadores} jogadores baixados`);
+    
+    // 2. Baixar sessão ativa (se houver)
+    console.log('  📥 Baixando sessão ativa...');
+    const { data: sessoes, error: sessoesError } = await clienteDb
+      .from('sessoes')
+      .select('*')
+      .eq('pelada_id', peladaId)
+      .eq('status', 'ativa');
+    
+    if (sessoesError) throw new Error(`Erro ao baixar sessões: ${sessoesError.message}`);
+    
+    if (sessoes && sessoes.length > 0) {
+      const sessaoAtiva = sessoes[0];
+      localStorage.setItem(`sessao_ativa_${peladaId}`, JSON.stringify(sessaoAtiva));
+      tabelas.sessoes = 1;
+      console.log(`    ✅ Sessão ativa baixada (${sessaoAtiva.id})`);
+      
+      // 3. Baixar fila da sessão ativa
+      console.log('  📥 Baixando fila...');
+      const { data: fila, error: filaError } = await clienteDb
+        .from('fila')
+        .select('*')
+        .eq('sessao_id', sessaoAtiva.id);
+      
+      if (filaError) throw new Error(`Erro ao baixar fila: ${filaError.message}`);
+      localStorage.setItem(`fila_${sessaoAtiva.id}`, JSON.stringify(fila || []));
+      tabelas.fila = fila?.length || 0;
+      console.log(`    ✅ ${tabelas.fila} itens da fila baixados`);
+      
+      // 4. Baixar jogos da sessão
+      console.log('  📥 Baixando jogos...');
+      const { data: jogos, error: jogosError } = await clienteDb
+        .from('jogos')
+        .select('*')
+        .eq('sessao_id', sessaoAtiva.id);
+      
+      if (jogosError) throw new Error(`Erro ao baixar jogos: ${jogosError.message}`);
+      localStorage.setItem(`jogos_${sessaoAtiva.id}`, JSON.stringify(jogos || []));
+      tabelas.jogos = jogos?.length || 0;
+      console.log(`    ✅ ${tabelas.jogos} jogos baixados`);
+      
+      // 5. Baixar gols dos jogos
+      if (jogos && jogos.length > 0) {
+        console.log('  📥 Baixando gols...');
+        const jogoIds = jogos.map(j => j.id);
+        const { data: gols, error: golsError } = await clienteDb
+          .from('gols')
+          .select('*')
+          .in('jogo_id', jogoIds);
+        
+        if (golsError) throw new Error(`Erro ao baixar gols: ${golsError.message}`);
+        localStorage.setItem(`gols_${sessaoAtiva.id}`, JSON.stringify(gols || []));
+        tabelas.gols = gols?.length || 0;
+        console.log(`    ✅ ${tabelas.gols} gols baixados`);
+      }
+    } else {
+      console.log('    ⚠️ Nenhuma sessão ativa encontrada');
+    }
+    
+    // 6. Baixar regras (do banco principal)
+    console.log('  📥 Baixando regras...');
+    const { data: regras, error: regrasError } = await supabase
+      .from('regras')
+      .select('*')
+      .eq('pelada_id', peladaId)
+      .single();
+    
+    if (regrasError) throw new Error(`Erro ao baixar regras: ${regrasError.message}`);
+    localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
+    tabelas.regras = 1;
+    console.log(`    ✅ Regras baixadas`);
+    
+    // Marcar como inicializado
+    localStorage.setItem(`modo_offline_inicializado_${peladaId}`, Date.now().toString());
+    
+    console.log('✅ Download completo! Modo offline pronto.');
+    return { sucesso: true, tabelas };
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao baixar tabelas:', error);
+    return { sucesso: false, erro: error.message || 'Erro desconhecido' };
+  }
+}
+
+/**
+ * Limpa TODAS as tabelas do cache offline
+ * Chamado ao DESABILITAR modo offline
+ */
+export function limparCacheOffline(peladaId: string, sessaoId?: string): void {
+  console.log('🧹 Limpando cache do modo offline...');
+  
+  localStorage.removeItem(`jogadores_${peladaId}`);
+  localStorage.removeItem(`sessao_ativa_${peladaId}`);
+  localStorage.removeItem(`regras_${peladaId}`);
+  localStorage.removeItem(`modo_offline_inicializado_${peladaId}`);
+  localStorage.removeItem(SYNC_QUEUE_KEY);
+  
+  if (sessaoId) {
+    localStorage.removeItem(`fila_${sessaoId}`);
+    localStorage.removeItem(`jogos_${sessaoId}`);
+    localStorage.removeItem(`gols_${sessaoId}`);
+  }
+  
+  console.log('✅ Cache offline limpo');
 }
 
 /**

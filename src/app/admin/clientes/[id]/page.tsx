@@ -47,11 +47,16 @@ export default function DashboardCliente() {
 
   const carregarCliente = async () => {
     try {
+      console.log('📥 Carregando cliente com ID:', clienteId);
+      
       const { data, error } = await supabase
         .from('clientes')
         .select('*')
         .eq('id', clienteId)
         .single();
+
+      console.log('📦 Dados retornados:', data);
+      console.log('❌ Erro?:', error);
 
       if (error || !data) {
         alert('Cliente não encontrado!');
@@ -60,13 +65,14 @@ export default function DashboardCliente() {
       }
 
       setCliente(data);
+      console.log('✅ Cliente salvo no state:', data);
 
       // Não buscar automaticamente ao carregar - usuário clica no refresh
       // if (data.plano === 'Gold' || data.plano === 'Premium') {
       //   buscarUsoSupabase(data);
       // }
     } catch (error) {
-      console.error('Erro:', error);
+      console.error('💥 Erro ao carregar:', error);
       alert('Erro ao carregar cliente!');
       router.push('/admin/clientes');
     } finally {
@@ -76,15 +82,43 @@ export default function DashboardCliente() {
 
   const buscarUsoSupabase = async (clienteData?: any) => {
     const dadosCliente = clienteData || cliente;
+    
+    console.log('🔍 =================================');
+    console.log('🔍 BUSCANDO USO DO BANCO DE DADOS');
+    console.log('🔍 =================================');
+    console.log('📦 clienteData passado:', clienteData);
+    console.log('📦 cliente do state:', cliente);
+    console.log('📦 dadosCliente final:', dadosCliente);
+    
+    if (!dadosCliente) {
+      console.error('❌ dadosCliente está undefined!');
+      alert('Erro: dados do cliente não carregados. Recarregue a página.');
+      return;
+    }
 
     setLoadingUsage(true);
     try {
+      console.log('📋 Cliente:', dadosCliente?.nome);
+      console.log('📋 Plano:', dadosCliente?.plano);
+      console.log('🔑 supabase_url presente?', !!dadosCliente?.supabase_url);
+      console.log('🔑 supabase_anon_key presente?', !!dadosCliente?.supabase_anon_key);
+      
       const { createClient } = await import('@supabase/supabase-js');
       
       // Se tiver banco dedicado, usa ele. Senão usa o principal
-      const clienteSupabase = (dadosCliente?.supabase_url && dadosCliente?.supabase_anon_key)
+      const usaBancoDedicado = !!(dadosCliente?.supabase_url && dadosCliente?.supabase_anon_key);
+      const clienteSupabase = usaBancoDedicado
         ? createClient(dadosCliente.supabase_url, dadosCliente.supabase_anon_key)
         : supabase; // Banco principal
+
+      console.log('🗄️ Usa banco dedicado?', usaBancoDedicado);
+      if (usaBancoDedicado) {
+        console.log('🌐 URL do banco dedicado:', dadosCliente?.supabase_url);
+        console.log('🔑 Anon Key (primeiros 20):', dadosCliente?.supabase_anon_key?.substring(0, 20) + '...');
+      } else {
+        console.log('🌐 Usando banco PRINCIPAL (padrão)');
+      }
+      console.log('🔍 =================================');
 
       console.log('🔍 Buscando dados do banco...');
 
@@ -471,8 +505,15 @@ export default function DashboardCliente() {
                 )}
               </div>
               <button
-                onClick={buscarUsoSupabase}
-                disabled={loadingUsage}
+                onClick={() => {
+                  console.log('🔘 Botão clicado! Cliente no state:', cliente);
+                  if (!cliente || !cliente.id) {
+                    alert('Aguarde o carregamento dos dados do cliente...');
+                    return;
+                  }
+                  buscarUsoSupabase();
+                }}
+                disabled={loadingUsage || !cliente}
                 className="text-2xl hover:scale-110 disabled:opacity-50 transition-all"
                 title="Atualizar dados"
               >

@@ -126,7 +126,36 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
 
   // Função de logout
   const handleLogout = () => {
+    console.log('🚪 Realizando logout e limpando cache...');
+    
+    // Limpar dados do usuário
     localStorage.removeItem('user');
+    
+    // Limpar estados de partida/prancheta
+    localStorage.removeItem('partida_em_andamento');
+    localStorage.removeItem('modo_partida_estado');
+    localStorage.removeItem('modo_prancheta_ativo');
+    localStorage.removeItem('cronometro_partida');
+    localStorage.removeItem('coresPartida');
+    
+    // Limpar cache de regras
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => {
+      if (key.startsWith('regras_') || 
+          key.startsWith('jogadores_') || 
+          key.startsWith('fila_') || 
+          key.startsWith('usuarios_')) {
+        localStorage.removeItem(key);
+        console.log('🧹 Cache removido:', key);
+      }
+    });
+    
+    // Limpar outros dados temporários
+    localStorage.removeItem('peladaStats');
+    localStorage.removeItem('syncQueue');
+    
+    console.log('✅ Cache limpo completamente');
+    
     setIsLoggedIn(false);
     setUserEmail('');
     setUserName('');

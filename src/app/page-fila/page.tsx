@@ -6,7 +6,7 @@ import { usePermissions } from '../../lib/usePermissions';
 import { useAdInterstitial } from '../../lib/useAdInterstitial';
 import AdInterstitial from '../../components/AdInterstitial';
 import { getRegrasWithCache, isOnline, onConnectionChange } from '../../lib/cacheService';
-import { addToSyncQueue, syncQueue, getSyncQueueCount } from '../../lib/syncService';
+import { addToSyncQueue, syncQueue, getSyncQueueCount, syncQueueTransacional } from '../../lib/syncService';
 
 interface Jogador {
   id: string;
@@ -721,6 +721,19 @@ export default function FilaPage() {
     }
   }, [modoPartida, cronometro, cronometroAtivo, placarTimeA, placarTimeB, corTimeA, corTimeB]);
 
+  // Salvar estado do modo prancheta sempre que placar mudar
+  useEffect(() => {
+    if (modoPrancheta) {
+      const estadoAtual = localStorage.getItem('modo_prancheta_ativo');
+      if (estadoAtual) {
+        const estado = JSON.parse(estadoAtual);
+        estado.placarTimeA = placarTimeA;
+        estado.placarTimeB = placarTimeB;
+        localStorage.setItem('modo_prancheta_ativo', JSON.stringify(estado));
+      }
+    }
+  }, [modoPrancheta, placarTimeA, placarTimeB]);
+
   useEffect(() => {
     carregarDados();
     
@@ -757,15 +770,93 @@ export default function FilaPage() {
     }
   }, [modoSincronizacao]);
 
-  // Função para sincronizar fila
+  // Função para atualizar referências de IDs locais → IDs reais
+  const atualizarReferencias = (idMap: Map<string, string>, peladaId: string, sessaoId: string) => {
+    console.log('🔄 Atualizando referências de IDs locais para IDs reais...');
+    
+    // Atualizar IDs na fila
+    const filaStr = localStorage.getItem(`fila_${sessaoId}`);
+    if (filaStr) {
+      const fila = JSON.parse(filaStr);
+      fila.forEach((item: any) => {
+        if (idMap.has(item.jogador_id)) {
+          console.log(`  Fila: ${item.jogador_id} → ${idMap.get(item.jogador_id)}`);
+          item.jogador_id = idMap.get(item.jogador_id);
+        }
+      });
+      localStorage.setItem(`fila_${sessaoId}`, JSON.stringify(fila));
+    }
+    
+    // Atualizar IDs nos jogadores
+    const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
+    if (jogadoresStr) {
+      const jogadores = JSON.parse(jogadoresStr);
+      jogadores.forEach((jogador: any) => {
+        if (idMap.has(jogador.id)) {
+          console.log(`  Jogador: ${jogador.id} → ${idMap.get(jogador.id)}`);
+          jogador.id = idMap.get(jogador.id);
+        }
+      });
+      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
+    }
+    
+    console.log(`✅ ${idMap.size} referências atualizadas`);
+  };
+
+  // Função para sincronizar fila (versão transacional)
   const handleSyncQueue = async () => {
     setSincronizando(true);
+    
     try {
-      await syncQueue();
+      const userData = localStorage.getItem('user');
+      if (!userData) {
+        throw new Error('Usuário não encontrado');
+      }
+      const user = JSON.parse(userData);
+      const peladaId = user.id;
+      
+      // Buscar sessão ativa
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: sessao } = await clienteDb
+        .from('sessoes')
+        .select('id')
+        .eq('pelada_id', peladaId)
+        .eq('status', 'ativa')
+        .single();
+      
+      if (!sessao) {
+        throw new Error('Sessão ativa não encontrada');
+      }
+      
+      // Sync transacional com mapeamento de IDs
+      const syncResult = await syncQueueTransacional(peladaId, sessao.id);
+      
+      if (syncResult.sucesso) {
+        console.log('✅ Sync transacional concluído com sucesso!');
+        
+        // Atualizar referências se houver IDs mapeados
+        if (syncResult.idMap.size > 0) {
+          atualizarReferencias(syncResult.idMap, peladaId, sessao.id);
+        }
+        
+        // Limpar cache local e baixar dados atualizados
+        console.log('🧹 Limpando cache local...');
+        localStorage.removeItem(`fila_${sessao.id}`);
+        localStorage.removeItem(`jogadores_${peladaId}`);
+        localStorage.removeItem('syncQueue');
+        
+        // Recarregar página para refletir mudanças
+        await carregarDados();
+        
+        alert('✅ Sincronização concluída! Dados atualizados.');
+      } else {
+        throw new Error(syncResult.erro || 'Erro desconhecido na sincronização');
+      }
+      
       setItensPendentesSync(getSyncQueueCount());
-      console.log('✅ Sincronização concluída');
     } catch (error) {
       console.error('❌ Erro na sincronização:', error);
+      alert('❌ Erro ao sincronizar. Dados locais mantidos. Tente novamente.');
     } finally {
       setSincronizando(false);
     }
@@ -803,13 +894,19 @@ export default function FilaPage() {
       const peladaId = user.id;
       const planoUsuario = user.plano || 'free';
       
+      console.log('� [FILA] Buscando regras para pelada_id:', peladaId);
       console.log('📋 Carregando fila...');
       
       // 1. CARREGAR REGRAS (com cache se aplicável)
       const regrasResult = await getRegrasWithCache(peladaId);
       const regrasData = regrasResult.success ? regrasResult.data : null;
       
+      console.log('📋 [FILA] Resultado da busca de regras:', { regrasData, success: regrasResult.success });
+      
       if (regrasData) {
+        console.log('⚽ [FILA] Jogadores por time encontrado:', regrasData.jogadores_por_time, '(tipo:', typeof regrasData.jogadores_por_time, ')');
+        console.log('📦 [FILA] Regras completas:', regrasData);
+        
         // Definir modo de sincronização
         const modoSync = regrasData.modo_sincronizacao || 'tempo_real';
         setModoSincronizacao(modoSync);
@@ -882,14 +979,22 @@ export default function FilaPage() {
       const modoSync = modoSincronizacao || 'tempo_real';
       
       if (modoSync === 'local_first') {
-        // MODO LOCAL FIRST: Carregar do localStorage
+        // MODO LOCAL FIRST: Carregar do localStorage (já inicializado ao habilitar modo)
         console.log('⚡ Modo local_first: carregando do cache local');
         
         const filaLocal = localStorage.getItem(`fila_${sessao.id}`);
         const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
         
-        filaData = filaLocal ? JSON.parse(filaLocal) : [];
-        todosJogadores = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
+        // Se cache vazio (improvável mas possível), avisar usuário
+        if (!filaLocal || !jogadoresLocal) {
+          console.error('❌ Cache local vazio! Modo offline não foi inicializado corretamente.');
+          alert('❌ Erro: Modo offline não inicializado. Vá em Regras e reative o modo offline.');
+          setIsLoading(false);
+          return;
+        }
+        
+        filaData = JSON.parse(filaLocal);
+        todosJogadores = JSON.parse(jogadoresLocal);
         
         console.log('📊 Dados carregados do cache local');
       } else {
@@ -1014,12 +1119,63 @@ export default function FilaPage() {
       
       console.log(`✅ Fila carregada: ${jogadoresJogando.length} jogando, ${jogadoresFila.length} na fila, ${jogadoresReserva.length} reservas`);
       
-      // Verificar se há partida ativa
+      // Verificar e restaurar modo prancheta
+      const pranchetaSalva = localStorage.getItem('modo_prancheta_ativo');
+      if (pranchetaSalva) {
+        const estadoPrancheta = JSON.parse(pranchetaSalva);
+        setModoPrancheta(true);
+        
+        // Calcular tempo restante baseado no timestamp de início
+        const tempoDecorrido = Math.floor((Date.now() - estadoPrancheta.timestampInicio) / 1000);
+        const tempoRestante = Math.max(0, estadoPrancheta.tempoInicial - tempoDecorrido);
+        setCronometro(tempoRestante);
+        setCronometroAtivo(true);
+        setPlacarTimeA(estadoPrancheta.placarTimeA || 0);
+        setPlacarTimeB(estadoPrancheta.placarTimeB || 0);
+        
+        console.log('📋 Modo prancheta restaurado após F5');
+      }
+      
+      // Verificar se há partida ativa e restaurar estado completo
       const partidaSalva = localStorage.getItem('partida_em_andamento');
       if (partidaSalva) {
         const estadoPartida = JSON.parse(partidaSalva);
         setPartidaAtiva(estadoPartida);
         console.log('⚽ Partida ativa detectada:', estadoPartida.jogoId);
+        
+        // Restaurar estado completo do modo partida
+        setModoPartida(true);
+        
+        // Restaurar cronômetro
+        if (estadoPartida.isRunning && estadoPartida.timestampInicio) {
+          const tempoDecorrido = Math.floor((Date.now() - estadoPartida.timestampInicio) / 1000);
+          const tempoRestante = Math.max(0, estadoPartida.tempo - tempoDecorrido);
+          setCronometro(tempoRestante);
+          setCronometroAtivo(true);
+        } else {
+          setCronometro(estadoPartida.tempo || 0);
+          setCronometroAtivo(false);
+        }
+        
+        // Restaurar placares
+        setPlacarTimeA(estadoPartida.timeA?.gols || 0);
+        setPlacarTimeB(estadoPartida.timeB?.gols || 0);
+        
+        // Restaurar cores dos times
+        setCorTimeA(estadoPartida.timeA?.cor || '#000000');
+        setCorTimeB(estadoPartida.timeB?.cor || '#16a34a');
+        
+        // Restaurar vitórias consecutivas
+        setVitoriaConsecutiva(estadoPartida.vitoriaConsecutiva || 0);
+        
+        // Restaurar regras de empate
+        if (estadoPartida.regrasEmpate) {
+          setRegrasEmpate(estadoPartida.regrasEmpate);
+          setRegraEmpateConfig(estadoPartida.regrasEmpate.empate_modo || 'ambos_saem');
+          setEmpateContaVitoriaConfig(estadoPartida.regrasEmpate.empate_conta_vitoria || false);
+        }
+        
+        console.log('✅ Estado completo da partida restaurado após F5');
       } else {
         setPartidaAtiva(null);
       }
@@ -1083,7 +1239,7 @@ export default function FilaPage() {
     console.log(`📊 Fallback: ${jogando.length} jogando, ${filaLista.length} na fila`);
   };
 
-  const iniciarPartida = () => {
+  const iniciarPartida = async () => {
     const minimosJogadores = regras.jogadores_por_time * 2;
     const totalAtivos = jogadoresJogando.length + jogadoresFila.length;
     if (totalAtivos < minimosJogadores) {
@@ -1099,6 +1255,55 @@ export default function FilaPage() {
       // Abrir modal de confirmação para ativar modo partida completo
       setShowConfirmarInicioModal(true);
     } else {
+      // MODO PRANCHETA: Salvar snapshot antes de iniciar
+      try {
+        const userData = localStorage.getItem('user');
+        if (userData) {
+          const user = JSON.parse(userData);
+          const peladaId = user.id;
+          
+          // Buscar sessão ativa
+          const clienteDb = await getClienteSupabase(peladaId);
+          const { data: sessaoAtiva } = await clienteDb
+            .from('sessoes')
+            .select('id')
+            .eq('pelada_id', peladaId)
+            .eq('status', 'ativa')
+            .single();
+          
+          if (sessaoAtiva) {
+            // Buscar fila atual
+            const { data: filaAtual } = await clienteDb
+              .from('fila')
+              .select('*')
+              .eq('pelada_id', peladaId)
+              .eq('sessao_id', sessaoAtiva.id);
+            
+            if (filaAtual) {
+              // Limpar qualquer snapshot anterior
+              await clienteDb
+                .from('fila_snapshot')
+                .delete()
+                .eq('pelada_id', peladaId);
+              
+              // Salvar novo snapshot do tipo 'partida' (modo prancheta também usa tipo partida)
+              await clienteDb
+                .from('fila_snapshot')
+                .insert({
+                  pelada_id: peladaId,
+                  snapshot_data: filaAtual,
+                  tipo: 'partida'
+                });
+              
+              console.log('📸 Snapshot da fila salvo (modo prancheta)!');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Erro ao salvar snapshot do modo prancheta:', error);
+        // Continua mesmo se falhar o snapshot
+      }
+      
       // Ativar modo prancheta diretamente
       setModoPrancheta(true);
       const tempoPartida = regras.tempo_partida || 10;
@@ -1106,6 +1311,17 @@ export default function FilaPage() {
       setCronometroAtivo(true);
       setPlacarTimeA(0);
       setPlacarTimeB(0);
+      
+      // Salvar estado do modo prancheta no localStorage
+      const estadoPrancheta = {
+        ativo: true,
+        tempoInicial: tempoPartida * 60,
+        timestampInicio: Date.now(),
+        placarTimeA: 0,
+        placarTimeB: 0
+      };
+      localStorage.setItem('modo_prancheta_ativo', JSON.stringify(estadoPrancheta));
+      console.log('📋 Estado do modo prancheta salvo no localStorage');
     }
   };
 
@@ -1315,9 +1531,12 @@ export default function FilaPage() {
       const user = JSON.parse(userData);
       const peladaId = user.id;
 
+      // Usar banco dedicado
+      const clienteDb = await getClienteSupabase(peladaId);
+
       // Verificar se a tabela fila_snapshot existe antes de prosseguir
       try {
-        const testQuery = await supabase
+        const testQuery = await clienteDb
           .from('fila_snapshot')
           .select('id')
           .limit(0);
@@ -1332,8 +1551,8 @@ export default function FilaPage() {
         }
       }
 
-      // Buscar sessão ativa
-      const { data: sessao, error: sessaoError } = await supabase
+      // Buscar sessão ativa - USA BANCO DEDICADO
+      const { data: sessao, error: sessaoError } = await clienteDb
         .from('sessoes')
         .select('id')
         .eq('pelada_id', peladaId)
@@ -1345,8 +1564,8 @@ export default function FilaPage() {
         return;
       }
 
-      // Buscar o ÚLTIMO snapshot (apenas 1 registro ativo por vez)
-      const { data: snapshot, error: snapshotError } = await supabase
+      // Buscar o ÚLTIMO snapshot - USA BANCO DEDICADO
+      const { data: snapshot, error: snapshotError } = await clienteDb
         .from('fila_snapshot')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -1366,7 +1585,7 @@ export default function FilaPage() {
 
       // Se for snapshot de partida, buscar última partida
       if (snapshot.tipo === 'partida') {
-        const { data: ultimoJogo } = await supabase
+        const { data: ultimoJogo } = await clienteDb
           .from('jogos')
           .select('*')
           .eq('sessao_id', sessao.id)
@@ -1650,16 +1869,44 @@ export default function FilaPage() {
             return;
           }
           
-          // Sincronizar fila de pendências
-          await syncQueue();
+          // Buscar sessão ativa para passar para sync
+          const clienteDb = await getClienteSupabase(peladaId);
+          const { data: sessaoAtiva } = await clienteDb
+            .from('sessoes')
+            .select('id')
+            .eq('pelada_id', peladaId)
+            .eq('status', 'ativa')
+            .single();
           
-          // Aguardar um momento para garantir que tudo foi sincronizado
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          if (!sessaoAtiva) {
+            alert('❌ Nenhuma sessão ativa encontrada!');
+            setSincronizando(false);
+            setSenhaEncerramento('');
+            return;
+          }
+          
+          // Sincronizar com versão transacional
+          const syncResult = await syncQueueTransacional(peladaId, sessaoAtiva.id);
+          
+          if (!syncResult.sucesso) {
+            throw new Error(syncResult.erro || 'Erro na sincronização');
+          }
+          
+          // Atualizar referências se houver IDs mapeados
+          if (syncResult.idMap.size > 0) {
+            atualizarReferencias(syncResult.idMap, peladaId, sessaoAtiva.id);
+          }
+          
+          // Limpar cache local após sync bem-sucedido
+          console.log('🧹 Limpando cache local após sync...');
+          localStorage.removeItem(`fila_${sessaoAtiva.id}`);
+          localStorage.removeItem(`jogadores_${peladaId}`);
+          localStorage.removeItem('syncQueue');
           
           console.log('✅ Sincronização completa!');
         } catch (syncError) {
           console.error('❌ Erro na sincronização:', syncError);
-          alert('❌ Erro ao sincronizar dados. Tente novamente.');
+          alert('❌ Erro ao sincronizar dados. Verifique os dados e tente novamente.');
           setSincronizando(false);
           setSenhaEncerramento('');
           return;
@@ -2147,8 +2394,11 @@ export default function FilaPage() {
     const peladaId = peladaIdAtual;
     const sessaoId = sessaoAtual.id;
     
+    // Usar banco dedicado
+    const clienteDb = await getClienteSupabase(peladaId);
+    
     // Buscar a MAIOR posição atual na fila para adicionar no final
-    const { data: filaAtual } = await supabase
+    const { data: filaAtual } = await clienteDb
       .from('fila')
       .select('posicao_fila')
       .eq('pelada_id', peladaId)
@@ -2166,7 +2416,7 @@ export default function FilaPage() {
     // Status 'fila'/'reserva' pertencem APENAS à tabela 'fila'
     
     // IMPORTANTE: Fazer UPDATE em vez de INSERT para evitar duplicação
-    const { error: updateError } = await supabase
+    const { error: updateError } = await clienteDb
       .from('fila')
       .update({
         status: 'fila',
@@ -2285,8 +2535,8 @@ export default function FilaPage() {
           } else {
             console.log('📊 Dados da fila para snapshot:', snapshotFila);
             
-            // Limpar QUALQUER snapshot anterior (partida ou edição)
-            const { error: deleteError } = await supabase
+            // Limpar QUALQUER snapshot anterior (partida ou edição) - USA BANCO DEDICADO
+            const { error: deleteError } = await clienteDb
               .from('fila_snapshot')
               .delete()
               .eq('pelada_id', peladaId);
@@ -2295,8 +2545,8 @@ export default function FilaPage() {
               console.warn('⚠️ Erro ao limpar snapshot antigo (pode não existir):', deleteError);
             }
             
-            // Criar novo snapshot do tipo 'partida'
-            const { data: insertData, error: insertError } = await supabase
+            // Criar novo snapshot do tipo 'partida' - USA BANCO DEDICADO
+            const { data: insertData, error: insertError } = await clienteDb
               .from('fila_snapshot')
               .insert({
                 pelada_id: peladaId,
@@ -2322,7 +2572,7 @@ export default function FilaPage() {
         console.warn('⚠️ Nenhuma sessão ativa encontrada para snapshot');
       }
       
-      // 1. Carregar regras
+      // 1. Carregar regras (banco principal)
       const { data: regrasData } = await supabase
         .from('regras')
         .select('*')
@@ -2334,8 +2584,11 @@ export default function FilaPage() {
       const jogadoresPorTime = regrasData?.jogadores_por_time || 5;
       const duracaoMinutos = regrasData?.duracao || 10;
       
-      // 2. Buscar sessão ativa
-      const { data: sessoes } = await supabase
+      // Buscar conexão do banco dedicado
+      const clienteDbPartida = await getClienteSupabase(peladaId);
+      
+      // 2. Buscar sessão ativa (banco dedicado)
+      const { data: sessoes } = await clienteDbPartida
         .from('sessoes')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -2350,8 +2603,8 @@ export default function FilaPage() {
       
       const sessao = sessoes[0];
       
-      // 3. Carregar fila
-      const { data: filaData } = await supabase
+      // 3. Carregar fila (banco dedicado)
+      const { data: filaData } = await clienteDbPartida
         .from('fila')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -2364,8 +2617,8 @@ export default function FilaPage() {
         return;
       }
       
-      // 4. Carregar dados dos jogadores
-      const { data: todosJogadores } = await supabase
+      // 4. Carregar dados dos jogadores (banco dedicado)
+      const { data: todosJogadores } = await clienteDbPartida
         .from('jogadores')
         .select('*')
         .eq('pelada_id', peladaId);
@@ -3252,7 +3505,10 @@ export default function FilaPage() {
       setHistoricoAcoes([]);
       setVencedorDesempate(null); // Resetar vencedor do desempate
       setTimeEscolhidoDesempate(null); // Resetar escolha do time no empate
+      setPartidaAtiva(null); // Limpar partida ativa
       localStorage.removeItem('modo_partida_estado');
+      localStorage.removeItem('modo_prancheta_ativo'); // Limpar estado do modo prancheta
+      localStorage.removeItem('partida_em_andamento'); // Limpar partida ativa do localStorage
       
       // === 6. RECARREGAR DADOS DA FILA ===
       await carregarDados();
@@ -3807,6 +4063,31 @@ export default function FilaPage() {
                 )}
               </div>
           </div>
+            
+            {/* Aviso de Modo Offline */}
+            {modoSincronizacao === 'local_first' && (
+              <div style={{
+                background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                color: 'white',
+                borderRadius: '8px',
+                padding: '12px',
+                marginTop: '12px',
+                textAlign: 'center',
+                fontWeight: '600',
+                fontSize: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)'
+              }}>
+                <span>⚡ MODO OFFLINE ATIVO</span>
+                <span style={{ fontSize: '0.7rem', opacity: 0.9 }}>
+                  Todas as alterações serão salvas localmente e sincronizadas ao finalizar a pelada
+                  {itensPendentesSync > 0 && ` • ${itensPendentesSync} pendente(s)`}
+                </span>
+              </div>
+            )}
+            
             {jogadorSelecionadoTroca && (
               <div style={{
                 background: '#3b82f6',
@@ -4744,6 +5025,7 @@ export default function FilaPage() {
                       setCronometro((regras.tempo_partida || 10) * 60);
                       setPlacarTimeA(0);
                       setPlacarTimeB(0);
+                      localStorage.removeItem('modo_prancheta_ativo'); // Limpar localStorage
                       console.log('✅ Modo prancheta cancelado');
                     }
                   }}
@@ -5069,8 +5351,10 @@ export default function FilaPage() {
             <button
               onClick={async () => {
                 if (modoEdicao) {
-                  // Já está em modo edição - abrir modal de confirmação
-                  setShowResumoMudancasModal(true);
+                  // Já está em modo edição - abrir modal de confirmação (evitar duplicação)
+                  if (!showResumoMudancasModal) {
+                    setShowResumoMudancasModal(true);
+                  }
                 } else {
                   // Entrar em modo edição - salvar snapshot
                   try {
@@ -5097,14 +5381,14 @@ export default function FilaPage() {
                           .eq('sessao_id', sessaoAtiva.id);
                         
                         if (filaAtual) {
-                          // Limpar QUALQUER snapshot anterior (partida ou edição)
-                          await supabase
+                          // Limpar QUALQUER snapshot anterior (partida ou edição) - USA BANCO DEDICADO
+                          await clienteDb
                             .from('fila_snapshot')
                             .delete()
                             .eq('pelada_id', peladaId);
                           
-                          // Salvar novo snapshot de edição
-                          await supabase
+                          // Salvar novo snapshot de edição - USA BANCO DEDICADO
+                          await clienteDb
                             .from('fila_snapshot')
                             .insert({
                               pelada_id: peladaId,
@@ -6364,8 +6648,9 @@ export default function FilaPage() {
                         const user = JSON.parse(userData);
                         const peladaId = user.id;
                         
-                        // Buscar snapshot
-                        const { data: snapshots } = await supabase
+                        // Buscar snapshot - USA BANCO DEDICADO
+                        const clienteDb = await getClienteSupabase(peladaId);
+                        const { data: snapshots } = await clienteDb
                           .from('fila_snapshot')
                           .select('*')
                           .eq('pelada_id', peladaId)
@@ -6384,7 +6669,6 @@ export default function FilaPage() {
                         console.log('🔄 Restaurando snapshot:', snapshotData);
                         
                         // Buscar sessão ativa
-                        const clienteDb = await getClienteSupabase(peladaId);
                         const { data: sessoes } = await clienteDb
                           .from('sessoes')
                           .select('id')
@@ -8562,55 +8846,6 @@ export default function FilaPage() {
         {/* Anúncio Interstitial (apenas FREE) */}
         {shouldShowInterstitial && (
           <AdInterstitial onClose={resetInterstitial} motivo="navegacao" />
-        )}
-        
-        {/* Botão de Sincronização Manual (Modo Local First) */}
-        {modoSincronizacao === 'local_first' && itensPendentesSync > 0 && statusOnline && (
-          <button
-            onClick={handleSyncQueue}
-            disabled={sincronizando}
-            style={{
-              position: 'fixed',
-              bottom: '80px',
-              right: '20px',
-              background: sincronizando 
-                ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 100%)'
-                : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '50px',
-              padding: '14px 24px',
-              fontSize: '0.9rem',
-              fontWeight: '700',
-              cursor: sincronizando ? 'not-allowed' : 'pointer',
-              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)',
-              zIndex: 1000,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.3s ease',
-              animation: sincronizando ? 'none' : 'pulse 2s infinite'
-            }}
-            onMouseEnter={(e) => {
-              if (!sincronizando) {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.5)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!sincronizando) {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
-              }
-            }}
-          >
-            <span style={{ fontSize: '1.2rem' }}>
-              {sincronizando ? '⏳' : '🔄'}
-            </span>
-            <span>
-              {sincronizando ? 'Sincronizando...' : `Sincronizar (${itensPendentesSync})`}
-            </span>
-          </button>
         )}
       </div>
       

@@ -81,7 +81,7 @@ export default function Login() {
         setLoading(false);
         // Salvar dados completos do usuário logado
         localStorage.setItem('user', JSON.stringify({
-          id: clienteData.id, // pelada_id
+          id: clienteData.id, // pelada_id (ex: GD3974)
           nome: clienteData.nome,
           email: clienteData.email,
           usuario_pelada: usuarioData.username,
@@ -143,7 +143,7 @@ export default function Login() {
         setLoading(false);
         // Salvar acesso visitante (limitado)
         localStorage.setItem('user', JSON.stringify({
-          id: clienteData.id, // pelada_id
+          id: clienteData.id, // pelada_id (ex: GD3974)
           nome: clienteData.nome,
           plano: clienteData.plano || 'Básico',
           tipo_acesso: 'visitante', // Acesso limitado

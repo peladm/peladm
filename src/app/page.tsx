@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Layout from '../components/Layout';
 import { supabase } from '../lib/supabase';
 import { usePermissions } from '../lib/usePermissions';
+import { getSyncQueueCount, syncQueueTransacional } from '../lib/syncService';
 
 export default function Home() {
   const { possuiPermissao, nomePlano } = usePermissions();
@@ -32,6 +33,89 @@ export default function Home() {
   const [numLinhas, setNumLinhas] = useState(10);
   const [observacao, setObservacao] = useState('');
   const [avisosLista, setAvisosLista] = useState<string[]>([]);
+  
+  // States para sincronização offline
+  const [itensPendentesSync, setItensPendentesSync] = useState(0);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [modoOfflineAtivo, setModoOfflineAtivo] = useState(false);
+
+  useEffect(() => {
+    verificarSessaoAtiva();
+    carregarAvisos();
+    verificarModoOffline();
+    
+    // Atualizar contador de pendências a cada 3 segundos
+    const interval = setInterval(() => {
+      verificarModoOffline();
+    }, 3000);
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  const verificarModoOffline = () => {
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      const user = JSON.parse(userData);
+      const regrasStr = localStorage.getItem(`regras_${user.id}`);
+      
+      if (regrasStr) {
+        const regras = JSON.parse(regrasStr);
+        const modoOffline = regras.modo_sincronizacao === 'local_first';
+        setModoOfflineAtivo(modoOffline);
+        
+        if (modoOffline) {
+          const count = getSyncQueueCount();
+          setItensPendentesSync(count);
+        }
+      }
+    }
+  };
+  
+  const handleSyncManual = async () => {
+    if (sincronizando) return;
+    
+    setSincronizando(true);
+    
+    try {
+      const userData = localStorage.getItem('user');
+      if (!userData) {
+        alert('❌ Usuário não encontrado');
+        return;
+      }
+      
+      const user = JSON.parse(userData);
+      const peladaId = user.id;
+      
+      // Buscar sessão ativa
+      const { data: sessao } = await supabase
+        .from('sessoes')
+        .select('id')
+        .eq('pelada_id', peladaId)
+        .eq('status', 'ativa')
+        .single();
+      
+      if (!sessao) {
+        alert('❌ Nenhuma sessão ativa encontrada');
+        return;
+      }
+      
+      // Sync transacional
+      const syncResult = await syncQueueTransacional(peladaId, sessao.id);
+      
+      if (syncResult.sucesso) {
+        alert('✅ Sincronização concluída com sucesso!');
+        setItensPendentesSync(0);
+      } else {
+        alert(`❌ Erro na sincronização: ${syncResult.erro}`);
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao sincronizar:', error);
+      alert('❌ Erro ao sincronizar. Tente novamente.');
+    } finally {
+      setSincronizando(false);
+      verificarModoOffline();
+    }
+  };
 
   useEffect(() => {
     verificarSessaoAtiva();
@@ -395,9 +479,53 @@ export default function Home() {
         </section>
       )}
 
+      {/* Botão de Sincronização Offline */}
+      {modoOfflineAtivo && itensPendentesSync > 0 && (
+        <section className="mb-6">
+          <button
+            onClick={handleSyncManual}
+            disabled={sincronizando}
+            className={`w-full rounded-xl shadow-lg p-4 sm:p-6 border-2 transition-all duration-300 min-h-[5rem] sm:h-20 ${
+              sincronizando
+                ? 'bg-gray-100 border-gray-300 cursor-not-allowed opacity-75'
+                : 'bg-gradient-to-br from-purple-50 to-violet-50 border-purple-300 hover:shadow-xl hover:scale-[1.01] cursor-pointer'
+            }`}
+          >
+            <div className="flex items-center justify-between h-full">
+              {/* Conteúdo Principal */}
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center">
+                  <span className="text-2xl sm:text-3xl">
+                    {sincronizando ? '⏳' : '🔄'}
+                  </span>
+                </div>
+                <div className="text-left">
+                  <h3 className="font-bold text-gray-800 text-sm sm:text-base mb-0.5">
+                    {sincronizando ? 'Sincronizando...' : 'Fazer Sync'}
+                  </h3>
+                  <p className="text-xs text-gray-600">
+                    {sincronizando 
+                      ? 'Aguarde, enviando dados...' 
+                      : `${itensPendentesSync} operação(ões) pendente(s) • Modo Offline`
+                    }
+                  </p>
+                </div>
+              </div>
+              
+              {/* Indicador */}
+              {!sincronizando && (
+                <div className="bg-purple-500 text-white px-3 sm:px-4 py-1 sm:py-2 rounded-full font-bold text-sm sm:text-base shadow-md animate-pulse">
+                  {itensPendentesSync}
+                </div>
+              )}
+            </div>
+          </button>
+        </section>
+      )}
+
       {/* Estatísticas Gerais */}
       <section className="mb-6">
-        <div className={`bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl shadow-lg p-8 border border-orange-200 transition-all h-48 relative ${
+        <div className={`bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl shadow-lg p-6 md:p-8 border border-orange-200 transition-all min-h-[180px] md:min-h-[192px] relative ${
           possuiPermissao('verEstatisticas') ? 'hover:shadow-xl' : 'opacity-60 cursor-not-allowed'
         }`}>
           {/* Tag Versão Premium */}
@@ -411,12 +539,12 @@ export default function Home() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 h-full">
             {/* Conteúdo Principal */}
             <div className="flex items-center space-x-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-2xl">📊</span>
+              <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
+                <span className="text-xl md:text-2xl">📊</span>
               </div>
               <div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-1">Estatísticas Gerais</h2>
-                <p className="text-gray-600">Veja todos os dados da pelada</p>
+                <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-1">Estatísticas Gerais</h2>
+                <p className="text-sm md:text-base text-gray-600">Veja todos os dados da pelada</p>
               </div>
             </div>
             
@@ -430,7 +558,7 @@ export default function Home() {
                 }
               }}
               disabled={!possuiPermissao('verEstatisticas')}
-              className={`px-8 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-3 shadow-lg ${
+              className={`w-full md:w-auto px-6 md:px-8 py-3 md:py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 md:space-x-3 shadow-lg text-sm md:text-base ${
                 possuiPermissao('verEstatisticas')
                   ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white hover:shadow-xl cursor-pointer'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
@@ -438,7 +566,7 @@ export default function Home() {
             >
               <span>📋</span>
               <span>Ver Relatório Completo</span>
-              <span className="text-lg">→</span>
+              <span className="text-base md:text-lg">→</span>
             </button>
           </div>
         </div>

@@ -113,11 +113,8 @@ export default function SorteioPage() {
       const user = JSON.parse(userData);
       const peladaId = user.id;
       
-      // Usar banco apropriado (dedicado se Premium)
-      const clienteDb = await getSupabaseParaUsuarioLogado();
-      
-      // Buscar regras no Supabase
-      const { data: regrasSupabase, error } = await clienteDb
+      // REGRAS sempre no banco PRINCIPAL (não dedicado)
+      const { data: regrasSupabase, error } = await supabase
         .from('regras')
         .select('*')
         .eq('pelada_id', peladaId)
@@ -274,15 +271,55 @@ export default function SorteioPage() {
       return;
     }
 
-    const minJogadores = regras.jogadores_por_time * 2;
-    if (jogadoresSelecionados.length < minJogadores) {
-      mostrarMensagem(`❌ Selecione pelo menos ${minJogadores} jogadores para ${regras.jogadores_por_time}x${regras.jogadores_por_time}`, 4000);
-      return;
-    }
-
     try {
       setIsLoading(true);
       mostrarMensagem('🎲 Sorteando times...', 1000);
+
+      // Recarregar regras do banco antes de sortear para garantir que estão atualizadas
+      const userData = localStorage.getItem('user');
+      if (userData) {
+        const user = JSON.parse(userData);
+        const peladaId = user.id;
+        
+        console.log('🔍 Buscando regras para pelada_id:', peladaId);
+        
+        const { data: regrasAtual, error: regrasError } = await supabase
+          .from('regras')
+          .select('*')
+          .eq('pelada_id', peladaId)
+          .single();
+        
+        console.log('📋 Resultado da busca:', { regrasAtual, regrasError });
+        
+        if (regrasAtual && !regrasError) {
+          const jogadoresPorTimeAtual = regrasAtual.jogadores_por_time || 5;
+          console.log('⚽ Jogadores por time encontrado:', jogadoresPorTimeAtual, '(tipo:', typeof jogadoresPorTimeAtual, ')');
+          console.log('📦 Regras completas:', regrasAtual);
+          
+          // Atualizar state de regras
+          setRegras({
+            jogadores_por_time: jogadoresPorTimeAtual,
+            modelo_sorteio: regrasAtual.modelo_sorteio || 'equilibrado'
+          });
+          
+          // Usar regras atualizadas para validação
+          const minJogadores = jogadoresPorTimeAtual * 2;
+          if (jogadoresSelecionados.length < minJogadores) {
+            mostrarMensagem(`❌ Selecione pelo menos ${minJogadores} jogadores para ${jogadoresPorTimeAtual}x${jogadoresPorTimeAtual}`, 4000);
+            setIsLoading(false);
+            return;
+          }
+        } else {
+          console.warn('⚠️ Não foi possível carregar regras, usando state atual:', regras);
+        }
+      }
+
+      const minJogadores = regras.jogadores_por_time * 2;
+      if (jogadoresSelecionados.length < minJogadores) {
+        mostrarMensagem(`❌ Selecione pelo menos ${minJogadores} jogadores para ${regras.jogadores_por_time}x${regras.jogadores_por_time}`, 4000);
+        setIsLoading(false);
+        return;
+      }
 
       // Buscar dados completos dos jogadores selecionados
       const jogadoresSorteio = jogadoresDisponiveis.filter(j => 
@@ -565,6 +602,20 @@ export default function SorteioPage() {
       
       console.log('🔄 Iniciando pelada para:', peladaId);
       
+      // Buscar regras atualizadas do banco principal antes de criar a fila
+      const { data: regrasAtual, error: regrasError } = await supabase
+        .from('regras')
+        .select('*')
+        .eq('pelada_id', peladaId)
+        .single();
+      
+      if (regrasError) {
+        console.warn('⚠️ Erro ao buscar regras, usando padrão:', regrasError);
+      }
+      
+      const jogadoresPorTime = regrasAtual?.jogadores_por_time || regras.jogadores_por_time || 5;
+      console.log('⚽ Jogadores por time:', jogadoresPorTime);
+      
       // Usar banco apropriado (dedicado se Premium)
       const clienteDb = await getClienteSupabase(peladaId);
       
@@ -682,7 +733,7 @@ export default function SorteioPage() {
         });
       });
       
-      const jogadoresJogando = regras.jogadores_por_time * 2;
+      const jogadoresJogando = jogadoresPorTime * 2;
       console.log(`📝 Inserindo ${filaInserts.length} jogadores na fila:`);
       console.log(`  - ${Math.min(jogadoresJogando, filaInserts.filter(f => f.status === 'fila').length)} jogando (primeiras posições)`);
       console.log(`  - ${Math.max(0, filaInserts.filter(f => f.status === 'fila').length - jogadoresJogando)} na fila de espera`);
