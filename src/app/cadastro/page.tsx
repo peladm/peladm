@@ -18,25 +18,11 @@ export default function CadastroPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [jogadorParaExcluir, setJogadorParaExcluir] = useState<{id: string, nome: string} | null>(null);
-  const [modoOfflineAtivo, setModoOfflineAtivo] = useState(false);
 
   useEffect(() => {
     testarConexaoECarregar();
     verificarPermissaoAdmin();
-    verificarModoOffline();
   }, []);
-  
-  const verificarModoOffline = () => {
-    const user = localStorage.getItem('user');
-    if (user) {
-      const userData = JSON.parse(user);
-      const regrasStr = localStorage.getItem(`regras_${userData.id}`);
-      if (regrasStr) {
-        const regras = JSON.parse(regrasStr);
-        setModoOfflineAtivo(regras.modo_sincronizacao === 'local_first');
-      }
-    }
-  };
 
   const testarConexaoECarregar = async () => {
     try {
@@ -457,17 +443,10 @@ export default function CadastroPage() {
 
   return (
     <Layout title="Cadastro">
-      {/* Banner Modo Offline */}
-      {modoOfflineAtivo && (
-        <div className="fixed top-0 left-0 right-0 bg-purple-600 text-white text-center py-2 text-sm font-medium z-50 shadow-md">
-          ⚡ MODO OFFLINE ATIVO - Dados salvos localmente
-        </div>
-      )}
-      
       {/* Toast Message */}
       {message && (
         <div
-          className={`fixed ${modoOfflineAtivo ? 'top-14' : 'top-5'} left-1/2 transform -translate-x-1/2 px-5 py-3 rounded-lg text-white text-sm z-50 max-w-sm text-center shadow-lg ${
+          className={`fixed top-5 left-1/2 transform -translate-x-1/2 px-5 py-3 rounded-lg text-white text-sm z-50 max-w-sm text-center shadow-lg ${
             message.includes('✅') ? 'bg-green-600' : 
             message.includes('❌') ? 'bg-red-600' : 
             'bg-blue-600'
@@ -477,7 +456,7 @@ export default function CadastroPage() {
         </div>
       )}
 
-      <div className="max-w-sm mx-auto space-y-5" style={{ marginTop: modoOfflineAtivo ? '3rem' : '0' }}>
+      <div className="max-w-sm mx-auto space-y-5">
         {/* Formulário de Cadastro */}
         <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
           <form onSubmit={handleSubmit} className="flex flex-col gap-2">
