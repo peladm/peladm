@@ -652,7 +652,7 @@ export default function SorteioPage() {
         console.log('🔍 Primeiro jogador:', todosJogadores[0]);
         
         // MONTAR FILA (CÓDIGO IDÊNTICO AO GOLD/PREMIUM)
-        const filaLocal = [];
+        const filaLocal: any[] = [];
         let posicaoAtual = 1;
         const timestamp = Date.now();
         
