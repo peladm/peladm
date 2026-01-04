@@ -2445,8 +2445,8 @@ export default function FilaPage() {
       
       // 5. Montar lista de jogadores jogando (primeiros 2 * jogadoresPorTime)
       const totalJogando = jogadoresPorTime * 2;
-      const jogadoresJogando = filaData.slice(0, totalJogando).map(item => {
-        const jogador = todosJogadores?.find(j => j.id === item.jogador_id);
+      const jogadoresJogando = filaData.slice(0, totalJogando).map((item: any) => {
+        const jogador = todosJogadores?.find((j: any) => j.id === item.jogador_id);
         return {
           id: item.jogador_id,
           nome: jogador?.nome || 'Desconhecido',
