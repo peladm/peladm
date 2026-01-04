@@ -1173,7 +1173,7 @@ export default function FilaPage() {
           };
         });
         
-        const todosJogadoresFila = todosJogadoresFilaTemp.filter((jogador, index, self) => 
+        const todosJogadoresFila = todosJogadoresFilaTemp.filter((jogador: JogadorFila, index: number, self: JogadorFila[]) => 
           index === self.findIndex(j => j.id === jogador.id)
         );
         
