@@ -1177,8 +1177,8 @@ export default function FilaPage() {
           index === self.findIndex(j => j.id === jogador.id)
         );
         
-        const jogadoresJogando = todosJogadoresFila.filter((_, index) => index < regras.jogadores_por_time * 2);
-        const jogadoresFila = todosJogadoresFila.filter((_, index) => index >= regras.jogadores_por_time * 2);
+        const jogadoresJogando = todosJogadoresFila.filter((_: JogadorFila, index: number) => index < regras.jogadores_por_time * 2);
+        const jogadoresFila = todosJogadoresFila.filter((_: JogadorFila, index: number) => index >= regras.jogadores_por_time * 2);
         
         setJogadoresJogando(jogadoresJogando);
         setJogadoresFila(jogadoresFila);
