@@ -1194,7 +1194,7 @@ export default function FilaPage() {
             status: 'reserva' as const
           };
         });
-        const jogadoresReserva = jogadoresReservaTemp.filter((jogador, index, self) => 
+        const jogadoresReserva = jogadoresReservaTemp.filter((jogador: JogadorFila, index: number, self: JogadorFila[]) => 
           index === self.findIndex(j => j.id === jogador.id)
         );
         setJogadoresReserva(jogadoresReserva);
