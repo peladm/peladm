@@ -843,7 +843,7 @@ export default function SorteioPage() {
       
       timesFormados.forEach((time, timeIndex) => {
         time.jogadores.forEach((jogadorTime) => {
-          const jogadorDB = todosJogadores.find(j => j.nome === jogadorTime.nome);
+          const jogadorDB = todosJogadores.find((j: any) => j.nome === jogadorTime.nome);
           if (jogadorDB && !nomesJogadoresNaFila.has(jogadorDB.nome)) {
             nomesJogadoresNaFila.add(jogadorDB.nome);
             filaLocal.push({
@@ -860,7 +860,7 @@ export default function SorteioPage() {
       });
       
       // 4.2. JOGADORES NÃO SELECIONADOS PARA O SORTEIO - status "reserva"
-      const jogadoresReserva = todosJogadores.filter(j => !nomesJogadoresNaFila.has(j.nome));
+      const jogadoresReserva = todosJogadores.filter((j: any) => !nomesJogadoresNaFila.has(j.nome));
       
       jogadoresReserva.forEach((jogadorDB) => {
         filaLocal.push({
