@@ -414,7 +414,7 @@ export const fila_mover = (
     );
     
     // 3. Reorganizar posições: inserir jogador na nova posição
-    const novaLista = [];
+    const novaLista: any[] = [];
     let posicaoAtual = 1;
     
     for (let i = 0; i < jogadoresSemOMover.length + 1; i++) {
