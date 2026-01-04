@@ -2295,7 +2295,7 @@ export default function FilaPage() {
   };
 
   const handleMover = (jogador: JogadorFila, novaPosicao: number) => {
-    handleMover(jogador, novaPosicao, regras, setJogadoresJogando, setJogadoresFila);
+    fila_mover(jogador, novaPosicao, regras, setJogadoresJogando, setJogadoresFila);
   };
 
   const handleCadastrar = () => {
