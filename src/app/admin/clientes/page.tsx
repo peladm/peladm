@@ -21,6 +21,7 @@ interface Cliente {
   data_vencimento?: string;
   valor_plano?: number;
   username?: string;
+  is_master?: boolean;
 }
 
 export default function AdminClientes() {
