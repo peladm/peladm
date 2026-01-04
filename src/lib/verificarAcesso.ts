@@ -1,4 +1,5 @@
 // Utilitário para verificar permissões de acesso
+import { obterCredenciais } from './credenciais';
 
 export type TipoAcesso = 'completo' | 'visitante' | null;
 
@@ -14,10 +15,24 @@ export interface Usuario {
   tipo_acesso: TipoAcesso;
 }
 
-// Obter dados do usuário do localStorage
+// Obter dados do usuário do localStorage (compatibilidade com ambos os formatos)
 export const obterUsuario = (): Usuario | null => {
   if (typeof window === 'undefined') return null;
   
+  // Tentar novo formato (credenciais)
+  const credenciais = obterCredenciais();
+  if (credenciais) {
+    return {
+      id: credenciais.pelada_id,
+      nome: credenciais.username,
+      plano: credenciais.plano || 'free',
+      is_master: true,
+      status: true,
+      tipo_acesso: 'completo'
+    };
+  }
+  
+  // Fallback para formato antigo (user)
   const userStr = localStorage.getItem('user');
   if (!userStr) return null;
   

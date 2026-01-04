@@ -3,12 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '../components/Layout';
-import { supabase } from '../lib/supabase';
-import { usePermissions } from '../lib/usePermissions';
-import { getSyncQueueCount, syncQueueTransacional } from '../lib/syncService';
+import { createClient } from '@supabase/supabase-js';
+import { buscar_plano, buscar_pelada_id, buscar_supabase_url, buscar_supabase_anon_key } from '../lib/credenciais';
+
+// Banco PRINCIPAL onde está a tabela clientes
+const BANCO_PRINCIPAL_URL = 'https://ewcswczqvelhlwpbraea.supabase.co';
+const BANCO_PRINCIPAL_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks';
 
 export default function Home() {
-  const { possuiPermissao, nomePlano } = usePermissions();
+  const plano = buscar_plano();
   const [stats, setStats] = useState({
     totalPeladas: 0,
     totalGols: 0,
@@ -34,83 +37,10 @@ export default function Home() {
   const [observacao, setObservacao] = useState('');
   const [avisosLista, setAvisosLista] = useState<string[]>([]);
   
-  // States para sincronização offline
-  const [itensPendentesSync, setItensPendentesSync] = useState(0);
-  const [sincronizando, setSincronizando] = useState(false);
-  const [modoOfflineAtivo, setModoOfflineAtivo] = useState(false);
-
   useEffect(() => {
     verificarSessaoAtiva();
     carregarAvisos();
-    verificarModoOffline();
-    
-    // Atualizar contador de pendências a cada 3 segundos
-    const interval = setInterval(() => {
-      verificarModoOffline();
-    }, 3000);
-    
-    return () => clearInterval(interval);
   }, []);
-  
-  const verificarModoOffline = () => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      const user = JSON.parse(userData);
-      const regrasStr = localStorage.getItem(`regras_${user.id}`);
-      
-      if (regrasStr) {
-        const regras = JSON.parse(regrasStr);
-        const modoOffline = regras.modo_sincronizacao === 'local_first';
-        setModoOfflineAtivo(modoOffline);
-        
-        if (modoOffline) {
-          const count = getSyncQueueCount();
-          setItensPendentesSync(count);
-        }
-      }
-    }
-  };
-  
-  const handleSyncManual = async () => {
-    if (sincronizando) return;
-    
-    setSincronizando(true);
-    
-    try {
-      const userData = localStorage.getItem('user');
-      if (!userData) {
-        alert('❌ Usuário não encontrado');
-        return;
-      }
-      
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
-      
-      // Buscar sessão ativa (opcional, pode não existir)
-      const { data: sessao } = await supabase
-        .from('sessoes')
-        .select('id')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .maybeSingle();
-      
-      // Sync transacional (funciona com ou sem sessão)
-      const syncResult = await syncQueueTransacional(peladaId, sessao?.id);
-      
-      if (syncResult.sucesso) {
-        alert(`✅ Sincronização concluída! ${syncResult.idMap.size} itens sincronizados`);
-        setItensPendentesSync(0);
-      } else {
-        alert(`❌ Erro na sincronização: ${syncResult.erro}`);
-      }
-    } catch (error: any) {
-      console.error('❌ Erro ao sincronizar:', error);
-      alert('❌ Erro ao sincronizar. Tente novamente.');
-    } finally {
-      setSincronizando(false);
-      verificarModoOffline();
-    }
-  };
 
   useEffect(() => {
     verificarSessaoAtiva();
@@ -132,18 +62,18 @@ export default function Home() {
 
   const carregarAvisos = async () => {
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) return;
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) return;
 
-      const userLocal = JSON.parse(userData);
+      // BANCO PRINCIPAL: buscar clientes e avisos_sistema
+      const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
       const hoje = new Date().toISOString().split('T')[0];
       const avisos: string[] = [];
 
-      // Buscar dados atualizados do cliente do banco
-      const { data: clienteAtualizado, error: erroCliente } = await supabase
+      const { data: clienteAtualizado, error: erroCliente } = await supabasePrincipal
         .from('clientes')
         .select('data_vencimento, plano')
-        .eq('id', userLocal.id)
+        .eq('pelada_id', peladaId)
         .single();
 
       if (erroCliente) {
@@ -167,7 +97,7 @@ export default function Home() {
       }
 
       // Buscar avisos do sistema
-      const { data: avisosSistema, error } = await supabase
+      const { data: avisosSistema, error } = await supabasePrincipal
         .from('avisos_sistema')
         .select('*')
         .eq('ativo', true)
@@ -192,16 +122,19 @@ export default function Home() {
 
   const verificarSessaoAtiva = async () => {
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      const peladaId = buscar_pelada_id();
+      const supabaseUrl = buscar_supabase_url();
+      const supabaseKey = buscar_supabase_anon_key();
+      
+      if (!peladaId || !supabaseUrl || !supabaseKey) {
         setSessaoAtiva(false);
         return;
       }
 
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
+      // BANCO DO CLIENTE: buscar sessoes, fila, jogos
+      const supabaseCliente = createClient(supabaseUrl, supabaseKey);
 
-      const { data: sessao, error } = await supabase
+      const { data: sessao, error } = await supabaseCliente
         .from('sessoes')
         .select('id, status, created_at')
         .eq('pelada_id', peladaId)
@@ -215,14 +148,14 @@ export default function Home() {
         setSessaoAtiva(true);
         
         // Buscar jogadores na fila com status 'fila'
-        const { data: jogadores } = await supabase
+        const { data: jogadores } = await supabaseCliente
           .from('fila')
           .select('id')
           .eq('sessao_id', sessao.id)
           .eq('status', 'fila');
         
         // Buscar jogos finalizados
-        const { data: jogos } = await supabase
+        const { data: jogos } = await supabaseCliente
           .from('jogos')
           .select('id, placar_a, placar_b')
           .eq('sessao_id', sessao.id)
@@ -474,98 +407,35 @@ export default function Home() {
         </section>
       )}
 
-      {/* Botão de Sincronização Offline */}
-      {modoOfflineAtivo && itensPendentesSync > 0 && (
+      {/* Estatísticas Gerais - Apenas Premium */}
+      {plano === 'premium' && (
         <section className="mb-6">
-          <button
-            onClick={handleSyncManual}
-            disabled={sincronizando}
-            className={`w-full rounded-xl shadow-lg p-4 sm:p-6 border-2 transition-all duration-300 min-h-[5rem] sm:h-20 ${
-              sincronizando
-                ? 'bg-gray-100 border-gray-300 cursor-not-allowed opacity-75'
-                : 'bg-gradient-to-br from-purple-50 to-violet-50 border-purple-300 hover:shadow-xl hover:scale-[1.01] cursor-pointer'
-            }`}
-          >
-            <div className="flex items-center justify-between h-full">
+          <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl shadow-lg p-6 md:p-8 border border-orange-200 transition-all min-h-[180px] md:min-h-[192px] hover:shadow-xl">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 h-full">
               {/* Conteúdo Principal */}
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center">
-                  <span className="text-2xl sm:text-3xl">
-                    {sincronizando ? '⏳' : '🔄'}
-                  </span>
+              <div className="flex items-center space-x-4">
+                <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
+                  <span className="text-xl md:text-2xl">📊</span>
                 </div>
-                <div className="text-left">
-                  <h3 className="font-bold text-gray-800 text-sm sm:text-base mb-0.5">
-                    {sincronizando ? 'Sincronizando...' : 'Fazer Sync'}
-                  </h3>
-                  <p className="text-xs text-gray-600">
-                    {sincronizando 
-                      ? 'Aguarde, enviando dados...' 
-                      : `${itensPendentesSync} operação(ões) pendente(s) • Modo Offline`
-                    }
-                  </p>
+                <div>
+                  <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-1">Estatísticas Gerais</h2>
+                  <p className="text-sm md:text-base text-gray-600">Veja todos os dados da pelada</p>
                 </div>
               </div>
               
-              {/* Indicador */}
-              {!sincronizando && (
-                <div className="bg-purple-500 text-white px-3 sm:px-4 py-1 sm:py-2 rounded-full font-bold text-sm sm:text-base shadow-md animate-pulse">
-                  {itensPendentesSync}
-                </div>
-              )}
+              {/* Botão de Ação */}
+              <button
+                onClick={() => navigateTo('resultados')}
+                className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 md:space-x-3 shadow-lg text-sm md:text-base bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white hover:shadow-xl cursor-pointer"
+              >
+                <span>📋</span>
+                <span>Ver Relatório Completo</span>
+                <span className="text-base md:text-lg">→</span>
+              </button>
             </div>
-          </button>
+          </div>
         </section>
       )}
-
-      {/* Estatísticas Gerais */}
-      <section className="mb-6">
-        <div className={`bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl shadow-lg p-6 md:p-8 border border-orange-200 transition-all min-h-[180px] md:min-h-[192px] relative ${
-          possuiPermissao('verEstatisticas') ? 'hover:shadow-xl' : 'opacity-60 cursor-not-allowed'
-        }`}>
-          {/* Tag Versão Premium */}
-          {!possuiPermissao('verEstatisticas') && (
-            <div className="absolute top-4 right-4 bg-gradient-to-r from-amber-400 to-yellow-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
-              <span>👑</span>
-              <span>Versão Premium</span>
-            </div>
-          )}
-
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 h-full">
-            {/* Conteúdo Principal */}
-            <div className="flex items-center space-x-4">
-              <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
-                <span className="text-xl md:text-2xl">📊</span>
-              </div>
-              <div>
-                <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-1">Estatísticas Gerais</h2>
-                <p className="text-sm md:text-base text-gray-600">Veja todos os dados da pelada</p>
-              </div>
-            </div>
-            
-            {/* Botão de Ação */}
-            <button
-              onClick={() => {
-                if (possuiPermissao('verEstatisticas')) {
-                  navigateTo('resultados');
-                } else {
-                  alert(`👑 Estatísticas disponíveis apenas nos planos Gold e Premium!\n\nPlano atual: ${nomePlano}\n\nFaça upgrade para acessar estatísticas completas!`);
-                }
-              }}
-              disabled={!possuiPermissao('verEstatisticas')}
-              className={`w-full md:w-auto px-6 md:px-8 py-3 md:py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 md:space-x-3 shadow-lg text-sm md:text-base ${
-                possuiPermissao('verEstatisticas')
-                  ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white hover:shadow-xl cursor-pointer'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              <span>📋</span>
-              <span>Ver Relatório Completo</span>
-              <span className="text-base md:text-lg">→</span>
-            </button>
-          </div>
-        </div>
-      </section>
 
       {/* Modal: Gerar Lista da Pelada */}
       {showModalLista && (

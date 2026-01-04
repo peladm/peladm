@@ -64,35 +64,13 @@ export default function RootLayout({
         {children}
         <script dangerouslySetInnerHTML={{
           __html: `
+            // Service Worker DESABILITADO temporariamente para debug
             if ('serviceWorker' in navigator) {
-              window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js').then(
-                  function(registration) {
-                    console.log('[SW] Registrado com sucesso:', registration.scope);
-                    
-                    // Verifica atualizações a cada 30 segundos
-                    setInterval(() => {
-                      registration.update();
-                    }, 30000);
-                    
-                    // Escuta mudanças no Service Worker
-                    registration.addEventListener('updatefound', () => {
-                      const newWorker = registration.installing;
-                      console.log('[SW] Nova versão encontrada!');
-                      
-                      if (newWorker) {
-                        newWorker.addEventListener('statechange', () => {
-                          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            console.log('[SW] Nova versão instalada e pronta!');
-                          }
-                        });
-                      }
-                    });
-                  },
-                  function(err) {
-                    console.log('[SW] Falha ao registrar:', err);
-                  }
-                );
+              navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for(let registration of registrations) {
+                  registration.unregister();
+                  console.log('[SW] Service worker removido');
+                }
               });
             }
           `

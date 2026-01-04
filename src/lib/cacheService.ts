@@ -110,55 +110,11 @@ export async function getRegrasWithCache(
 }
 
 /**
- * Busca usuários com cache local
- */
-export async function getUsuariosWithCache(
-  peladaId: string,
-  options: CacheOptions = {}
-): Promise<any[]> {
-  const cacheKey = `usuarios_${peladaId}`;
-  
-  if (!options.forceRefresh) {
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      console.log('📦 Usando usuários do cache');
-      return JSON.parse(cached);
-    }
-  }
-  
-  try {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('pelada_id', peladaId);
-    
-    if (error) throw error;
-    
-    localStorage.setItem(cacheKey, JSON.stringify(data || []));
-    console.log('✅ Cache de usuários atualizado');
-    
-    return data || [];
-    
-  } catch (error) {
-    console.error('❌ Erro ao buscar usuários:', error);
-    
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      console.log('⚠️ Usando cache de usuários (offline)');
-      return JSON.parse(cached);
-    }
-    
-    return [];
-  }
-}
-
-/**
  * Limpa cache de um cliente específico
  */
 export function clearCache(peladaId: string): void {
   localStorage.removeItem(`jogadores_${peladaId}`);
   localStorage.removeItem(`regras_${peladaId}`);
-  localStorage.removeItem(`usuarios_${peladaId}`);
   console.log('🗑️ Cache limpo');
 }
 

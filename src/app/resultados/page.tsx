@@ -170,21 +170,20 @@ export default function ResultadosPage() {
 
       const userData = JSON.parse(userStorage);
       
-      // Buscar senha do usuário no Supabase (mesmo esquema de encerrar pelada)
-      const { data: usuario, error } = await supabase
-        .from('usuarios')
+      // Buscar senha do cliente no Supabase
+      const { data: cliente, error } = await supabase
+        .from('clientes')
         .select('senha')
         .eq('pelada_id', userData.id)
-        .eq('username', userData.usuario_pelada)
         .single();
 
-      if (error || !usuario) {
-        console.error('Erro ao buscar usuário:', error);
-        setErroSenha('Erro ao validar usuário');
+      if (error || !cliente) {
+        console.error('Erro ao buscar cliente:', error);
+        setErroSenha('Erro ao validar cliente');
         return;
       }
 
-      if (usuario.senha === senhaAdmin) {
+      if (cliente.senha === senhaAdmin) {
         setModoAdmin(true);
         setMostrarModalSenha(false);
         setSenhaAdmin('');

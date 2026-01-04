@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from './logger';
+import { buscar_pelada_id, buscar_senha, buscar_plano, buscar_supabase_url, buscar_supabase_anon_key } from './credenciais';
 
 // Configurações do Supabase PRINCIPAL (para autenticação e clientes)
 const supabaseUrl = 'https://ewcswczqvelhlwpbraea.supabase.co';
@@ -43,12 +44,30 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
     return clienteSupabaseCache[peladaId];
   }
 
-  // Busca credenciais do cliente no banco principal
-  logger.log('🔍 Buscando credenciais do banco dedicado para:', peladaId);
+  // PRIMEIRO: Tenta buscar credenciais do localStorage (mais rápido)
+  logger.log('🔍 Buscando credenciais do localStorage...');
+  const url = buscar_supabase_url();
+  const key = buscar_supabase_anon_key();
+  
+  if (url && key) {
+    logger.log('✅ Credenciais encontradas no localStorage!');
+    logger.log('🔗 URL:', url);
+    logger.log('🔑 Key:', key.substring(0, 20) + '...');
+    
+    const clienteSupabase = createClient(url, key, {
+      auth: { persistSession: false },
+      db: { schema: 'public' },
+    });
+    clienteSupabaseCache[peladaId] = clienteSupabase;
+    return clienteSupabase;
+  }
+  
+  // FALLBACK: Busca credenciais do banco principal
+  logger.log('🔍 Buscando credenciais no banco principal para:', peladaId);
   const { data: clienteData, error } = await supabase
     .from('clientes')
     .select('supabase_url, supabase_anon_key, plano')
-    .eq('id', peladaId)
+    .eq('pelada_id', peladaId)
     .single();
 
   if (error) {
@@ -57,7 +76,7 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
 
   // Se cliente Premium com banco dedicado, cria e cacheia conexão
   if (clienteData?.supabase_url && clienteData?.supabase_anon_key) {
-    logger.log('✅ Cliente com banco dedicado encontrado!');
+    logger.log('✅ Cliente com banco dedicado encontrado no banco!');
     logger.log('🔗 URL:', clienteData.supabase_url);
     logger.log('🔑 Key:', clienteData.supabase_anon_key.substring(0, 20) + '...');
     
@@ -95,12 +114,7 @@ export interface Jogador {
 // Função para obter pelada_id do usuário logado (código do cliente)
 const getPeladaId = (): string | null => {
   if (typeof window !== 'undefined') {
-    const user = localStorage.getItem('user');
-    if (user) {
-      const userData = JSON.parse(user);
-      // Retorna o id do cliente (ex: "GD3974")
-      return userData.id || null;
-    }
+    return buscar_pelada_id();
   }
   return null;
 };
@@ -108,11 +122,8 @@ const getPeladaId = (): string | null => {
 // Função para verificar se o plano é Free
 const isPlanoFree = (): boolean => {
   if (typeof window !== 'undefined') {
-    const user = localStorage.getItem('user');
-    if (user) {
-      const userData = JSON.parse(user);
-      return userData.plano === 'Free';
-    }
+    const plano = buscar_plano();
+    return plano === 'free';
   }
   return false;
 };
@@ -121,30 +132,10 @@ const isPlanoFree = (): boolean => {
 export const validarSenhaPelada = async (senhaDigitada: string): Promise<boolean> => {
   if (typeof window === 'undefined') return false;
   
-  const user = localStorage.getItem('user');
-  if (!user) return false;
+  const senhaCorreta = buscar_senha();
+  if (!senhaCorreta) return false;
   
-  const userData = JSON.parse(user);
-  
-  // Buscar senha do usuário no Supabase
-  try {
-    const { data: usuario, error } = await supabase
-      .from('usuarios')
-      .select('senha')
-      .eq('pelada_id', userData.id)
-      .eq('username', userData.usuario_pelada)
-      .single();
-    
-    if (error || !usuario) {
-      console.error('Erro ao buscar usuário:', error);
-      return false;
-    }
-    
-    return usuario.senha === senhaDigitada;
-  } catch (error) {
-    console.error('Erro na validação:', error);
-    return false;
-  }
+  return senhaDigitada === senhaCorreta;
 };
 
 // Funções de interação com a tabela jogadores (usa localStorage se Free, Supabase se Gold/Premium)
@@ -193,9 +184,18 @@ export const jogadoresService = {
     
     // Se for Free, salvar no localStorage
     if (isPlanoFree()) {
+      // Gerar UUID válido
+      const gerarUUID = () => {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+      };
+      
       const jogadores = await this.buscarTodos();
       const novoJogador: Jogador = {
-        id: `jogador_${Date.now()}_${Math.random()}`,
+        id: gerarUUID(),
         nome: nome.trim(),
         nivel,
         status: 'ativo',

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { usePermissions } from '../lib/usePermissions';
+import { buscar_plano } from '../lib/credenciais';
 
 interface AdInterstitialProps {
   onClose: () => void;
@@ -9,8 +9,13 @@ interface AdInterstitialProps {
 }
 
 export default function AdInterstitial({ onClose, motivo = 'navegacao' }: AdInterstitialProps) {
-  const { plano } = usePermissions();
+  const plano = buscar_plano();
   const [countdown, setCountdown] = useState(5);
+
+  // Premium e Gold: NUNCA renderizar anúncios
+  if (plano === 'premium' || plano === 'gold') {
+    return null;
+  }
 
   useEffect(() => {
     console.log(`🎬 Interstitial exibido - Plano: ${plano}, Motivo: ${motivo}`);

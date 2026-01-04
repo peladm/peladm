@@ -11,22 +11,31 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks'
 );
 
-// Função para gerar pelada_id de 6 caracteres (2 letras + 4 números)
-const gerarPeladaId = (): string => {
-  const letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const numeros = '0123456789';
+// Função para gerar pelada_id de 6 caracteres (2 letras dos primeiros nomes + 4 últimos dígitos do telefone)
+const gerarPeladaId = (nomeCompleto: string, telefone: string): string => {
+  // Remover espaços extras e dividir o nome
+  const nomes = nomeCompleto.trim().toUpperCase().split(/\s+/);
   
-  let codigo = '';
-  // 2 letras
-  codigo += letras[Math.floor(Math.random() * letras.length)];
-  codigo += letras[Math.floor(Math.random() * letras.length)];
-  // 4 números
-  codigo += numeros[Math.floor(Math.random() * numeros.length)];
-  codigo += numeros[Math.floor(Math.random() * numeros.length)];
-  codigo += numeros[Math.floor(Math.random() * numeros.length)];
-  codigo += numeros[Math.floor(Math.random() * numeros.length)];
+  // Validar que tem ao menos 2 nomes
+  if (nomes.length < 2) {
+    throw new Error('Nome completo deve ter ao menos 2 nomes (Nome e Sobrenome)');
+  }
   
+  // Primeira letra de cada um dos 2 primeiros nomes
+  const prefixo = nomes[0][0] + nomes[1][0];
+  
+  // 4 últimos dígitos do telefone
+  const apenasNumeros = telefone.replace(/\D/g, '');
+  const ultimos4 = apenasNumeros.slice(-4);
+  
+  const codigo = prefixo + ultimos4;
   return codigo;
+};
+
+// Função para gerar username (primeiro nome em minúsculo)
+const gerarUsername = (nomeCompleto: string): string => {
+  const nomes = nomeCompleto.trim().split(/\s+/);
+  return nomes[0].toLowerCase();
 };
 
 // Função para gerar senha de 4 números
@@ -43,24 +52,20 @@ const gerarSenhaAdmin = (): string => {
 const verificarPeladaIdExiste = async (peladaId: string): Promise<boolean> => {
   const { data, error } = await supabase
     .from('clientes')
-    .select('id')
-    .eq('id', peladaId)
+    .select('pelada_id')
+    .eq('pelada_id', peladaId)
     .single();
   
   return !!data && !error;
 };
 
 // Função para gerar pelada_id único
-const gerarPeladaIdUnico = async (): Promise<string> => {
-  let tentativas = 0;
-  let peladaId = gerarPeladaId();
+const gerarPeladaIdUnico = async (nomeCompleto: string, telefone: string): Promise<string> => {
+  const peladaId = gerarPeladaId(nomeCompleto, telefone);
   
-  while (await verificarPeladaIdExiste(peladaId)) {
-    tentativas++;
-    if (tentativas > 10) {
-      throw new Error('Erro ao gerar código único. Tente novamente.');
-    }
-    peladaId = gerarPeladaId();
+  // Verificar se já existe
+  if (await verificarPeladaIdExiste(peladaId)) {
+    throw new Error('Já existe um cliente com estas iniciais e telefone. Entre em contato com o suporte.');
   }
   
   return peladaId;
@@ -116,7 +121,7 @@ function CadastrarClienteContent() {
       const { data, error } = await supabase
         .from('clientes')
         .select('*')
-        .eq('id', id)
+        .eq('pelada_id', id)
         .single();
 
       if (error) {
@@ -423,49 +428,45 @@ function CadastrarClienteContent() {
         result = await supabase
           .from('clientes')
           .update(dadosCliente)
-          .eq('id', clienteId)
+          .eq('pelada_id', clienteId)
           .select();
       } else {
+        // Validar nome completo (mínimo 2 nomes)
+        const nomes = formData.nome.trim().split(/\s+/);
+        if (nomes.length < 2) {
+          alert('❌ Por favor, informe o nome completo (Nome e Sobrenome)!');
+          setLoading(false);
+          return;
+        }
+
         // Insert com pelada_id customizado
-        const peladaId = await gerarPeladaIdUnico();
+        const peladaId = await gerarPeladaIdUnico(formData.nome, formData.telefone);
+        const username = gerarUsername(formData.nome);
         const senhaAdmin = gerarSenhaAdmin();
         console.log('🆔 Gerando pelada_id:', peladaId);
+        console.log('👤 Gerando username:', username);
         console.log('🔑 Gerando senha admin:', senhaAdmin);
         
         result = await supabase
           .from('clientes')
           .insert([{
-            id: peladaId,  // Usar pelada_id customizado
+            pelada_id: peladaId,  // Usar pelada_id customizado
+            username: username,    // Incluir username direto (primeiro nome)
+            senha: senhaAdmin,     // Incluir senha direto
             ...dadosCliente
           }])
           .select();
 
-        // Se cliente criado com sucesso, criar usuário admin
+        // Se cliente criado com sucesso, salvar credenciais
         if (!result.error && result.data && result.data.length > 0) {
-          console.log('✅ Cliente criado, criando usuário admin...');
-          
-          const resultUsuario = await supabase
-            .from('usuarios')
-            .insert([{
-              pelada_id: peladaId,
-              username: 'admin',
-              senha: senhaAdmin,
-              role: 'admin'
-            }]);
-
-          if (resultUsuario.error) {
-            console.error('❌ Erro ao criar usuário admin:', resultUsuario.error);
-            alert('Cliente criado, mas erro ao criar usuário admin! Crie manualmente.');
-          } else {
-            console.log('✅ Usuário admin criado com sucesso!');
-            // Salvar credenciais para exibir no modal
-            setCredenciaisGeradas({
-              peladaId: peladaId,
-              usuario: 'admin',
-              senha: senhaAdmin
-            });
-            setMostrarModalCredenciais(true);
-          }
+          console.log('✅ Cliente criado com sucesso!');
+          // Salvar credenciais para exibir no modal
+          setCredenciaisGeradas({
+            peladaId: peladaId,
+            usuario: username,
+            senha: senhaAdmin
+          });
+          setMostrarModalCredenciais(true);
         }
       }
 
@@ -651,84 +652,6 @@ function CadastrarClienteContent() {
                     />
                   </div>
                 </div>
-
-                {/* Botão para configurar banco dedicado */}
-                {formData.supabase_url && formData.supabase_anon_key && (
-                  <div className="mt-4 p-4 bg-purple-100 border-2 border-purple-300 rounded-xl">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-purple-900 mb-1">🗄️ Configurar Estrutura do Banco</h4>
-                        <p className="text-xs text-purple-700 mb-2">
-                          Crie automaticamente todas as tabelas necessárias (jogadores, sessoes, fila, jogos, gols)
-                        </p>
-                        <p className="text-xs text-purple-600 italic">
-                          ⚠️ Recomendado: Execute manualmente o SQL no Dashboard → SQL Editor
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={configurarBancoDedicado}
-                        disabled={loadingSetup || loading}
-                        className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shadow-lg hover:shadow-xl"
-                      >
-                        {loadingSetup ? '⏳ Configurando...' : '🚀 Configurar Banco'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Dashboard de Uso do Supabase - Apenas para edição com credenciais */}
-            {isEdicao && (formData.plano === 'Gold' || formData.plano === 'Premium') && (
-              <div className="space-y-4 p-6 bg-blue-50 rounded-xl border-2 border-blue-200">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">📊 Uso do Banco de Dados</h3>
-                    <p className="text-xs text-gray-600">
-                      {formData.supabase_url && formData.supabase_anon_key 
-                        ? 'Consulte o espaço utilizado por este cliente'
-                        : '⚠️ Configure as credenciais Supabase primeiro para ver o uso'}
-                    </p>
-                  </div>
-                  {formData.supabase_url && formData.supabase_anon_key && (
-                    <button
-                      type="button"
-                      onClick={buscarUsoSupabase}
-                      disabled={loadingUsage}
-                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm"
-                    >
-                      {loadingUsage ? '⏳ Carregando...' : '🔄 Atualizar'}
-                    </button>
-                  )}
-                </div>
-
-                {!formData.supabase_url || !formData.supabase_anon_key ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <p className="text-sm">Configure a URL e a Anon Key do Supabase acima para consultar o uso</p>
-                  </div>
-                ) : usageData && usageData.length > 0 ? (
-                  <div className="space-y-2">
-                    {usageData.map((table: any, index: number) => (
-                      <div key={index} className="bg-white p-3 rounded-lg flex items-center justify-between">
-                        <span className="font-medium text-gray-700">{table.tablename}</span>
-                        <span className="text-sm text-gray-600">{table.size}</span>
-                      </div>
-                    ))}
-                    <div className="bg-green-100 p-3 rounded-lg flex items-center justify-between border-2 border-green-300 mt-4">
-                      <span className="font-bold text-gray-800">💾 TOTAL</span>
-                      <span className="font-bold text-green-700">
-                        {usageData.reduce((acc: number, t: any) => acc + (t.size_bytes || 0), 0) > 1024 * 1024
-                          ? `${(usageData.reduce((acc: number, t: any) => acc + (t.size_bytes || 0), 0) / (1024 * 1024)).toFixed(2)} MB`
-                          : `${(usageData.reduce((acc: number, t: any) => acc + (t.size_bytes || 0), 0) / 1024).toFixed(2)} KB`}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <p className="text-sm">Clique em "Atualizar" para consultar o uso do banco</p>
-                  </div>
-                )}
               </div>
             )}
 

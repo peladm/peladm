@@ -7,6 +7,18 @@ import { useAdInterstitial } from '../../lib/useAdInterstitial';
 import AdInterstitial from '../../components/AdInterstitial';
 import { getRegrasWithCache, isOnline, onConnectionChange } from '../../lib/cacheService';
 import { addToSyncQueue, syncQueue, getSyncQueueCount, syncQueueTransacional } from '../../lib/syncService';
+import { buscar_pelada_id, buscar_plano } from '../../lib/credenciais';
+import { 
+  fila_remover, 
+  fila_adicionar, 
+  fila_mover, 
+  fila_cadastrarnovo_adicionar,
+  fila_snapshot_salvar_edicao_temp,
+  fila_snapshot_confirmar_edicao,
+  fila_snapshot_salvar_partida,
+  fila_snapshot_restaurar,
+  fila_snapshot_limpar
+} from '../../lib/rotacoes-fila';
 
 interface Jogador {
   id: string;
@@ -64,6 +76,7 @@ export default function FilaPage() {
   const [showConfirmarSenhaModal, setShowConfirmarSenhaModal] = useState(false);
   const [senhaEncerramento, setSenhaEncerramento] = useState('');
   const [semSessaoAtiva, setSemSessaoAtiva] = useState(false);
+  const [loadingEncerramento, setLoadingEncerramento] = useState(false);
   
   // States para desfazer última partida
   const [showDesfazerModal, setShowDesfazerModal] = useState(false);
@@ -84,7 +97,6 @@ export default function FilaPage() {
   const [jogadorSelecionadoTroca, setJogadorSelecionadoTroca] = useState<JogadorFila | null>(null);
   const [jogadorParaTroca, setJogadorParaTroca] = useState<JogadorFila | null>(null);
   const [partidaAtiva, setPartidaAtiva] = useState<any>(null);
-  const [mudancasPendentes, setMudancasPendentes] = useState<any[]>([]);
   const [showConfirmarSubstituicoesModal, setShowConfirmarSubstituicoesModal] = useState(false);
   const [showConfirmarTrocaModal, setShowConfirmarTrocaModal] = useState(false);
   const [showSelecionarJogadorModal, setShowSelecionarJogadorModal] = useState(false);
@@ -94,9 +106,6 @@ export default function FilaPage() {
   const [showConfirmarMudancaPosicaoModal, setShowConfirmarMudancaPosicaoModal] = useState(false);
   const [jogadorMoverPosicao, setJogadorMoverPosicao] = useState<JogadorFila | null>(null);
   const [posicaoDestino, setPosicaoDestino] = useState<number | null>(null);
-  
-  // State para modal de resumo de mudanças
-  const [showResumoMudancasModal, setShowResumoMudancasModal] = useState(false);
 
   // States para modo de sincronização
   const [modoSincronizacao, setModoSincronizacao] = useState<'tempo_real' | 'local_first'>('tempo_real');
@@ -161,14 +170,36 @@ export default function FilaPage() {
     const cores = ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981'];
     const indiceAtual = cores.indexOf(corTimeA);
     const proximoIndice = (indiceAtual + 1) % cores.length;
-    setCorTimeA(cores[proximoIndice]);
+    const novaCor = cores[proximoIndice];
+    setCorTimeA(novaCor);
+    
+    // Atualizar cor no localStorage da partida
+    const partidaSalva = localStorage.getItem('partida_em_andamento');
+    if (partidaSalva) {
+      const estadoPartida = JSON.parse(partidaSalva);
+      estadoPartida.timeA.cor = novaCor;
+      estadoPartida.timeA.nome = obterNomeCor(novaCor).toUpperCase();
+      localStorage.setItem('partida_em_andamento', JSON.stringify(estadoPartida));
+      console.log(`🎨 Cor do Time A atualizada: ${novaCor}`);
+    }
   };
 
   const alternarCorTimeB = () => {
     const cores = ['#000000', '#dc3545', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981'];
     const indiceAtual = cores.indexOf(corTimeB);
     const proximoIndice = (indiceAtual + 1) % cores.length;
-    setCorTimeB(cores[proximoIndice]);
+    const novaCor = cores[proximoIndice];
+    setCorTimeB(novaCor);
+    
+    // Atualizar cor no localStorage da partida
+    const partidaSalva = localStorage.getItem('partida_em_andamento');
+    if (partidaSalva) {
+      const estadoPartida = JSON.parse(partidaSalva);
+      estadoPartida.timeB.cor = novaCor;
+      estadoPartida.timeB.nome = obterNomeCor(novaCor).toUpperCase();
+      localStorage.setItem('partida_em_andamento', JSON.stringify(estadoPartida));
+      console.log(`🎨 Cor do Time B atualizada: ${novaCor}`);
+    }
   };
 
   // Função para obter o nome da cor baseado no código hexadecimal
@@ -247,308 +278,311 @@ export default function FilaPage() {
   };
 
   // ROTAÇÃO: Time 1 vence (fica no campo)
-  const rotacionarTime1Vence = async (peladaId: string, sessaoId: string, novasVitorias: number) => {
-    const fila = await buscarFilaAtual(peladaId, sessaoId);
-    const jogadoresPorTime = regras.jogadores_por_time;
-
-    const time1 = fila.slice(0, jogadoresPorTime);
-    const time2 = fila.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    const espera = fila.slice(jogadoresPorTime * 2);
-
-    const proximoTime = espera.slice(0, jogadoresPorTime);
-    const restoEspera = espera.slice(jogadoresPorTime);
-
-    const novaFila = [...time1, ...proximoTime, ...restoEspera, ...time2];
-    await atualizarPosicoesFila(peladaId, sessaoId, novaFila, novasVitorias);
-  };
-
-  // ROTAÇÃO: Time 2 vence (vira novo Time 1)
-  const rotacionarTime2Vence = async (peladaId: string, sessaoId: string) => {
-    const fila = await buscarFilaAtual(peladaId, sessaoId);
-    const jogadoresPorTime = regras.jogadores_por_time;
-
-    const time1 = fila.slice(0, jogadoresPorTime);
-    const time2 = fila.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    const espera = fila.slice(jogadoresPorTime * 2);
-
-    const proximoTime = espera.slice(0, jogadoresPorTime);
-    const restoEspera = espera.slice(jogadoresPorTime);
-
-    const novaFila = [...time2, ...proximoTime, ...restoEspera, ...time1];
-    await atualizarPosicoesFila(peladaId, sessaoId, novaFila, 1); // Novo Time 1 começa com 1 vitória
-  };
-
-  // ROTAÇÃO: Ambos saem - Vencedor retorna antes
-  const rotacionarVencedorAntes = async (peladaId: string, sessaoId: string, timeVencedor: 'A' | 'B') => {
-    const fila = await buscarFilaAtual(peladaId, sessaoId);
-    const jogadoresPorTime = regras.jogadores_por_time;
-
-    const time1 = fila.slice(0, jogadoresPorTime);
-    const time2 = fila.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    const espera = fila.slice(jogadoresPorTime * 2);
-
-    const proximoTime1 = espera.slice(0, jogadoresPorTime);
-    const proximoTime2 = espera.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    const restoEspera = espera.slice(jogadoresPorTime * 2);
-
-    let novaFila;
-    if (timeVencedor === 'A') {
-      novaFila = [...proximoTime1, ...proximoTime2, ...restoEspera, ...time1, ...time2];
-    } else {
-      novaFila = [...proximoTime1, ...proximoTime2, ...restoEspera, ...time2, ...time1];
+  // === FUNÇÕES DE ROTAÇÃO ===
+  // === ROTAÇÃO: Vencedor tem prioridade ao retornar ===
+  const rotacao_vitoriaconsec_vencedor = (time1: any[], time2: any[], espera: any[], timeVencedor: 'A' | 'B' | null, limiteAtingido: boolean) => {
+    if (limiteAtingido) {
+      console.log('✅ LIMITE ATINGIDO: Vencedor retorna 1º à fila');
+      return [...espera, ...time1, ...time2]; // Espera joga, vencedor volta primeiro
     }
-
-    await atualizarPosicoesFila(peladaId, sessaoId, novaFila, 0);
+    // Rotação normal
+    if (timeVencedor === null) return [...espera, ...time1, ...time2];
+    if (timeVencedor === 'B') return [...time2, ...espera, ...time1];
+    return [...time1, ...espera, ...time2];
   };
 
-  // ROTAÇÃO: Ambos saem - Perdedor retorna antes
-  const rotacionarPerdedorAntes = async (peladaId: string, sessaoId: string, timePerdedor: 'A' | 'B') => {
-    const fila = await buscarFilaAtual(peladaId, sessaoId);
-    const jogadoresPorTime = regras.jogadores_por_time;
-
-    const time1 = fila.slice(0, jogadoresPorTime);
-    const time2 = fila.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    const espera = fila.slice(jogadoresPorTime * 2);
-
-    const proximoTime1 = espera.slice(0, jogadoresPorTime);
-    const proximoTime2 = espera.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    const restoEspera = espera.slice(jogadoresPorTime * 2);
-
-    let novaFila;
-    if (timePerdedor === 'A') {
-      novaFila = [...proximoTime1, ...proximoTime2, ...restoEspera, ...time1, ...time2];
-    } else {
-      novaFila = [...proximoTime1, ...proximoTime2, ...restoEspera, ...time2, ...time1];
+  // === ROTAÇÃO: Perdedor tem prioridade ao retornar ===
+  const rotacao_vitoriaconsec_perdedor = (time1: any[], time2: any[], espera: any[], timeVencedor: 'A' | 'B' | null, limiteAtingido: boolean) => {
+    if (limiteAtingido) {
+      console.log('✅ LIMITE ATINGIDO: Perdedor retorna 1º à fila');
+      return [...espera, ...time2, ...time1]; // Espera joga, perdedor volta primeiro
     }
-
-    await atualizarPosicoesFila(peladaId, sessaoId, novaFila, 0);
+    // Rotação normal
+    if (timeVencedor === null) return [...espera, ...time1, ...time2];
+    if (timeVencedor === 'B') return [...time2, ...espera, ...time1];
+    return [...time1, ...espera, ...time2];
   };
 
-  // ROTAÇÃO: Ambos saem - Mesclar times (embaralhar)
-  const rotacionarMesclarTimes = async (peladaId: string, sessaoId: string) => {
-    const fila = await buscarFilaAtual(peladaId, sessaoId);
-    const jogadoresPorTime = regras.jogadores_por_time;
-
-    // Time 1 e Time 2 que estavam jogando (primeiros 2 times)
-    const time1 = fila.slice(0, jogadoresPorTime);
-    const time2 = fila.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    
-    // Todos os jogadores que estavam esperando
-    const espera = fila.slice(jogadoresPorTime * 2);
-
-    // Próximos 2 times que vão entrar
-    const proximoTime1 = espera.slice(0, jogadoresPorTime);
-    const proximoTime2 = espera.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    
-    // Resto da fila que continua esperando
-    const restoEspera = espera.slice(jogadoresPorTime * 2);
-
-    // Embaralhar APENAS os jogadores dos 2 times que saíram
-    const timesEmbaralhados = embaralharArray([...time1, ...time2]);
-
-    // Nova ordem: próximos 2 times entram + resto da espera + times embaralhados no final
-    const novaFila = [...proximoTime1, ...proximoTime2, ...restoEspera, ...timesEmbaralhados];
-    
-    console.log('🔀 Mesclar Times:');
-    console.log('  - Times que saíram e foram embaralhados:', time1.length + time2.length, 'jogadores');
-    console.log('  - Próximos times que entram:', proximoTime1.length + proximoTime2.length, 'jogadores');
-    console.log('  - Resto da fila:', restoEspera.length, 'jogadores');
-    
-    await atualizarPosicoesFila(peladaId, sessaoId, novaFila, 0);
-  };
-
-  // ROTAÇÃO: PERDEDOR continua jogando
-  const rotacionarPerdedorContinua = async (peladaId: string, sessaoId: string, timePerdedor: 'A' | 'B') => {
-    const fila = await buscarFilaAtual(peladaId, sessaoId);
-    const jogadoresPorTime = regras.jogadores_por_time;
-
-    const time1 = fila.slice(0, jogadoresPorTime);
-    const time2 = fila.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    const espera = fila.slice(jogadoresPorTime * 2);
-
-    const proximoTime = espera.slice(0, jogadoresPorTime);
-    const restoEspera = espera.slice(jogadoresPorTime);
-
-    let novaFila;
-    if (timePerdedor === 'A') {
-      // Time 1 (perdedor) continua, Time 2 (vencedor) sai
-      novaFila = [...time1, ...proximoTime, ...restoEspera, ...time2];
-    } else {
-      // Time 2 (perdedor) continua, Time 1 (vencedor) sai
-      novaFila = [...proximoTime, ...time2, ...restoEspera, ...time1];
+  // === ROTAÇÃO: Times são mesclados ao retornar ===
+  const rotacao_vitoriaconsec_mesclar = (time1: any[], time2: any[], espera: any[], timeVencedor: 'A' | 'B' | null, limiteAtingido: boolean) => {
+    if (limiteAtingido) {
+      console.log('✅ LIMITE ATINGIDO: Times mesclados ao retornar');
+      const todosJogadores = [...time1, ...time2];
+      // Embaralhar
+      for (let i = todosJogadores.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [todosJogadores[i], todosJogadores[j]] = [todosJogadores[j], todosJogadores[i]];
+      }
+      return [...espera, ...todosJogadores];
     }
-
-    await atualizarPosicoesFila(peladaId, sessaoId, novaFila, 0);
+    // Rotação normal
+    if (timeVencedor === null) return [...espera, ...time1, ...time2];
+    if (timeVencedor === 'B') return [...time2, ...espera, ...time1];
+    return [...time1, ...espera, ...time2];
   };
 
-  // ROTAÇÃO: Desempate decide qual time retorna primeiro (ambos saem)
-  const rotacionarDesempateDecide = async (peladaId: string, sessaoId: string, timePrioridade: 'A' | 'B') => {
-    const fila = await buscarFilaAtual(peladaId, sessaoId);
-    const jogadoresPorTime = regras.jogadores_por_time;
-
-    const time1 = fila.slice(0, jogadoresPorTime);
-    const time2 = fila.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    const espera = fila.slice(jogadoresPorTime * 2);
-
-    const proximoTime1 = espera.slice(0, jogadoresPorTime);
-    const proximoTime2 = espera.slice(jogadoresPorTime, jogadoresPorTime * 2);
-    const restoEspera = espera.slice(jogadoresPorTime * 2);
-
-    let novaFila;
-    if (timePrioridade === 'A') {
-      // Time A selecionado volta primeiro, Time B depois
-      novaFila = [...proximoTime1, ...proximoTime2, ...restoEspera, ...time1, ...time2];
-    } else {
-      // Time B selecionado volta primeiro, Time A depois
-      novaFila = [...proximoTime1, ...proximoTime2, ...restoEspera, ...time2, ...time1];
+  // === ROTAÇÃO: Perdedor continua jogando ===
+  const rotacao_vitoriaconsec_perdedorfica = (time1: any[], time2: any[], espera: any[], timeVencedor: 'A' | 'B' | null, limiteAtingido: boolean) => {
+    if (limiteAtingido) {
+      console.log('✅ LIMITE ATINGIDO: Perdedor continua jogando');
+      return [...time2, ...espera, ...time1]; // Perdedor fica, vencedor sai
     }
-
-    console.log('🔄 Desempate Decide:', {
-      timePrioridade,
-      time1Jogadores: time1.map(j => j.nome),
-      time2Jogadores: time2.map(j => j.nome),
-      novaOrdem: novaFila.map(j => j.nome)
-    });
-
-    await atualizarPosicoesFila(peladaId, sessaoId, novaFila, 0);
+    // Rotação normal
+    if (timeVencedor === null) return [...espera, ...time1, ...time2];
+    if (timeVencedor === 'B') return [...time2, ...espera, ...time1];
+    return [...time1, ...espera, ...time2];
   };
 
-  // ORQUESTRADOR PRINCIPAL DA ROTAÇÃO
-  const rotacionarFila = async (peladaId: string, sessaoId: string, timeVencedor: 'A' | 'B' | null, timeDesempateEscolhido?: 'A' | 'B' | null) => {
+  // === ROTAÇÃO EMPATE: Ambos saem + Time escolhido retorna primeiro ===
+  const rotacaoempate_ambos_desempate = (time1: any[], time2: any[], espera: any[], timeEscolhido: 'A' | 'B') => {
+    console.log('✅ EMPATE - Ambos saem, time escolhido retorna primeiro');
+    if (timeEscolhido === 'A') {
+      // Time 1 (PRETO) retorna primeiro
+      return [...espera, ...time1, ...time2];
+    } else {
+      // Time 2 (VERMELHO) retorna primeiro
+      return [...espera, ...time2, ...time1];
+    }
+  };
+
+  // === ROTAÇÃO EMPATE: Ambos saem + Times mesclados ===
+  const rotacaoempate_ambos_mesclar = (time1: any[], time2: any[], espera: any[]) => {
+    console.log('✅ EMPATE - Ambos saem, times mesclados');
+    const todosJogadores = [...time1, ...time2];
+    // Embaralhar
+    for (let i = todosJogadores.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [todosJogadores[i], todosJogadores[j]] = [todosJogadores[j], todosJogadores[i]];
+    }
+    return [...espera, ...todosJogadores];
+  };
+
+  // === ROTAÇÃO EMPATE: Desempate no final (time escolhido vira vencedor) ===
+  const rotacaoempate_desempate = (time1: any[], time2: any[], espera: any[], timeEscolhido: 'A' | 'B') => {
+    console.log('✅ EMPATE - Time escolhido vira vencedor');
+    if (timeEscolhido === 'A') {
+      // Time 1 vence (continua jogando)
+      return [...time1, ...espera, ...time2];
+    } else {
+      // Time 2 vence (continua jogando)
+      return [...time2, ...espera, ...time1];
+    }
+  };
+
+  // === ROTAÇÃO PRINCIPAL ===
+  const rotacao_fila = async (peladaId: string, sessaoId: string, timeVencedor: 'A' | 'B' | null, timeDesempateEscolhido?: 'A' | 'B' | null) => {
     try {
-      const vitoriasAtuais = await getVitoriasConsecutivas(peladaId, sessaoId);
+      const plano = buscar_plano();
+      console.log('🔄 ======= INICIANDO ROTAÇÃO =======');
+      console.log('🔄 Plano:', plano);
+      console.log('🏆 Time Vencedor:', timeVencedor);
       
-      // Buscar regras
-      const { data: regrasData } = await supabase
-        .from('regras')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .single();
-
-      console.log('📋 Regras carregadas:', regrasData);
-
-      const limiteVitoriasConfig = (regrasData?.vitorias_consecutivas && regrasData.vitorias_consecutivas > 0) ? regrasData.vitorias_consecutivas : null;
-      const regraAposLimite = regrasData?.prioridade_retorno || 'prioridade';
+      const filaLocal = localStorage.getItem('fila_ativa');
+      if (!filaLocal) {
+        console.error('❌ Fila não encontrada no localStorage');
+        return;
+      }
       
-      console.log('🔄 Regra após limite:', regraAposLimite);
-      console.log('🎯 Limite de vitórias:', limiteVitoriasConfig);
-
-      // === CENÁRIO: EMPATE ===
+      const fila = JSON.parse(filaLocal);
+      const filaAtiva = fila.filter((item: any) => item.status === 'fila').sort((a: any, b: any) => a.posicao_fila - b.posicao_fila);
+      const jogadoresPorTime = regras.jogadores_por_time || 5;
+      
+      console.log('📊 Fila ANTES:', filaAtiva.map((j: any) => `${j.nome}(pos:${j.posicao_fila},vit:${j.vitorias_consecutivas_time})`));
+      
+      // Separar por posição atual
+      const time1 = filaAtiva.filter((j: any) => j.posicao_fila >= 1 && j.posicao_fila <= jogadoresPorTime);
+      const time2 = filaAtiva.filter((j: any) => j.posicao_fila > jogadoresPorTime && j.posicao_fila <= jogadoresPorTime * 2);
+      const espera = filaAtiva.filter((j: any) => j.posicao_fila > jogadoresPorTime * 2);
+      
+      console.log('🔴 Time 1:', time1.map((j: any) => `${j.nome}(${j.posicao_fila})`));
+      console.log('🔵 Time 2:', time2.map((j: any) => `${j.nome}(${j.posicao_fila})`));
+      console.log('⏳ Espera:', espera.map((j: any) => `${j.nome}(${j.posicao_fila})`));
+      
+      // Buscar regras do localStorage
+      const peladaIdAtual = buscar_pelada_id();
+      const regrasLocal = localStorage.getItem(`regras_${peladaIdAtual}`);
+      if (!regrasLocal) {
+        console.error('❌ Regras não encontradas no localStorage');
+        return;
+      }
+      const regrasConfig = JSON.parse(regrasLocal);
+      
+      // Buscar sessão ativa para pegar vitórias consecutivas atuais
+      const sessaoLocal = localStorage.getItem('sessao_ativa');
+      if (!sessaoLocal) {
+        console.error('❌ Sessão ativa não encontrada no localStorage');
+        return;
+      }
+      const sessao = JSON.parse(sessaoLocal);
+      
+      // Verificar vitórias consecutivas e limites
+      const vitoriasConsecutivasAtual = sessao.vitorias_consecutivas || 0;
+      const limiteVitoriasConfig = regrasConfig.vitorias_consecutivas || null;
+      const regraAposLimite = regrasConfig.prioridade_retorno || 'prioridade';
+      
+      console.log('🔍🔍🔍 DADOS CRÍTICOS:');
+      console.log(`   - vitoriasConsecutivasAtual (da sessão): ${vitoriasConsecutivasAtual} (tipo: ${typeof vitoriasConsecutivasAtual})`);
+      console.log(`   - limiteVitoriasConfig (das regras): ${limiteVitoriasConfig} (tipo: ${typeof limiteVitoriasConfig})`);
+      console.log(`   - regraAposLimite (das regras): ${regraAposLimite}`);
+      console.log(`   - regrasConfig:`, regrasConfig);
+      console.log(`🏆 Vitórias: ${vitoriasConsecutivasAtual} | 🎯 Limite: ${limiteVitoriasConfig} | 📋 Regra: ${regraAposLimite}`);
+      
+      // Buscar regras de empate
+      const empateModo = regrasConfig.empate_modo || 'ambos_saem';
+      const empateRetorno = regrasConfig.empate_retorno || 'desempate_decide';
+      const empateContaVitoria = regrasConfig.empate_conta_vitoria || false;
+      
+      console.log(`⚖️ Empate modo: ${empateModo} | Retorno: ${empateRetorno} | Conta vitória: ${empateContaVitoria}`);
+      
+      // Calcular novas vitórias
+      let vitoriasConsecutivasNovas = 0;
+      let limiteAtingido = false;
+      
+      // === CASO EMPATE ===
       if (timeVencedor === null) {
-        console.log('🤝 EMPATE detectado!');
+        console.log('🤝 EMPATE DETECTADO');
         
-        const regraEmpate = regrasData?.regra_empate || 'ambos_saem';
-        const regraAposEmpate = regrasData?.regra_apos_empate;
-        
-        console.log('📋 Regra de empate:', regraEmpate);
-        console.log('📋 Tipo da regra_empate:', typeof regraEmpate);
-        console.log('📋 Comprimento:', regraEmpate?.length);
-        console.log('📋 Comparação ambos_saem:', regraEmpate === 'ambos_saem');
-        console.log('📋 Regra após empate:', regraAposEmpate);
-        
-        await resetarTodasVitorias(peladaId, sessaoId);
-        
-        // Se regra é "ambos_saem", aplicar a regra de retorno
-        if (regraEmpate === 'ambos_saem') {
-          if (regraAposEmpate === 'mesclar') {
-            console.log('🔀 Aplicando: AMBOS SAEM + MESCLAR');
-            await rotacionarMesclarTimes(peladaId, sessaoId);
-          } else if (regraAposEmpate === 'desempate_decide') {
-            console.log('🎯 Aplicando: AMBOS SAEM + DESEMPATE DECIDE');
-            if (timeDesempateEscolhido) {
-              console.log('✅ Time escolhido para retornar primeiro:', timeDesempateEscolhido);
-              await rotacionarDesempateDecide(peladaId, sessaoId, timeDesempateEscolhido);
+        // Se modo é "desempate_decide", usuário escolhe time (timeDesempateEscolhido)
+        if (empateModo === 'desempate_decide' && timeDesempateEscolhido) {
+          console.log(`🎯 Modo: Desempate decide | Time escolhido: ${timeDesempateEscolhido}`);
+          
+          // Time escolhido vira "vencedor"
+          if (timeDesempateEscolhido === 'A') {
+            // Se conta como vitória para consecutivas
+            if (empateContaVitoria && limiteVitoriasConfig) {
+              vitoriasConsecutivasNovas = vitoriasConsecutivasAtual + 1;
+              console.log(`✅ Empate conta como vitória: ${vitoriasConsecutivasAtual} → ${vitoriasConsecutivasNovas}`);
             } else {
-              console.log('⚠️ Nenhum time escolhido, aplicando mesclar como fallback');
-              await rotacionarMesclarTimes(peladaId, sessaoId);
+              vitoriasConsecutivasNovas = vitoriasConsecutivasAtual; // Mantém o contador
+              console.log(`⚠️ Empate NÃO conta como vitória - mantém: ${vitoriasConsecutivasNovas}`);
             }
           } else {
-            console.log('⚠️ Regra após empate não definida ou inválida:', regraAposEmpate);
-            console.log('⚠️ Use "mesclar" ou "desempate_decide"');
-            await rotacionarMesclarTimes(peladaId, sessaoId);
+            vitoriasConsecutivasNovas = 0; // Time 2 "venceu", reseta
           }
         } else {
-          // Se não é "ambos_saem", é desempate na própria partida (1 time fica)
-          if (timeDesempateEscolhido) {
-            console.log('⚡ DESEMPATE: Time', timeDesempateEscolhido, 'continua jogando');
-            
-            // Rotacionar: time escolhido FICA, outro SAI
-            const fila = await buscarFilaAtual(peladaId, sessaoId);
-            const jogadoresPorTime = regras.jogadores_por_time;
-
-            const time1 = fila.slice(0, jogadoresPorTime);
-            const time2 = fila.slice(jogadoresPorTime, jogadoresPorTime * 2);
-            const espera = fila.slice(jogadoresPorTime * 2);
-
-            const proximoTime = espera.slice(0, jogadoresPorTime);
-            const restoEspera = espera.slice(jogadoresPorTime);
-
-            let novaFila;
-            if (timeDesempateEscolhido === 'A') {
-              // Time A (vencedor) FICA na posição 1, Time B SAI, próximo ENTRA
-              novaFila = [...time1, ...proximoTime, ...restoEspera, ...time2];
-              console.log('✅ Time A fica, Time B sai');
-            } else {
-              // Time B (vencedor) FICA, Time A SAI, próximo ENTRA
-              novaFila = [...time2, ...proximoTime, ...restoEspera, ...time1];
-              console.log('✅ Time B fica, Time A sai');
-            }
-            
-            // Se empate conta como vitória, incrementar contador do time que ficou
-            let novasVitorias = 0;
-            if (regrasData?.empate_conta_vitoria) {
-              console.log('📊 Empate conta como vitória - atualizando contador');
-              const vitoriasAtuais = fila[0]?.vitorias_consecutivas_time || 0;
-              novasVitorias = vitoriasAtuais + 1;
-            }
-            
-            await atualizarPosicoesFila(peladaId, sessaoId, novaFila, novasVitorias);
+          // Modo "ambos_saem"
+          console.log('🔄 Modo: Ambos times saem');
+          vitoriasConsecutivasNovas = 0;
+        }
+      }
+      // === CASO VITÓRIA TIME A ===
+      else if (timeVencedor === 'A') {
+        vitoriasConsecutivasNovas = vitoriasConsecutivasAtual + 1;
+        console.log(`🔴 Time 1 venceu: ${vitoriasConsecutivasAtual} → ${vitoriasConsecutivasNovas}`);
+        console.log(`🔍 Verificando limite: ${vitoriasConsecutivasNovas} >= ${limiteVitoriasConfig}? ${limiteVitoriasConfig && vitoriasConsecutivasNovas >= limiteVitoriasConfig}`);
+        
+        if (limiteVitoriasConfig && vitoriasConsecutivasNovas >= limiteVitoriasConfig) {
+          console.log(`🚨🚨🚨 LIMITE ATINGIDO! (${vitoriasConsecutivasNovas}/${limiteVitoriasConfig}) 🚨🚨🚨`);
+          limiteAtingido = true;
+          vitoriasConsecutivasNovas = 0; // Resetar ao atingir limite
+          console.log(`⚡ limiteAtingido = ${limiteAtingido}`);
+        } else {
+          console.log(`✅ Limite NÃO atingido - Time 1 continua`);
+        }
+      }
+      // === CASO VITÓRIA TIME B ===
+      else if (timeVencedor === 'B') {
+        vitoriasConsecutivasNovas = 1; // Time 2 começa com 1 vitória
+        console.log(`🔵 Time 2 venceu - inicia contador: ${vitoriasConsecutivasNovas}`);
+      }
+      
+      // Determinar nova ordem usando função específica da regra
+      let novaOrdem: any[] = [];
+      
+      // === EMPATE ===
+      if (timeVencedor === null) {
+        if (empateModo === 'desempate_decide' && timeDesempateEscolhido) {
+          // Desempate no final - time escolhido vira vencedor
+          console.log('📋 Aplicando: rotacaoempate_desempate');
+          novaOrdem = rotacaoempate_desempate(time1, time2, espera, timeDesempateEscolhido);
+        } else if (empateModo === 'ambos_saem') {
+          // Ambos saem - verificar regra de retorno
+          if (empateRetorno === 'mesclar') {
+            console.log('📋 Aplicando: rotacaoempate_ambos_mesclar');
+            novaOrdem = rotacaoempate_ambos_mesclar(time1, time2, espera);
+          } else if (empateRetorno === 'desempate_decide' && timeDesempateEscolhido) {
+            console.log('📋 Aplicando: rotacaoempate_ambos_desempate');
+            novaOrdem = rotacaoempate_ambos_desempate(time1, time2, espera, timeDesempateEscolhido);
           } else {
-            console.log('⚠️ Desempate requer seleção de time vencedor');
+            // Padrão: fila entra, ordem original
+            console.log('📋 Aplicando: rotação padrão de empate');
+            novaOrdem = [...espera, ...time1, ...time2];
           }
+        } else {
+          // Fallback
+          novaOrdem = [...espera, ...time1, ...time2];
         }
-        
-        return;
       }
-
-      // === CENÁRIO: TIME 2 VENCE ===
-      if (timeVencedor === 'B') {
-        await resetarTodasVitorias(peladaId, sessaoId);
-        await rotacionarTime2Vence(peladaId, sessaoId);
-        return;
-      }
-
-      // === CENÁRIO: TIME 1 VENCE ===
-      const novasVitorias = vitoriasAtuais + 1;
-      console.log(`⚽ Time 1 venceu! Vitórias: ${vitoriasAtuais} → ${novasVitorias}`);
-      console.log(`📊 Limite configurado: ${limiteVitoriasConfig}`);
-
-      // Verifica se atingiu limite
-      if (limiteVitoriasConfig && novasVitorias >= limiteVitoriasConfig) {
-        console.log(`🚨 LIMITE ATINGIDO! Aplicando regra: ${regraAposLimite}`);
-        await resetarTodasVitorias(peladaId, sessaoId);
-        
-        if (regraAposLimite === 'prioridade') {
-          console.log('🔄 Chamando rotacionarVencedorAntes(A)');
-          await rotacionarVencedorAntes(peladaId, sessaoId, 'A');
-        } else if (regraAposLimite === 'sem_prioridade') {
-          console.log('🔄 Chamando rotacionarPerdedorAntes(B)');
-          await rotacionarPerdedorAntes(peladaId, sessaoId, 'B');
-        } else if (regraAposLimite === 'mesclar') {
-          console.log('🔄 Chamando rotacionarMesclarTimes()');
-          await rotacionarMesclarTimes(peladaId, sessaoId);
-        } else if (regraAposLimite === 'perdedor_continua') {
-          console.log('🔄 Aplicando regra: PERDEDOR continua jogando');
-          await rotacionarPerdedorContinua(peladaId, sessaoId, 'B');
-        }
+      // === VITÓRIA (COM OU SEM LIMITE) ===
+      else if (!limiteVitoriasConfig) {
+        // SEM limite de vitórias - rotação simples
+        console.log('📋 Sem limite de vitórias - rotação simples');
+        if (timeVencedor === 'B') novaOrdem = [...time2, ...espera, ...time1];
+        else novaOrdem = [...time1, ...espera, ...time2];
       } else {
-        console.log('✅ Limite não atingido - Time 1 continua');
-        // Não atingiu limite - Time 1 fica
-        await rotacionarTime1Vence(peladaId, sessaoId, novasVitorias);
+        // COM limite de vitórias - usar função específica
+        console.log(`📋 Com limite - usando rotação: ${regraAposLimite}`);
+        
+        switch (regraAposLimite) {
+          case 'prioridade':
+            novaOrdem = rotacao_vitoriaconsec_vencedor(time1, time2, espera, timeVencedor, limiteAtingido);
+            break;
+          case 'sem_prioridade':
+            novaOrdem = rotacao_vitoriaconsec_perdedor(time1, time2, espera, timeVencedor, limiteAtingido);
+            break;
+          case 'mesclar':
+            novaOrdem = rotacao_vitoriaconsec_mesclar(time1, time2, espera, timeVencedor, limiteAtingido);
+            break;
+          case 'perdedor_continua':
+            novaOrdem = rotacao_vitoriaconsec_perdedorfica(time1, time2, espera, timeVencedor, limiteAtingido);
+            break;
+          default:
+            novaOrdem = rotacao_vitoriaconsec_vencedor(time1, time2, espera, timeVencedor, limiteAtingido);
+        }
       }
-
+      
+      console.log('📊 Nova ordem:', novaOrdem.map((j: any) => j.nome));
+      
+      // ATUALIZAR posicao_fila de todos os jogadores
+      const filaAtualizada = fila.map((item: any) => {
+        const indiceNaNovaOrdem = novaOrdem.findIndex((j: any) => j.nome === item.nome);
+        
+        if (indiceNaNovaOrdem !== -1) {
+          const novaPosicao = indiceNaNovaOrdem + 1;
+          const novoItem = { 
+            ...item, 
+            posicao_fila: novaPosicao
+          };
+          
+          // Atualizar vitorias_consecutivas_time apenas para posições 1-5
+          if (novaPosicao >= 1 && novaPosicao <= jogadoresPorTime) {
+            novoItem.vitorias_consecutivas_time = vitoriasConsecutivasNovas;
+          } else {
+            novoItem.vitorias_consecutivas_time = 0;
+          }
+          
+          return novoItem;
+        }
+        return item;
+      });
+      
+      console.log('📊 Fila APÓS:', filaAtualizada.filter((j: any) => j.status === 'fila').sort((a: any, b: any) => a.posicao_fila - b.posicao_fila).map((j: any) => `${j.nome}(pos:${j.posicao_fila},vit:${j.vitorias_consecutivas_time})`));
+      
+      // Salvar fila atualizada
+      localStorage.setItem('fila_ativa', JSON.stringify(filaAtualizada));
+      
+      // Atualizar sessão com vitórias consecutivas do time na posição 1-5
+      const sessaoAtualizada = {
+        ...sessao,
+        vitorias_consecutivas: vitoriasConsecutivasNovas
+      };
+      localStorage.setItem('sessao_ativa', JSON.stringify(sessaoAtualizada));
+      
+      console.log(`✅ Fila rotacionada e salva`);
+      console.log(`✅ Sessão atualizada - vitorias_consecutivas: ${vitoriasConsecutivasNovas}`);
+      
     } catch (error) {
-      console.error('Erro ao rotacionar fila:', error);
+      console.error('❌ Erro ao rotacionar fila:', error);
       throw error;
     }
   };
@@ -581,9 +615,23 @@ export default function FilaPage() {
   const calcularPreviaVitorias = () => {
     const empate = placarTimeA === placarTimeB;
     
+    // Buscar vitórias consecutivas da fila ativa (localStorage)
+    const filaLocalStr = localStorage.getItem('fila_ativa');
+    let vitoriasConsecutivasAtual = 0;
+    
+    if (filaLocalStr) {
+      const fila = JSON.parse(filaLocalStr);
+      const filaAtiva = fila.filter((item: any) => item.status === 'fila').sort((a: any, b: any) => a.posicao_fila - b.posicao_fila);
+      if (filaAtiva.length > 0) {
+        vitoriasConsecutivasAtual = filaAtiva[0]?.vitorias_consecutivas_time || 0;
+      }
+    }
+    
+    console.log('🏆 Vitórias consecutivas atuais da fila:', vitoriasConsecutivasAtual);
+    
     // Se empate com time escolhido (desempate_decide) e conta como vitória
     if (empate && timeEscolhidoDesempate && empateContaVitoriaConfig) {
-      const novasVitorias = vitoriaConsecutiva + 1;
+      const novasVitorias = vitoriasConsecutivasAtual + 1;
       return {
         vitorias: novasVitorias,
         time: timeEscolhidoDesempate === 'A' ? obterNomeCor(corTimeA).toUpperCase() : obterNomeCor(corTimeB).toUpperCase(),
@@ -593,7 +641,7 @@ export default function FilaPage() {
     
     // Se empate com vencedor do desempate (para manter compatibilidade)
     if (empate && vencedorDesempate && empateContaVitoriaConfig) {
-      const novasVitorias = vitoriaConsecutiva + 1;
+      const novasVitorias = vitoriasConsecutivasAtual + 1;
       return {
         vitorias: novasVitorias,
         time: vencedorDesempate === 'A' ? obterNomeCor(corTimeA).toUpperCase() : obterNomeCor(corTimeB).toUpperCase(),
@@ -612,7 +660,7 @@ export default function FilaPage() {
     
     // Se Time 1 venceu
     if (placarTimeA > placarTimeB) {
-      const novasVitorias = vitoriaConsecutiva + 1;
+      const novasVitorias = vitoriasConsecutivasAtual + 1;
       return {
         vitorias: novasVitorias,
         time: obterNomeCor(corTimeA).toUpperCase(),
@@ -632,9 +680,19 @@ export default function FilaPage() {
   const registrarGol = (jogadorId: string, time: 'A' | 'B') => {
     // Incrementar placar
     if (time === 'A') {
-      setPlacarTimeA(prev => prev + 1);
+      setPlacarTimeA(prev => {
+        const novoPlacar = prev + 1;
+        // Atualizar localStorage da partida
+        atualizarPlacarNoLocalStorage('A', novoPlacar);
+        return novoPlacar;
+      });
     } else {
-      setPlacarTimeB(prev => prev + 1);
+      setPlacarTimeB(prev => {
+        const novoPlacar = prev + 1;
+        // Atualizar localStorage da partida
+        atualizarPlacarNoLocalStorage('B', novoPlacar);
+        return novoPlacar;
+      });
     }
     
     // Registrar gol do jogador
@@ -652,6 +710,21 @@ export default function FilaPage() {
     console.log(`⚽ Gol registrado: Jogador ${jogadorId} do Time ${time}`);
   };
 
+  // Função auxiliar para atualizar placar no localStorage
+  const atualizarPlacarNoLocalStorage = (time: 'A' | 'B', novoPlacar: number) => {
+    const partidaSalva = localStorage.getItem('partida_em_andamento');
+    if (partidaSalva) {
+      const estadoPartida = JSON.parse(partidaSalva);
+      if (time === 'A') {
+        estadoPartida.timeA.gols = novoPlacar;
+      } else {
+        estadoPartida.timeB.gols = novoPlacar;
+      }
+      localStorage.setItem('partida_em_andamento', JSON.stringify(estadoPartida));
+      console.log(`💾 Placar atualizado no localStorage: Time ${time} = ${novoPlacar}`);
+    }
+  };
+
   // Função VAR - desfazer última ação
   const desfazerUltimaAcao = () => {
     if (historicoAcoes.length === 0) return;
@@ -661,9 +734,17 @@ export default function FilaPage() {
     if (ultimaAcao.tipo === 'gol') {
       // Decrementar placar
       if (ultimaAcao.time === 'A') {
-        setPlacarTimeA(prev => Math.max(0, prev - 1));
+        setPlacarTimeA(prev => {
+          const novoPlacar = Math.max(0, prev - 1);
+          atualizarPlacarNoLocalStorage('A', novoPlacar);
+          return novoPlacar;
+        });
       } else {
-        setPlacarTimeB(prev => Math.max(0, prev - 1));
+        setPlacarTimeB(prev => {
+          const novoPlacar = Math.max(0, prev - 1);
+          atualizarPlacarNoLocalStorage('B', novoPlacar);
+          return novoPlacar;
+        });
       }
       
       // Remover gol do jogador
@@ -808,12 +889,7 @@ export default function FilaPage() {
     setSincronizando(true);
     
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) {
-        throw new Error('Usuário não encontrado');
-      }
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
+      const peladaId = buscar_pelada_id(); if (!peladaId) { throw new Error('Usu�rio n�o encontrado'); }
       
       // Buscar sessão ativa
       const clienteDb = await getClienteSupabase(peladaId);
@@ -884,15 +960,20 @@ export default function FilaPage() {
     try {
       setIsLoading(true);
       
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      // Usar credenciais.ts para obter dados do usuário
+      const peladaId = buscar_pelada_id();
+      const plano = buscar_plano();
+      
+      console.log('👤 pelada_id:', peladaId ? 'encontrado' : 'NÃO encontrado');
+      console.log('💎 Plano:', plano);
+      
+      if (!peladaId) {
+        console.error('❌ Nenhum usuário logado - redirecionando para login');
         window.location.href = '/login';
         return;
       }
       
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
-      const planoUsuario = user.plano || 'free';
+      console.log('✅ Usuário logado:', peladaId, '| Plano:', plano);
       
       console.log('� [FILA] Buscando regras para pelada_id:', peladaId);
       console.log('📋 Carregando fila...');
@@ -919,11 +1000,11 @@ export default function FilaPage() {
         if (tipoModo === 'fila2') tipoModo = 'modo_prancheta';
         
         console.log('🎮 Modo configurado:', tipoModo);
-        console.log('💎 Plano do usuário:', planoUsuario);
+        console.log('💎 Plano do usuário:', plano);
         
         // Validar se plano pode usar modo partida
-        if (tipoModo === 'modo_partida' && (planoUsuario === 'free' || planoUsuario === 'gold')) {
-          console.log('⚠️ Plano', planoUsuario, 'não pode usar Modo Partida. Alternando para Modo Prancheta.');
+        if (tipoModo === 'modo_partida' && (plano === 'free' || plano === 'gold')) {
+          console.log('⚠️ Plano', plano, 'não pode usar Modo Partida. Alternando para Modo Prancheta.');
           tipoModo = 'modo_prancheta';
         }
         
@@ -944,29 +1025,206 @@ export default function FilaPage() {
       
       // 2. BUSCAR SESSÃO ATIVA
       console.log('🔍 Buscando sessão ativa...');
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessoes, error: sessaoError } = await clienteDb
-        .from('sessoes')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .order('created_at', { ascending: false });
+      console.log('💎 Plano do usuário:', plano);
       
-      if (sessaoError) {
-        console.error('❌ Erro ao buscar sessão:', sessaoError);
-        await carregarPorStatus(peladaId);
+      // PLANO FREE: Buscar do localStorage
+      if (plano === 'free') {
+        console.log('📦 FREE: Buscando sessão do localStorage');
+        const sessaoLocal = localStorage.getItem('sessao_ativa');
+        
+        if (!sessaoLocal) {
+          console.log('❌ Nenhuma sessão ativa encontrada');
+          setSemSessaoAtiva(true);
+          setIsLoading(false);
+          return;
+        }
+        
+        const sessao = JSON.parse(sessaoLocal);
+        console.log('✅ Sessão ativa encontrada (localStorage):', sessao.id);
+        
+        // Armazenar sessão e pelada nos states (necessário para finalizar partida)
+        setSessaoAtual(sessao);
+        setPeladaIdAtual(peladaId);
+        
+        // Buscar fila do localStorage
+        const filaLocal = localStorage.getItem('fila_ativa');
+        if (filaLocal) {
+          const filaData = JSON.parse(filaLocal);
+          
+          // Carregar TODOS os jogadores do localStorage
+          const jogadoresLocalStorage = localStorage.getItem(`jogadores_${peladaId}`);
+          const todosJogadores = jogadoresLocalStorage ? JSON.parse(jogadoresLocalStorage) : [];
+          
+          console.log('📊 DEBUG FREE - Dados da fila:', filaData);
+          console.log('📊 DEBUG FREE - Total jogadores cadastrados:', todosJogadores.length);
+          console.log('📊 DEBUG FREE - Primeiro jogador:', todosJogadores[0]);
+          console.log('📊 DEBUG FREE - Primeiro item fila:', filaData[0]);
+          
+          // 5. JOGADORES NA FILA (todos com status 'fila')
+          const filaItems = (filaData || []).filter((item: any) => item.status === 'fila');
+          const todosJogadoresFilaTemp = filaItems.map((item: any) => {
+            return {
+              id: item.id || item.nome, // Usar nome como fallback de id
+              nome: item.nome,
+              nivel: 3, // Nivel padrão (não usado no Free)
+              posicao_fila: item.posicao_fila || 0,
+              status: 'fila' as const
+            };
+          });
+          
+          // Remover duplicatas baseado no ID antes de separar
+          const todosJogadoresFila = todosJogadoresFilaTemp.filter((jogador: any, index: number, self: any[]) => 
+            index === self.findIndex((j: any) => j.id === jogador.id)
+          );
+          
+          // Separar jogadores que estão jogando (primeiras posições) dos que estão na fila
+          const jogadoresJogando = todosJogadoresFila.filter((_: any, index: number) => index < jogadoresPorTime * 2);
+          const jogadoresFila = todosJogadoresFila.filter((_: any, index: number) => index >= jogadoresPorTime * 2);
+          
+          // 6. JOGADORES RESERVA (da tabela fila)
+          const reservaItems = (filaData || []).filter((item: any) => item.status === 'reserva');
+          const jogadoresReservaTemp = reservaItems.map((item: any) => {
+            return {
+              id: item.id || item.nome,
+              nome: item.nome,
+              nivel: 3,
+              posicao_fila: item.posicao_fila || 0,
+              status: 'reserva' as const
+            };
+          });
+          // Remover duplicatas baseado no ID
+          const jogadoresReserva = jogadoresReservaTemp.filter((jogador: any, index: number, self: any[]) => 
+            index === self.findIndex((j: any) => j.id === jogador.id)
+          );
+          
+          setJogadoresJogando(jogadoresJogando);
+          setJogadoresFila(jogadoresFila);
+          setJogadoresReserva(jogadoresReserva);
+          
+          console.log(`✅ FREE: ${filaData.length} jogadores carregados da fila`);
+          console.log(`  - Jogando: ${jogadoresJogando.length}`);
+          console.log(`  - Fila: ${jogadoresFila.length}`);
+          console.log(`  - Reserva: ${jogadoresReserva.length}`);
+        }
+        
+        setIsLoading(false);
         return;
       }
       
-      if (!sessoes || sessoes.length === 0) {
-        console.log('❌ Nenhuma sessão ativa encontrada');
+      // PLANO GOLD/PREMIUM: Buscar sessão
+      // Se modo offline, busca do localStorage; senão, busca do Supabase
+      // Ler modo de sincronização direto das regras (não do state que pode estar desatualizado)
+      const modoSync = regrasData?.modo_sincronizacao || 'tempo_real';
+      console.log('🔄 Modo de sincronização detectado:', modoSync);
+      console.log('📋 Regras completas:', regrasData);
+      
+      if (modoSync === 'local_first') {
+        console.log('⚡ Modo offline: Buscando sessão do localStorage');
+        
+        // Verificar todas as chaves do localStorage
+        console.log('🔍 Chaves no localStorage:', Object.keys(localStorage));
+        
+        const sessaoLocal = localStorage.getItem('sessao_ativa');
+        console.log('📦 sessao_ativa raw:', sessaoLocal);
+        
+        if (!sessaoLocal) {
+          console.log('❌ Nenhuma sessão ativa encontrada no localStorage');
+          setSemSessaoAtiva(true);
+          setIsLoading(false);
+          return;
+        }
+        
+        const sessao = JSON.parse(sessaoLocal);
+        console.log('✅ Sessão ativa encontrada (localStorage):', sessao.id);
+        
+        // Armazenar sessão e pelada nos states
+        setSessaoAtual(sessao);
+        setPeladaIdAtual(peladaId);
+        
+        // Carregar fila e jogadores do localStorage
+        const filaLocal = localStorage.getItem('fila_ativa');
+        const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
+        
+        if (!filaLocal || !jogadoresLocal) {
+          console.error('❌ Cache local vazio! Modo offline não inicializado.');
+          alert('❌ Erro: Dados locais não encontrados. Recarregue a página.');
+          setIsLoading(false);
+          return;
+        }
+        
+        const filaData = JSON.parse(filaLocal);
+        const todosJogadores = JSON.parse(jogadoresLocal);
+        
+        console.log('📊 Dados carregados do cache local');
+        
+        // Processar fila (mesmo código do FREE)
+        const filaItems = (filaData || []).filter((item: any) => item.status === 'fila');
+        const todosJogadoresFilaTemp = filaItems.map((item: any) => {
+          const jogador = todosJogadores.find((j: any) => j.id === item.jogador_id);
+          if (!jogador) {
+            console.warn(`⚠️ Jogador ${item.jogador_id} não encontrado no localStorage`);
+          }
+          return {
+            id: item.jogador_id,
+            nome: jogador?.nome || 'Desconhecido',
+            nivel: jogador?.nivel || 3,
+            posicao_fila: item.posicao_fila || 0,
+            status: 'fila' as const
+          };
+        });
+        
+        const todosJogadoresFila = todosJogadoresFilaTemp.filter((jogador, index, self) => 
+          index === self.findIndex(j => j.id === jogador.id)
+        );
+        
+        const jogadoresJogando = todosJogadoresFila.filter((_, index) => index < regras.jogadores_por_time * 2);
+        const jogadoresFila = todosJogadoresFila.filter((_, index) => index >= regras.jogadores_por_time * 2);
+        
+        setJogadoresJogando(jogadoresJogando);
+        setJogadoresFila(jogadoresFila);
+        
+        const reservaItems = (filaData || []).filter((item: any) => item.status === 'reserva');
+        const jogadoresReservaTemp = reservaItems.map((item: any) => {
+          const jogador = todosJogadores.find((j: any) => j.id === item.jogador_id);
+          return {
+            id: item.jogador_id,
+            nome: jogador?.nome || 'Desconhecido',
+            nivel: jogador?.nivel || 3,
+            posicao_fila: item.posicao_fila || 0,
+            status: 'reserva' as const
+          };
+        });
+        const jogadoresReserva = jogadoresReservaTemp.filter((jogador, index, self) => 
+          index === self.findIndex(j => j.id === jogador.id)
+        );
+        setJogadoresReserva(jogadoresReserva);
+        
+        console.log(`✅ Modo offline: ${filaData.length} jogadores carregados`);
+        console.log(`  - Jogando: ${jogadoresJogando.length}`);
+        console.log(`  - Fila: ${jogadoresFila.length}`);
+        console.log(`  - Reserva: ${jogadoresReserva.length}`);
+        
+        setIsLoading(false);
+        return;
+      }
+      
+      // MODO TEMPO REAL: Buscar sessão do localStorage (GOLD/PREMIUM também usa local agora)
+      console.log('📦 GOLD/PREMIUM tempo_real: Buscando sessão do localStorage');
+      console.log('🔍 Todas as chaves do localStorage:', Object.keys(localStorage));
+      
+      const sessaoLocal = localStorage.getItem('sessao_ativa');
+      console.log('📦 sessao_ativa encontrada:', sessaoLocal ? 'SIM' : 'NÃO');
+      console.log('📄 Conteúdo raw:', sessaoLocal);
+      
+      if (!sessaoLocal) {
+        console.log('❌ Nenhuma sessão ativa encontrada no localStorage');
         setSemSessaoAtiva(true);
         setIsLoading(false);
         return;
       }
       
-      const sessao = sessoes[0];
-      console.log('✅ Sessão ativa encontrada:', sessao.id);
+      const sessao = JSON.parse(sessaoLocal);
+      console.log('✅ Sessão ativa encontrada (localStorage):', sessao.id);
       
       // Armazenar sessão e pelada nos states
       setSessaoAtual(sessao);
@@ -975,84 +1233,30 @@ export default function FilaPage() {
       let filaData: any[] = [];
       let todosJogadores: any[] = [];
       
-      // Verificar modo de sincronização
-      const modoSync = modoSincronizacao || 'tempo_real';
+      // TODOS OS PLANOS: Carregar do localStorage
+      console.log('📦 Carregando fila e jogadores do localStorage');
       
-      if (modoSync === 'local_first') {
-        // MODO LOCAL FIRST: Carregar do localStorage (já inicializado ao habilitar modo)
-        console.log('⚡ Modo local_first: carregando do cache local');
-        
-        const filaLocal = localStorage.getItem(`fila_${sessao.id}`);
-        const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
-        
-        // Se cache vazio (improvável mas possível), avisar usuário
-        if (!filaLocal || !jogadoresLocal) {
-          console.error('❌ Cache local vazio! Modo offline não foi inicializado corretamente.');
-          alert('❌ Erro: Modo offline não inicializado. Vá em Regras e reative o modo offline.');
-          setIsLoading(false);
-          return;
-        }
-        
-        filaData = JSON.parse(filaLocal);
-        todosJogadores = JSON.parse(jogadoresLocal);
-        
-        console.log('📊 Dados carregados do cache local');
-      } else {
-        // MODO TEMPO REAL: Carregar do Supabase
-        console.log('🔄 Modo tempo_real: carregando do Supabase');
-        
-        // 🔧 MIGRAÇÃO: Converter status 'jogando' antigo para 'fila'
-        console.log('🔧 Migrando dados antigos...');
-        await clienteDb
-          .from('fila')
-          .update({ status: 'fila' })
-          .eq('pelada_id', peladaId)
-          .eq('status', 'jogando');
-        console.log('✅ Migração concluída: jogando → fila');
-        
-        // 3. CARREGAR DA TABELA FILA (sem JOIN - igual Pelada 3)
-        const { data: filaSupabase, error: filaError } = await clienteDb
-          .from('fila')
-          .select('*')
-          .eq('pelada_id', peladaId)
-          .eq('sessao_id', sessao.id)
-          .order('posicao_fila');
-        
-        if (filaError) {
-          console.error('💥 Erro ao carregar fila:', filaError);
-          await carregarPorStatus(peladaId);
-          return;
-        }
-        
-        filaData = filaSupabase || [];
-        console.log('📊 Dados da fila carregados:', filaData);
-        
-        // 3. CARREGAR DADOS DOS JOGADORES SEPARADAMENTE
-        const { data: jogadoresSupabase, error: jogadoresError } = await clienteDb
-          .from('jogadores')
-          .select('*')
-          .eq('pelada_id', peladaId);
-        
-        if (jogadoresError) {
-          console.error('💥 Erro ao carregar jogadores:', jogadoresError);
-          await carregarPorStatus(peladaId);
-          return;
-        }
-        
-        todosJogadores = jogadoresSupabase || [];
-        
-        // Salvar no cache local para modo local_first
-        localStorage.setItem(`fila_${sessao.id}`, JSON.stringify(filaData));
-        localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(todosJogadores));
+      const filaLocal = localStorage.getItem('fila_ativa');
+      const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
+      
+      if (!filaLocal) {
+        console.error('❌ Fila não encontrada no localStorage');
+        alert('❌ Erro: Fila não encontrada. Inicie o sorteio novamente.');
+        setIsLoading(false);
+        return;
       }
       
-      // 5. JOGADORES NA FILA (todos com status 'fila')
-      const filaItems = (filaData || []).filter(item => item.status === 'fila');
-      const todosJogadoresFilaTemp = filaItems.map(item => {
-        const jogador = todosJogadores.find(j => j.id === item.jogador_id);
+      filaData = JSON.parse(filaLocal);
+      todosJogadores = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
+      
+      console.log(`📊 Dados carregados: ${filaData.length} na fila, ${todosJogadores.length} jogadores`);
+      
+      // 5. PROCESSAR JOGADORES NA FILA (todos com status 'fila')
+      const filaItems = (filaData || []).filter((item: any) => item.status === 'fila');
+      const todosJogadoresFilaTemp = filaItems.map((item: any) => {
         return {
-          id: item.jogador_id,
-          nome: jogador?.nome || 'Desconhecido',
+          id: item.id || item.nome,
+          nome: item.nome,
           posicao_fila: item.posicao_fila || 0,
           status: 'fila' as const
         };
@@ -1071,51 +1275,45 @@ export default function FilaPage() {
       setJogadoresFila(jogadoresFila);
       
       // 6. JOGADORES RESERVA (da tabela fila)
-      const reservaItems = (filaData || []).filter(item => item.status === 'reserva');
-      const jogadoresReservaTemp = reservaItems.map(item => {
-        const jogador = todosJogadores.find(j => j.id === item.jogador_id);
+      const reservaItems = (filaData || []).filter((item: any) => item.status === 'reserva');
+      const jogadoresReservaTemp = reservaItems.map((item: any) => {
         return {
-          id: item.jogador_id,
-          nome: jogador?.nome || 'Desconhecido',
+          id: item.id || item.nome,
+          nome: item.nome,
           posicao_fila: item.posicao_fila || 0,
           status: 'reserva' as const
         };
       });
       // Remover duplicatas baseado no ID
-      const jogadoresReserva = jogadoresReservaTemp.filter((jogador, index, self) => 
-        index === self.findIndex(j => j.id === jogador.id)
+      const jogadoresReserva = jogadoresReservaTemp.filter((jogador: any, index: number, self: any[]) => 
+        index === self.findIndex((j: any) => j.id === jogador.id)
       );
       setJogadoresReserva(jogadoresReserva);
       
-      // 7. CARREGAR ESTATÍSTICAS DO LOCALSTORAGE
-      const stats = localStorage.getItem('peladaStats');
-      if (stats) {
-        const parsedStats = JSON.parse(stats);
-        setTotalPartidas(parsedStats.partidas || 0);
-        setTotalGols(parsedStats.gols || 0);
-      }
-
-      // 8. BUSCAR ESTATÍSTICAS REAIS DO BANCO (SESSÃO ATIVA)
-      if (sessao) {
-        const { data: jogosFinalizados } = await clienteDb
-          .from('jogos')
-          .select('id, placar_a, placar_b')
-          .eq('sessao_id', sessao.id)
-          .eq('status', 'finalizado');
-
-        const partidasReais = jogosFinalizados?.length || 0;
-        let golsReais = 0;
-
-        if (jogosFinalizados && jogosFinalizados.length > 0) {
-          golsReais = jogosFinalizados.reduce((total, jogo) => {
-            return total + (jogo.placar_a || 0) + (jogo.placar_b || 0);
-          }, 0);
+      // 7. CARREGAR CONTADOR DE PARTIDAS E GOLS DO LOCALSTORAGE
+      const jogosKey = `jogos_${sessao.id}`;
+      const jogosStr = localStorage.getItem(jogosKey);
+      
+      let partidasReais = 0;
+      let golsReais = 0;
+      
+      if (jogosStr) {
+        const jogos = JSON.parse(jogosStr);
+        partidasReais = jogos.length;
+        
+        // Calcular total de gols da tabela jogadores
+        const jogadoresKey = `jogadores_${peladaId}`;
+        const jogadoresStr = localStorage.getItem(jogadoresKey);
+        if (jogadoresStr) {
+          const jogadores = JSON.parse(jogadoresStr);
+          golsReais = jogadores.reduce((total: number, j: any) => total + (j.gols || 0), 0);
         }
-
-        setTotalPartidas(partidasReais);
-        setTotalGols(golsReais);
-        console.log(`📊 Estatísticas da sessão: ${partidasReais} partidas, ${golsReais} gols`);
       }
+      
+      setTotalPartidas(partidasReais);
+      setTotalGols(golsReais);
+      
+      console.log(`✅ Estatísticas carregadas: ${partidasReais} partidas, ${golsReais} gols`);
       
       console.log(`✅ Fila carregada: ${jogadoresJogando.length} jogando, ${jogadoresFila.length} na fila, ${jogadoresReserva.length} reservas`);
       
@@ -1183,10 +1381,9 @@ export default function FilaPage() {
     } catch (error) {
       console.error('💥 Erro geral ao carregar dados:', error);
       // Fallback final
-      const userData = localStorage.getItem('user');
-      if (userData) {
-        const user = JSON.parse(userData);
-        await carregarPorStatus(user.id);
+      const peladaId = buscar_pelada_id();
+      if (peladaId) {
+        await carregarPorStatus(peladaId);
       }
     } finally {
       setIsLoading(false);
@@ -1257,10 +1454,8 @@ export default function FilaPage() {
     } else {
       // MODO PRANCHETA: Salvar snapshot antes de iniciar
       try {
-        const userData = localStorage.getItem('user');
-        if (userData) {
-          const user = JSON.parse(userData);
-          const peladaId = user.id;
+        const peladaId = buscar_pelada_id();
+        if (peladaId) {
           
           // Buscar sessão ativa
           const clienteDb = await getClienteSupabase(peladaId);
@@ -1327,53 +1522,54 @@ export default function FilaPage() {
 
   const abrirModalEncerrar = async () => {
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) {
-        console.error('❌ Usuário não encontrado');
+      console.log('📊 Abrindo modal de encerramento...');
+      
+      // Buscar pelada_id
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) {
+        console.error('❌ peladaId não encontrado');
+        alert('❌ Erro ao carregar dados!');
+        return;
+      }
+      
+      // Buscar sessão ativa do localStorage
+      const sessaoStr = localStorage.getItem('sessao_ativa');
+      if (!sessaoStr) {
+        console.error('❌ Sessão ativa não encontrada no localStorage');
+        alert('❌ Nenhuma sessão ativa encontrada!');
         return;
       }
 
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
+      const sessao = JSON.parse(sessaoStr);
+      console.log('✅ Sessão encontrada:', sessao.id);
 
-      // Buscar sessão ativa
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessao, error: sessaoError } = await clienteDb
-        .from('sessoes')
-        .select('id')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .single();
-
-      if (sessaoError || !sessao) {
-        console.error('❌ Sessão ativa não encontrada');
-        setShowEncerrarModal(true);
-        return;
-      }
-
-      // Buscar estatísticas da sessão
-      const { data: jogos, error: jogosError } = await clienteDb
-        .from('jogos')
-        .select('id, placar_a, placar_b')
-        .eq('sessao_id', sessao.id)
-        .eq('status', 'finalizado');
-
-      if (jogosError) {
-        console.error('❌ Erro ao buscar jogos:', jogosError);
-      }
-
-      const partidas = jogos?.length || 0;
+      // ============================================
+      // BUSCAR ESTATÍSTICAS DO LOCALSTORAGE
+      // ============================================
+      const jogosKey = `jogos_${sessao.id}`;
+      const jogosStr = localStorage.getItem(jogosKey);
+      
+      let partidas = 0;
       let gols = 0;
-
-      if (jogos && jogos.length > 0) {
-        gols = jogos.reduce((total, jogo) => {
-          return total + (jogo.placar_a || 0) + (jogo.placar_b || 0);
-        }, 0);
+      
+      if (jogosStr) {
+        const jogos = JSON.parse(jogosStr);
+        partidas = jogos.length;
+        
+        // Calcular total de gols da tabela jogadores (igual ao carregarDados)
+        const jogadoresKey = `jogadores_${peladaId}`;
+        const jogadoresStr = localStorage.getItem(jogadoresKey);
+        if (jogadoresStr) {
+          const jogadores = JSON.parse(jogadoresStr);
+          gols = jogadores.reduce((total: number, j: any) => total + (j.gols || 0), 0);
+        }
       }
 
+      console.log(`📈 Estatísticas: ${partidas} partidas, ${gols} gols`);
       setTotalPartidas(partidas);
       setTotalGols(gols);
       setShowEncerrarModal(true);
+      
     } catch (error) {
       console.error('❌ Erro ao carregar estatísticas:', error);
       setShowEncerrarModal(true);
@@ -1388,216 +1584,198 @@ export default function FilaPage() {
   // Função para carregar informações das partidas do dia
   const carregarInfoPartidas = async () => {
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) return;
-
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
-
-      // Buscar sessão ativa
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessao } = await clienteDb
-        .from('sessoes')
-        .select('id')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .single();
-
-      if (!sessao) return;
-
-      // Buscar jogos finalizados da sessão
-      const { data: jogos, error: jogosError } = await clienteDb
-        .from('jogos')
-        .select('*')
-        .eq('sessao_id', sessao.id)
-        .eq('status', 'finalizado')
-        .order('created_at', { ascending: true });
-
-      if (jogosError) {
-        console.error('Erro ao buscar partidas:', jogosError);
+      console.log('📊 Carregando informações de partidas...');
+      
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) {
+        console.warn('⚠️ PeladaId não encontrado');
+        return;
       }
 
-      console.log('Partidas encontradas:', jogos);
-      setPartidasDoDia(jogos || []);
+      // Buscar sessão ativa do localStorage
+      const sessaoStr = localStorage.getItem('sessao_ativa');
+      if (!sessaoStr) {
+        console.warn('⚠️ Sessão ativa não encontrada no localStorage');
+        setPartidasDoDia([]);
+        setShowModalInfoPartidas(true);
+        return;
+      }
+
+      const sessao = JSON.parse(sessaoStr);
+      console.log('📋 Sessão:', sessao.id);
+
+      // ============================================
+      // BUSCAR DA TABELA JOGOS
+      // ============================================
+      const jogosKey = `jogos_${sessao.id}`;
+      const jogosStr = localStorage.getItem(jogosKey);
+      
+      if (!jogosStr) {
+        console.log('🎮 Nenhuma partida finalizada ainda');
+        setPartidasDoDia([]);
+        setShowModalInfoPartidas(true);
+        return;
+      }
+
+      const jogos = JSON.parse(jogosStr);
+      console.log('✅ Jogos encontrados:', jogos.length);
+      
+      // Formatar para o formato do modal
+      const partidasFormatadas = jogos.map((jogo: any) => ({
+        numero_jogo: jogo.numero_jogo,
+        time_a: jogo.time_a.map((j: any) => j.nome),
+        time_b: jogo.time_b.map((j: any) => j.nome),
+        placar_a: jogo.placar_a,
+        placar_b: jogo.placar_b,
+        time_vencedor: jogo.time_vencedor,
+        data_fim: jogo.data_fim,
+      }));
+      
+      setPartidasDoDia(partidasFormatadas);
       setShowModalInfoPartidas(true);
+      
     } catch (error) {
-      console.error('Erro ao carregar partidas:', error);
+      console.error('❌ Erro ao carregar partidas:', error);
+      setPartidasDoDia([]);
+      setShowModalInfoPartidas(true);
     }
   };
 
   // Função para carregar informações dos gols do dia
   const carregarInfoGols = async () => {
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) return;
+      console.log('⚽ Carregando informações de gols...');
+      
+      const peladaId = buscar_pelada_id();
+      const plano = buscar_plano();
+      
+      console.log('🔍 Debug - peladaId:', peladaId);
+      console.log('🔍 Debug - plano:', plano);
+      
+      if (!peladaId) {
+        console.warn('⚠️ PeladaId não encontrado');
+        return;
+      }
 
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
-
-      // Buscar sessão ativa
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessao } = await clienteDb
-        .from('sessoes')
-        .select('id')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .single();
-
-      if (!sessao) return;
-
-      // Buscar jogos finalizados da sessão
-      const { data: jogos } = await clienteDb
-        .from('jogos')
-        .select('id, time_a, time_b')
-        .eq('sessao_id', sessao.id)
-        .eq('status', 'finalizado');
-
-      if (!jogos || jogos.length === 0) {
+      // Buscar sessão ativa do localStorage
+      const sessaoStr = localStorage.getItem('sessao_ativa');
+      if (!sessaoStr) {
+        console.warn('⚠️ Sessão ativa não encontrada no localStorage');
         setArtilheirosDoDia([]);
         setSemGolsDoDia([]);
         setShowModalInfoGols(true);
         return;
       }
 
-      const jogosIds = jogos.map(j => j.id);
+      const sessao = JSON.parse(sessaoStr);
+      console.log('📋 Sessão:', sessao.id);
 
-      // Buscar todos os gols
-      const { data: todosGols, error: golsError } = await clienteDb
-        .from('gols')
-        .select('jogador_id')
-        .in('jogo_id', jogosIds);
-
-      if (golsError) {
-        console.error('Erro ao buscar gols:', golsError);
+      // ============================================
+      // BUSCAR DA TABELA JOGOS
+      // ============================================
+      const jogosKey = `jogos_${sessao.id}`;
+      const jogosStr = localStorage.getItem(jogosKey);
+      
+      if (!jogosStr) {
+        console.log('🎮 Nenhuma partida finalizada ainda');
+        setArtilheirosDoDia([]);
+        setSemGolsDoDia([]);
+        setShowModalInfoGols(true);
+        return;
       }
 
-      console.log('Jogos encontrados:', jogos.length);
-      console.log('IDs dos jogos:', jogosIds);
-      console.log('Gols encontrados:', todosGols);
-      console.log('Total de gols:', todosGols?.length);
+      const jogos = JSON.parse(jogosStr);
+      console.log('✅ Jogos encontrados:', jogos.length);
 
-      // Buscar dados de todos os jogadores
-      const { data: todosJogadores } = await clienteDb
-        .from('jogadores')
-        .select('id, nome')
-        .eq('pelada_id', peladaId);
+      // ============================================
+      // BUSCAR DA TABELA JOGADORES (contém os gols acumulados)
+      // ============================================
+      const jogadoresKey = `jogadores_${peladaId}`;
+      const jogadoresStr = localStorage.getItem(jogadoresKey);
+      const jogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+      console.log('👥 Jogadores encontrados:', jogadores.length);
 
-      if (!todosJogadores) return;
-
-      // Contar gols por jogador
-      const golsPorJogador: Record<string, number> = {};
-      (todosGols || []).forEach(gol => {
-        golsPorJogador[gol.jogador_id] = (golsPorJogador[gol.jogador_id] || 0) + 1;
-      });
-
-      // Obter IDs únicos de jogadores que participaram dos jogos
+      // Criar set de jogadores que jogaram hoje
       const jogadoresQueJogaram = new Set<string>();
-      jogos.forEach(jogo => {
-        (jogo.time_a || []).forEach((id: string) => jogadoresQueJogaram.add(id));
-        (jogo.time_b || []).forEach((id: string) => jogadoresQueJogaram.add(id));
+      jogos.forEach((jogo: any) => {
+        jogo.time_a.forEach((j: any) => jogadoresQueJogaram.add(j.nome));
+        jogo.time_b.forEach((j: any) => jogadoresQueJogaram.add(j.nome));
       });
 
-      // Criar lista de artilheiros (quem marcou)
-      const artilheiros = todosJogadores
-        .filter(j => golsPorJogador[j.id] > 0)
-        .map(j => ({
-          nome: j.nome,
-          gols: golsPorJogador[j.id]
-        }))
-        .sort((a, b) => b.gols - a.gols);
+      // Filtrar apenas jogadores que jogaram hoje e separar artilheiros vs sem gols
+      const artilheiros = jogadores
+        .filter((j: any) => jogadoresQueJogaram.has(j.nome) && (j.gols || 0) > 0)
+        .map((j: any) => ({ nome: j.nome, gols: j.gols || 0 }))
+        .sort((a: any, b: any) => b.gols - a.gols);
 
-      // Criar lista de jogadores sem gols (apenas quem jogou)
-      const semGols = todosJogadores
-        .filter(j => jogadoresQueJogaram.has(j.id) && !golsPorJogador[j.id])
-        .map(j => j.nome)
+      const semGols = jogadores
+        .filter((j: any) => jogadoresQueJogaram.has(j.nome) && (!j.gols || j.gols === 0))
+        .map((j: any) => j.nome)
         .sort();
+
+      // Calcular total de gols
+      const totalGolsCalculado = artilheiros.reduce((total, artilheiro) => total + artilheiro.gols, 0);
+      
+      console.log('🏆 Artilheiros:', artilheiros);
+      console.log('🙈 Sem gols:', semGols);
+      console.log('⚽ Total de gols:', totalGolsCalculado);
 
       setArtilheirosDoDia(artilheiros);
       setSemGolsDoDia(semGols);
+      setTotalGols(totalGolsCalculado);
       setShowModalInfoGols(true);
+      
     } catch (error) {
-      console.error('Erro ao carregar gols:', error);
+      console.error('❌ Erro ao carregar gols:', error);
+      setArtilheirosDoDia([]);
+      setSemGolsDoDia([]);
+      setShowModalInfoGols(true);
     }
   };
 
   const abrirModalDesfazer = async () => {
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      console.log('🔍 ABRINDO MODAL DESFAZER...');
+      
+      const peladaId = buscar_pelada_id();
+      console.log('📋 PeladaId:', peladaId);
+      
+      if (!peladaId) {
         alert('❌ Usuário não encontrado!');
         return;
       }
 
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
+      // Verificar se há snapshots no localStorage
+      const keyEdicao = `fila_snapshot_edicao_${peladaId}`;
+      const keyPartida = `fila_snapshot_partida_${peladaId}`;
+      
+      console.log('🔑 Buscando keys:', { keyEdicao, keyPartida });
+      
+      const snapshotEdicao = localStorage.getItem(keyEdicao);
+      const snapshotPartida = localStorage.getItem(keyPartida);
+      
+      console.log('📸 Snapshots encontrados:', {
+        edicao: snapshotEdicao ? 'SIM' : 'NÃO',
+        partida: snapshotPartida ? 'SIM' : 'NÃO'
+      });
 
-      // Usar banco dedicado
-      const clienteDb = await getClienteSupabase(peladaId);
-
-      // Verificar se a tabela fila_snapshot existe antes de prosseguir
-      try {
-        const testQuery = await clienteDb
-          .from('fila_snapshot')
-          .select('id')
-          .limit(0);
-        
-        if (testQuery.error) {
-          throw testQuery.error;
-        }
-      } catch (testError: any) {
-        if (testError.code === '42P01' || testError.message?.includes('does not exist')) {
-          alert('❌ A funcionalidade de desfazer ainda não está configurada.\n\nExecute este SQL no Supabase:\n\nCREATE TABLE fila_snapshot (\n  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  pelada_id TEXT NOT NULL,\n  snapshot_data JSONB NOT NULL,\n  created_at TIMESTAMP DEFAULT NOW()\n);');
-          return;
-        }
-      }
-
-      // Buscar sessão ativa - USA BANCO DEDICADO
-      const { data: sessao, error: sessaoError } = await clienteDb
-        .from('sessoes')
-        .select('id')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .single();
-
-      if (sessaoError || !sessao) {
-        alert('❌ Nenhuma sessão ativa encontrada!');
-        return;
-      }
-
-      // Buscar o ÚLTIMO snapshot - USA BANCO DEDICADO
-      const { data: snapshot, error: snapshotError } = await clienteDb
-        .from('fila_snapshot')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (snapshotError || !snapshot) {
+      if (!snapshotEdicao && !snapshotPartida) {
+        console.warn('⚠️ Nenhum snapshot encontrado no localStorage');
         alert('❌ Não há ações para desfazer.\n\nEsta funcionalidade só funciona após iniciar uma partida ou fazer edições na fila.');
         return;
       }
 
-      console.log('📸 Snapshot encontrado, tipo:', snapshot.tipo);
-
-      // Guardar o tipo da ação
-      setTipoAcaoDesfazer(snapshot.tipo);
-
-      // Se for snapshot de partida, buscar última partida
-      if (snapshot.tipo === 'partida') {
-        const { data: ultimoJogo } = await clienteDb
-          .from('jogos')
-          .select('*')
-          .eq('sessao_id', sessao.id)
-          .eq('status', 'finalizado')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (ultimoJogo) {
-          setUltimaPartida(ultimoJogo);
-        }
+      // Priorizar snapshot de partida (mais recente geralmente)
+      let tipoSnapshot: 'partida' | 'edicao' = 'edicao';
+      
+      if (snapshotPartida) {
+        tipoSnapshot = 'partida';
+      } else if (snapshotEdicao) {
+        tipoSnapshot = 'edicao';
       }
+
+      console.log('✅ Snapshot encontrado, tipo:', tipoSnapshot);
+      setTipoAcaoDesfazer(tipoSnapshot);
       
       // Abrir modal informativo
       setShowDesfazerModal(true);
@@ -1626,14 +1804,11 @@ export default function FilaPage() {
 
   const desfazerEdicaoFila = async () => {
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) {
         alert('❌ Usuário não encontrado!');
         return;
       }
-
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
 
       // Validar senha
       const senhaValida = await validarSenhaPelada(senhaDesfazerEdicao);
@@ -1645,75 +1820,18 @@ export default function FilaPage() {
 
       console.log('🔄 Desfazendo edição da fila...');
 
-      // Buscar snapshot de edição
-      const { data: snapshot } = await supabase
-        .from('fila_snapshot')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('tipo', 'edicao')
-        .single();
-
-      if (!snapshot) {
-        alert('❌ Snapshot de edição não encontrado!');
-        return;
-      }
-
-      // Buscar sessão ativa
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessao } = await clienteDb
-        .from('sessoes')
-        .select('id')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .single();
-
-      if (!sessao) {
-        alert('❌ Sessão ativa não encontrada!');
-        return;
-      }
-
-      // Validar snapshot
-      if (!snapshot.snapshot_data || snapshot.snapshot_data.length === 0) {
-        alert('❌ O snapshot está vazio! Não é possível desfazer esta edição.');
-        return;
-      }
-
-      console.log('📊 Restaurando fila com snapshot de edição:', snapshot.snapshot_data);
-
-      // Deletar todos os registros atuais da fila
-      await clienteDb
-        .from('fila')
-        .delete()
-        .eq('pelada_id', peladaId)
-        .eq('sessao_id', sessao.id);
-
-      // Restaurar fila do snapshot
-      const filaRestaurada = snapshot.snapshot_data.map((item: any) => {
-        const { id, created_at, updated_at, ...resto } = item;
-        return resto;
-      });
-
-      const { error: insertError } = await clienteDb
-        .from('fila')
-        .insert(filaRestaurada);
+      // Restaurar snapshot usando função centralizada
+      const sucesso = fila_snapshot_restaurar(peladaId, 'edicao');
       
-      if (insertError) {
-        console.error('❌ Erro ao restaurar fila:', insertError);
-        alert('❌ Erro ao restaurar a fila. Por favor, recarregue a página.');
+      if (!sucesso) {
+        setSenhaDesfazerEdicao('');
         return;
       }
-
-      // Limpar snapshot de edição
-      await supabase
-        .from('fila_snapshot')
-        .delete()
-        .eq('pelada_id', peladaId)
-        .eq('tipo', 'edicao');
 
       setShowDesfazerSenhaModalEdicao(false);
       setSenhaDesfazerEdicao('');
 
-      alert('✅ Edição desfeita com sucesso! A fila foi restaurada.');
+      console.log('✅ Edição desfeita com sucesso! A fila foi restaurada.');
 
       // Recarregar página
       window.location.reload();
@@ -1726,14 +1844,11 @@ export default function FilaPage() {
 
   const desfazerUltimaPartida = async () => {
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) {
         alert('❌ Usuário não encontrado!');
         return;
       }
-
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
 
       // Validar senha
       const senhaValida = await validarSenhaPelada(senhaDesfazer);
@@ -1745,86 +1860,19 @@ export default function FilaPage() {
 
       console.log('🔄 Desfazendo última partida...');
 
-      // 1. Buscar snapshot do tipo 'partida'
-      const { data: snapshot } = await supabase
-        .from('fila_snapshot')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('tipo', 'partida')
-        .single();
-
-      if (!snapshot) {
-        alert('❌ Snapshot não encontrado!');
-        return;
-      }
-
-      // 2. Buscar sessão ativa
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessao } = await clienteDb
-        .from('sessoes')
-        .select('id')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .single();
-
-      if (!sessao) {
-        alert('❌ Sessão ativa não encontrada!');
-        return;
-      }
-
-      // 3. Validar snapshot antes de restaurar
-      if (!snapshot.snapshot_data || snapshot.snapshot_data.length === 0) {
-        alert('❌ O snapshot está vazio! Não é possível desfazer esta partida.\n\nIsso pode acontecer se o sistema foi atualizado durante uma partida em andamento.');
-        return;
-      }
-
-      console.log('📊 Restaurando fila com snapshot:', snapshot.snapshot_data);
-
-      // 4. Deletar todos os registros atuais da fila
-      await clienteDb
-        .from('fila')
-        .delete()
-        .eq('pelada_id', peladaId)
-        .eq('sessao_id', sessao.id);
-
-      // 5. Restaurar fila do snapshot
-      const filaRestaurada = snapshot.snapshot_data.map((item: any) => {
-        const { id, created_at, updated_at, ...resto } = item;
-        return resto;
-      });
-
-      console.log('🔄 Dados a serem restaurados:', filaRestaurada);
-
-      const { error: insertError } = await clienteDb
-        .from('fila')
-        .insert(filaRestaurada);
+      // Restaurar snapshot usando função centralizada
+      const sucesso = fila_snapshot_restaurar(peladaId, 'partida');
       
-      if (insertError) {
-        console.error('❌ Erro ao restaurar fila:', insertError);
-        alert('❌ Erro ao restaurar a fila. Por favor, recarregue a página e organize manualmente.');
+      if (!sucesso) {
+        setSenhaDesfazer('');
         return;
       }
-
-      // 6. Deletar gols da partida
-      await clienteDb
-        .from('gols')
-        .delete()
-        .eq('jogo_id', ultimaPartida.id);
-
-      // 7. Marcar partida como desfeita (não deletar, manter histórico)
-      await clienteDb
-        .from('jogos')
-        .update({ status: 'desfeito' })
-        .eq('id', ultimaPartida.id);
-
-      // 8. NÃO limpar snapshot - manter para próximas ações de desfazer
-      // O snapshot só será limpo ao encerrar a pelada ou iniciar nova partida
 
       setShowDesfazerSenhaModal(false);
       setSenhaDesfazer('');
       setUltimaPartida(null);
 
-      alert('✅ Última partida desfeita com sucesso! A fila foi restaurada.');
+      console.log('✅ Última partida desfeita com sucesso! A fila foi restaurada.');
 
       // Recarregar página
       window.location.reload();
@@ -1836,615 +1884,442 @@ export default function FilaPage() {
   };
 
   const finalizarPelada = async () => {
+    setLoadingEncerramento(true); // Desabilitar botão
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) {
-        alert('❌ Usuário não encontrado!');
+      console.log('🏁 ==================== INÍCIO ENCERRAMENTO ====================');
+      
+      // Buscar pelada_id e plano das credenciais
+      const peladaId = buscar_pelada_id();
+      const plano = buscar_plano();
+      
+      console.log('📋 Pelada ID:', peladaId);
+      console.log('💎 Plano:', plano);
+      
+      if (!peladaId) {
+        alert('❌ Usuário não encontrado! Por favor, faça login novamente.');
         return;
       }
       
-      const user = JSON.parse(userData);
-      
       // Validar usando função centralizada (async)
+      console.log('🔐 Validando senha...');
       const senhaValida = await validarSenhaPelada(senhaEncerramento);
       if (!senhaValida) {
         alert('❌ Senha incorreta!');
         setSenhaEncerramento('');
         return;
       }
+      console.log('✅ Senha validada');
       
-      const peladaId = user.id;
-      
-      // MODO LOCAL FIRST: Sincronizar tudo antes de finalizar
-      if (modoSincronizacao === 'local_first') {
-        console.log('⚡ Modo local: sincronizando todos os dados antes de finalizar...');
-        setSincronizando(true);
+      // PLANO FREE: Limpar tudo do localStorage (exceto credenciais e regras)
+      if (plano === 'free') {
+        console.log('🧹 ========== PLANO FREE ==========');
+        console.log('🧹 FREE: Encerrando pelada e limpando localStorage...');
         
-        try {
-          // Verificar se está online
-          if (!statusOnline) {
-            alert('❌ Você está offline! Conecte-se à internet para finalizar a pelada.');
-            setSincronizando(false);
-            setSenhaEncerramento('');
-            return;
-          }
-          
-          // Buscar sessão ativa para passar para sync
-          const clienteDb = await getClienteSupabase(peladaId);
-          const { data: sessaoAtiva } = await clienteDb
-            .from('sessoes')
-            .select('id')
-            .eq('pelada_id', peladaId)
-            .eq('status', 'ativa')
-            .single();
-          
-          if (!sessaoAtiva) {
-            alert('❌ Nenhuma sessão ativa encontrada!');
-            setSincronizando(false);
-            setSenhaEncerramento('');
-            return;
-          }
-          
-          // Sincronizar com versão transacional
-          const syncResult = await syncQueueTransacional(peladaId, sessaoAtiva.id);
-          
-          if (!syncResult.sucesso) {
-            throw new Error(syncResult.erro || 'Erro na sincronização');
-          }
-          
-          // Atualizar referências se houver IDs mapeados
-          if (syncResult.idMap.size > 0) {
-            atualizarReferencias(syncResult.idMap, peladaId, sessaoAtiva.id);
-          }
-          
-          // Limpar cache local após sync bem-sucedido
-          console.log('🧹 Limpando cache local após sync...');
-          localStorage.removeItem(`fila_${sessaoAtiva.id}`);
-          localStorage.removeItem(`jogadores_${peladaId}`);
-          localStorage.removeItem('syncQueue');
-          
-          console.log('✅ Sincronização completa!');
-        } catch (syncError) {
-          console.error('❌ Erro na sincronização:', syncError);
-          alert('❌ Erro ao sincronizar dados. Verifique os dados e tente novamente.');
-          setSincronizando(false);
-          setSenhaEncerramento('');
+        const sessaoLocal = localStorage.getItem('sessao_ativa');
+        if (!sessaoLocal) {
+          alert('❌ Nenhuma sessão ativa encontrada!');
           return;
-        } finally {
-          setSincronizando(false);
         }
-      }
-      
-      // Buscar sessão ativa
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessaoAtiva } = await clienteDb
-        .from('sessoes')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .single();
-      
-      if (!sessaoAtiva) {
-        alert('❌ Nenhuma sessão ativa encontrada!');
-        return;
-      }
-      
-      // 1. Finalizar sessão
-      await clienteDb
-        .from('sessoes')
-        .update({ status: 'finalizada' })
-        .eq('id', sessaoAtiva.id);
-      
-      // 2. Limpar fila (deletar todos registros da sessão)
-      await clienteDb
-        .from('fila')
-        .delete()
-        .eq('sessao_id', sessaoAtiva.id);
-      
-      // 3. Limpar snapshot da fila (fim do dia)
-      try {
-        await supabase
-          .from('fila_snapshot')
-          .delete()
-          .eq('pelada_id', peladaId);
-        console.log('🗑️ Snapshot da fila limpo ao encerrar pelada');
-      } catch (snapshotError) {
-        console.warn('⚠️ Não foi possível limpar snapshot:', snapshotError);
-      }
-      
-      // 4. Limpar localStorage
-      localStorage.removeItem('partida_em_andamento');
-      localStorage.removeItem('cronometro_partida');
-      localStorage.removeItem('coresPartida');
-      
-      // Limpar cache local de sincronização (se modo local_first)
-      if (modoSincronizacao === 'local_first' && sessaoAtiva) {
-        console.log('🧹 Limpando cache local do modo local_first...');
-        localStorage.removeItem(`fila_${sessaoAtiva.id}`);
-        localStorage.removeItem(`jogadores_${peladaId}`);
-        localStorage.removeItem('syncQueue');
-      }
-      
-      // 5. PLANO FREE: Limpar jogadores do localStorage (forçar recadastro na próxima pelada)
-      if (plano === 'Free') {
-        console.log('🧹 FREE: Limpando jogadores do localStorage...');
         
-        // Limpar localStorage de jogadores e fila
+        const sessao = JSON.parse(sessaoLocal);
+        console.log('📦 Sessão encontrada:', sessao.id);
+        
+        // ============================================
+        // LIMPAR TUDO DO LOCALSTORAGE (FREE)
+        // ============================================
+        console.log('🗑️ FREE: Iniciando limpeza do localStorage...');
+        
+        // Remover tabelas de estatísticas
+        localStorage.removeItem(`jogos_${sessao.id}`);
+        console.log(`  ✓ Removido: jogos_${sessao.id}`);
+        localStorage.removeItem(`gols_${sessao.id}`);
+        console.log(`  ✓ Removido: gols_${sessao.id}`);
+        
+        // Remover estados da sessão
+        localStorage.removeItem('sessao_ativa');
+        console.log('  ✓ Removido: sessao_ativa');
+        localStorage.removeItem('fila_ativa');
+        console.log('  ✓ Removido: fila_ativa');
+        localStorage.removeItem(`fila_snapshot_${peladaId}`);
+        console.log(`  ✓ Removido: fila_snapshot_${peladaId}`);
+        localStorage.removeItem(`jogadores_${peladaId}`);
+        console.log(`  ✓ Removido: jogadores_${peladaId}`);
+        localStorage.removeItem('partida_em_andamento');
+        localStorage.removeItem('modo_partida_estado');
+        localStorage.removeItem('modo_prancheta_ativo');
+        localStorage.removeItem('cronometro_partida');
+        localStorage.removeItem('coresPartida');
+        console.log('  ✓ Removidos: estados da partida');
+        
+        // Limpar snapshots
+        fila_snapshot_limpar(peladaId);
+        console.log('  ✓ Snapshots limpos');
+        
+        // Limpar todas as keys relacionadas a jogadores
         const keysToRemove = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key && (
-            key.startsWith('jogador_') ||
-            key.startsWith('jogadores_') ||
-            key.startsWith('fila_') ||
-            key.startsWith('sessao_') ||
-            key.startsWith('partida_')
-          )) {
+          // NÃO remover: pelada_id, plano, token, regras
+          if (key && 
+              !key.includes('pelada_id') && 
+              !key.includes('plano') && 
+              !key.includes('token') &&
+              !key.startsWith('regras_') &&
+              (key.startsWith('jogador_') || 
+               key.startsWith('fila_') || 
+               key.startsWith('sessao_') ||
+               key.startsWith('jogos_') ||
+               key.startsWith('gols_'))) {
             keysToRemove.push(key);
           }
         }
         keysToRemove.forEach(key => localStorage.removeItem(key));
-        console.log(`✅ ${keysToRemove.length} itens do localStorage limpos (FREE)`);
+        console.log(`  ✓ Removidas ${keysToRemove.length} keys adicionais`);
+        
+        console.log(`✅ FREE: Pelada encerrada, ${keysToRemove.length} itens limpos do localStorage`);
+        console.log('🏁 ==================== ENCERRAMENTO CONCLUÍDO ====================');
+        
+        setShowConfirmarSenhaModal(false);
+        setSenhaEncerramento('');
+        setShowModalSucessoEncerrar(true);
+        showAdOnPeladaEnd();
+        
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 3000);
+        return;
       }
       
+      // ============================================
+      // PLANO GOLD/PREMIUM: SYNC COM SUPABASE
+      // ============================================
+      console.log(`☁️ ========== PLANO ${plano.toUpperCase()} ==========`);
+      console.log('☁️ Iniciando conexão com Supabase...');
+      
+      const clienteDb = await getClienteSupabase(peladaId);
+      console.log('✅ Conexão estabelecida');
+      
+      // Buscar sessão ativa do localStorage
+      const sessaoLocalStr = localStorage.getItem('sessao_ativa');
+      if (!sessaoLocalStr) {
+        alert('❌ Nenhuma sessão ativa encontrada!');
+        console.error('❌ ERRO: sessao_ativa não encontrada no localStorage');
+        return;
+      }
+      
+      const sessaoAtiva = JSON.parse(sessaoLocalStr);
+      console.log('📦 Sessão a ser finalizada:', sessaoAtiva.id);
+      
+      // ============================================
+      // SYNC PREMIUM: JOGOS, GOLS, SESSOES
+      // ============================================
+      if (plano === 'premium') {
+        console.log('☁️ ========== SYNC PREMIUM ==========');
+        console.log('☁️ PREMIUM: Sincronizando tabelas com Supabase...');
+        
+        try {
+          // 1. Sync tabela JOGOS (INSERT - adiciona sem sobrescrever)
+          console.log('📊 --- Sincronizando JOGOS ---');
+          const jogosKey = `jogos_${sessaoAtiva.id}`;
+          const jogosStr = localStorage.getItem(jogosKey);
+          
+          if (jogosStr) {
+            const jogos = JSON.parse(jogosStr);
+            console.log(`📊 ${jogos.length} jogos encontrados no localStorage`);
+            
+            for (const jogo of jogos) {
+              console.log(`  ⚙️ Sincronizando jogo #${jogo.numero_jogo}...`);
+              const { error } = await clienteDb
+                .from('jogos')
+                .insert({
+                  id: jogo.id,
+                  sessao_id: jogo.sessao_id,
+                  numero_jogo: jogo.numero_jogo,
+                  time_a: jogo.time_a,
+                  time_b: jogo.time_b,
+                  placar_a: jogo.placar_a,
+                  placar_b: jogo.placar_b,
+                  status: jogo.status,
+                  time_vencedor: jogo.time_vencedor,
+                  tempo_decorrido: jogo.tempo_decorrido,
+                  data_inicio: jogo.data_inicio,
+                  data_fim: jogo.data_fim,
+                });
+              
+              if (error) {
+                console.error(`❌ ERRO ao sincronizar jogo ${jogo.numero_jogo}:`, error);
+                throw new Error(`Falha no sync do jogo ${jogo.numero_jogo}: ${error.message}`);
+              }
+              console.log(`  ✓ Jogo #${jogo.numero_jogo} sincronizado`);
+            }
+            
+            console.log('✅ Todos os jogos sincronizados com Supabase');
+          } else {
+            console.log('⚠️ Nenhum jogo encontrado no localStorage');
+          }
+          
+          // 2. Sync tabela GOLS (INSERT - adiciona sem sobrescrever)
+          console.log('⚽ --- Sincronizando GOLS ---');
+          const golsKey = `gols_${sessaoAtiva.id}`;
+          const golsStr = localStorage.getItem(golsKey);
+          
+          if (golsStr) {
+            const gols = JSON.parse(golsStr);
+            console.log(`⚽ ${gols.length} gols encontrados no localStorage`);
+            
+            for (const gol of gols) {
+              console.log(`  ⚙️ Sincronizando gol ${gol.id.substring(0, 10)}...`);
+              const { error } = await clienteDb
+                .from('gols')
+                .insert({
+                  id: gol.id,
+                  jogo_id: gol.jogo_id,
+                  jogador_id: gol.jogador_id,
+                  time: gol.time,
+                  created_at: gol.created_at,
+                });
+              
+              if (error) {
+                console.error(`❌ ERRO ao sincronizar gol:`, error);
+                throw new Error(`Falha no sync do gol: ${error.message}`);
+              }
+              console.log(`  ✓ Gol sincronizado`);
+            }
+            
+            console.log('✅ Todos os gols sincronizados com Supabase');
+          } else {
+            console.log('⚠️ Nenhum gol encontrado no localStorage');
+          }
+          
+          // 3. Sync SESSÃO (INSERT - adiciona registro de sessão finalizada)
+          console.log('📋 --- Sincronizando SESSÃO ---');
+          console.log(`  ⚙️ Inserindo sessão ${sessaoAtiva.id}...`);
+          const { error: sessaoError } = await clienteDb
+            .from('sessoes')
+            .insert({
+              id: sessaoAtiva.id,
+              pelada_id: sessaoAtiva.pelada_id,
+              data: sessaoAtiva.data,
+              status: 'finalizada',
+              total_jogadores: sessaoAtiva.total_jogadores,
+              vitorias_consecutivas: sessaoAtiva.vitorias_consecutivas,
+              observacoes: sessaoAtiva.observacoes,
+            });
+          
+          if (sessaoError) {
+            console.error('❌ ERRO ao sincronizar sessão:', sessaoError);
+            throw new Error(`Falha no sync da sessão: ${sessaoError.message}`);
+          }
+          console.log('✅ Sessão sincronizada com Supabase');
+          
+          console.log('✅ Sync Premium concluído com sucesso');
+          
+        } catch (syncError) {
+          console.error('❌ ========== ERRO NO SYNC PREMIUM ==========');
+          console.error('Erro:', syncError);
+          alert(`❌ Erro ao sincronizar dados Premium:\n${syncError.message}\n\nO encerramento foi abortado. Verifique os logs no console.`);
+          return; // ABORTA o encerramento
+        }
+      }
+      
+      // ============================================
+      // SYNC JOGADORES (Gold/Premium) - SOMAR ESTATÍSTICAS
+      // ============================================
+      if (plano === 'gold' || plano === 'premium') {
+        console.log(`👥 ========== SYNC JOGADORES (${plano}) ==========`);
+        console.log(`☁️ ${plano}: Sincronizando jogadores com Supabase (somando estatísticas)...`);
+        
+        try {
+          const jogadoresKey = `jogadores_${peladaId}`;
+          const jogadoresStr = localStorage.getItem(jogadoresKey);
+          
+          if (jogadoresStr) {
+            const jogadoresLocal = JSON.parse(jogadoresStr);
+            console.log(`👥 ${jogadoresLocal.length} jogadores encontrados no localStorage`);
+            
+            for (const jogadorLocal of jogadoresLocal) {
+              console.log(`  ⚙️ Processando ${jogadorLocal.nome}...`);
+              
+              // Buscar jogador existente no Supabase
+              const { data: jogadorExistente, error: errorBusca } = await clienteDb
+                .from('jogadores')
+                .select('*')
+                .eq('id', jogadorLocal.id)
+                .single();
+              
+              if (errorBusca && errorBusca.code !== 'PGRST116') {
+                // Erro diferente de "not found"
+                console.error(`❌ ERRO ao buscar jogador ${jogadorLocal.nome}:`, errorBusca);
+                throw new Error(`Falha ao buscar jogador ${jogadorLocal.nome}: ${errorBusca.message}`);
+              }
+              
+              if (jogadorExistente) {
+                // Jogador existe: SOMAR estatísticas
+                console.log(`  ➕ Somando estatísticas de ${jogadorLocal.nome}`);
+                console.log(`     Antes: ${jogadorExistente.jogos}J ${jogadorExistente.vitorias}V ${jogadorExistente.derrotas}D ${jogadorExistente.empates}E ${jogadorExistente.gols}G`);
+                console.log(`     Soma:  +${jogadorLocal.jogos}J +${jogadorLocal.vitorias}V +${jogadorLocal.derrotas}D +${jogadorLocal.empates}E +${jogadorLocal.gols}G`);
+                
+                const { error } = await clienteDb
+                  .from('jogadores')
+                  .update({
+                    nome: jogadorLocal.nome,
+                    nivel: jogadorLocal.nivel,
+                    jogos: (jogadorExistente.jogos || 0) + (jogadorLocal.jogos || 0),
+                    vitorias: (jogadorExistente.vitorias || 0) + (jogadorLocal.vitorias || 0),
+                    derrotas: (jogadorExistente.derrotas || 0) + (jogadorLocal.derrotas || 0),
+                    empates: (jogadorExistente.empates || 0) + (jogadorLocal.empates || 0),
+                    gols: (jogadorExistente.gols || 0) + (jogadorLocal.gols || 0),
+                    status: jogadorLocal.status,
+                  })
+                  .eq('id', jogadorLocal.id);
+                
+                if (error) {
+                  console.error(`❌ ERRO ao atualizar jogador ${jogadorLocal.nome}:`, error);
+                  throw new Error(`Falha ao atualizar jogador ${jogadorLocal.nome}: ${error.message}`);
+                }
+                
+                const novoTotal = {
+                  jogos: (jogadorExistente.jogos || 0) + (jogadorLocal.jogos || 0),
+                  vitorias: (jogadorExistente.vitorias || 0) + (jogadorLocal.vitorias || 0),
+                  derrotas: (jogadorExistente.derrotas || 0) + (jogadorLocal.derrotas || 0),
+                  empates: (jogadorExistente.empates || 0) + (jogadorLocal.empates || 0),
+                  gols: (jogadorExistente.gols || 0) + (jogadorLocal.gols || 0),
+                };
+                console.log(`     Total: ${novoTotal.jogos}J ${novoTotal.vitorias}V ${novoTotal.derrotas}D ${novoTotal.empates}E ${novoTotal.gols}G`);
+                console.log(`  ✓ ${jogadorLocal.nome} atualizado`);
+              } else {
+                // Jogador novo: INSERIR
+                console.log(`  ➕ Inserindo novo jogador ${jogadorLocal.nome}`);
+                console.log(`     Stats: ${jogadorLocal.jogos}J ${jogadorLocal.vitorias}V ${jogadorLocal.derrotas}D ${jogadorLocal.empates}E ${jogadorLocal.gols}G`);
+                
+                const { error } = await clienteDb
+                  .from('jogadores')
+                  .insert({
+                    id: jogadorLocal.id,
+                    nome: jogadorLocal.nome,
+                    nivel: jogadorLocal.nivel,
+                    pelada_id: jogadorLocal.pelada_id,
+                    jogos: jogadorLocal.jogos || 0,
+                    vitorias: jogadorLocal.vitorias || 0,
+                    derrotas: jogadorLocal.derrotas || 0,
+                    empates: jogadorLocal.empates || 0,
+                    gols: jogadorLocal.gols || 0,
+                    status: jogadorLocal.status,
+                  });
+                
+                if (error) {
+                  console.error(`❌ ERRO ao inserir jogador ${jogadorLocal.nome}:`, error);
+                  throw new Error(`Falha ao inserir jogador ${jogadorLocal.nome}: ${error.message}`);
+                }
+                console.log(`  ✓ ${jogadorLocal.nome} inserido`);
+              }
+            }
+            
+            console.log('✅ Jogadores sincronizados com Supabase');
+          } else {
+            console.log('⚠️ Nenhum jogador encontrado no localStorage');
+          }
+          
+        } catch (syncError) {
+          console.error('❌ ========== ERRO NO SYNC JOGADORES ==========');
+          console.error('Erro:', syncError);
+          alert(`❌ Erro ao sincronizar jogadores:\n${syncError.message}\n\nO encerramento foi abortado. Verifique os logs no console.`);
+          return; // ABORTA o encerramento
+        }
+      }
+      
+      // ============================================
+      // LIMPAR TODAS AS TABELAS DO LOCALSTORAGE
+      // ============================================
+      console.log('🗑️ ========== LIMPEZA LOCALSTORAGE ==========');
+      console.log('🗑️ Limpando todas as tabelas do localStorage...');
+      
+      localStorage.removeItem(`jogos_${sessaoAtiva.id}`);
+      console.log(`  ✓ Removido: jogos_${sessaoAtiva.id}`);
+      localStorage.removeItem(`gols_${sessaoAtiva.id}`);
+      console.log(`  ✓ Removido: gols_${sessaoAtiva.id}`);
+      localStorage.removeItem('sessao_ativa');
+      console.log('  ✓ Removido: sessao_ativa');
+      localStorage.removeItem('fila_ativa');
+      console.log('  ✓ Removido: fila_ativa');
+      localStorage.removeItem(`fila_snapshot_${peladaId}`);
+      console.log(`  ✓ Removido: fila_snapshot_${peladaId}`);
+      localStorage.removeItem(`jogadores_${peladaId}`);
+      console.log(`  ✓ Removido: jogadores_${peladaId}`);
+      localStorage.removeItem('partida_em_andamento');
+      localStorage.removeItem('modo_partida_estado');
+      localStorage.removeItem('modo_prancheta_ativo');
+      localStorage.removeItem('cronometro_partida');
+      localStorage.removeItem('coresPartida');
+      console.log('  ✓ Removidos: estados da partida');
+      
+      console.log('✅ Todas as tabelas localStorage limpas');
+      
+      // ============================================
+      // FINALIZAÇÃO
+      // ============================================
+      console.log('🎉 ========== FINALIZAÇÃO ==========');
       setShowConfirmarSenhaModal(false);
       setSenhaEncerramento('');
-      
-      // Mostrar modal de sucesso
       setShowModalSucessoEncerrar(true);
-      
-      // Mostrar anúncio ao encerrar pelada (Free e Gold)
       showAdOnPeladaEnd();
       
-      // Após 3 segundos, redirecionar para home
+      console.log('✅ Modal de sucesso exibido');
+      console.log('⏳ Redirecionando para home em 3 segundos...');
+      console.log('🏁 ==================== ENCERRAMENTO CONCLUÍDO ====================');
+      
+      // Redirecionar para home após 3 segundos
       setTimeout(() => {
         window.location.href = '/';
       }, 3000);
       
     } catch (error) {
-      console.error('Erro ao encerrar pelada:', error);
-      alert('❌ Erro ao encerrar pelada. Tente novamente.');
+      console.error('❌ ========== ERRO CRÍTICO NO ENCERRAMENTO ==========');
+      console.error('Erro:', error);
+      alert(`❌ Erro ao encerrar pelada:\n${error.message || error}\n\nO encerramento foi abortado. Verifique os logs no console.`);
+      setLoadingEncerramento(false); // Re-habilitar botão em caso de erro
     }
   };
 
-  // ===== FUNÇÕES DO MODO EDIÇÃO =====
+  // ===== FUNÇÕES DO MODO EDIÇÃO - WRAPPERS PARA rotacoes-fila.ts =====
   
-  const removerDaFila = async (jogador: JogadorFila, aplicarAgora = false) => {
-    if (!aplicarAgora) {
-      // Adicionar às mudanças pendentes
-      setMudancasPendentes(prev => [...prev, { tipo: 'remover', jogador }]);
-      
-      // Aplicar mudança visual temporária
-      setJogadoresJogando(prev => prev.filter(j => j.id !== jogador.id));
-      setJogadoresFila(prev => prev.filter(j => j.id !== jogador.id));
-      setJogadoresReserva(prev => {
-        // Evitar duplicação - só adicionar se não existir
-        if (prev.some(j => j.id === jogador.id)) {
-          return prev;
-        }
-        return [...prev, { ...jogador, status: 'reserva' }];
-      });
-      return;
-    }
-    
-    // Aplicar mudança agora
-    const estaJogando = jogadoresJogando.some(j => j.id === jogador.id);
-    
-    if (partidaAtiva && estaJogando) {
-      // 🚨 SUBSTITUIÇÃO OBRIGATÓRIA - jogador está em campo
-      const proximoDaFila = jogadoresFila[0];
-      
-      if (!proximoDaFila) {
-        alert('⚠️ Não há jogadores na fila para substituir!');
-        return;
-      }
-      
-      // Registrar substituição (implementar tabela depois)
-      console.log('📝 Registrando substituição:', {
-        saiu: jogador.nome,
-        entrou: proximoDaFila.nome
-      });
-      
-      // Atualizar localStorage da partida
-      const partidaSalva = localStorage.getItem('partida_em_andamento');
-      if (partidaSalva) {
-        const estadoPartida = JSON.parse(partidaSalva);
-        // Encontrar e substituir no time
-        if (estadoPartida.timeA.jogadores.some((j: any) => j.id === jogador.id)) {
-          estadoPartida.timeA.jogadores = estadoPartida.timeA.jogadores.map((j: any) =>
-            j.id === jogador.id ? { id: proximoDaFila.id, nome: proximoDaFila.nome } : j
-          );
-        } else if (estadoPartida.timeB.jogadores.some((j: any) => j.id === jogador.id)) {
-          estadoPartida.timeB.jogadores = estadoPartida.timeB.jogadores.map((j: any) =>
-            j.id === jogador.id ? { id: proximoDaFila.id, nome: proximoDaFila.nome } : j
-          );
-        }
-        localStorage.setItem('partida_em_andamento', JSON.stringify(estadoPartida));
-      }
-      
-      alert(`✅ ${jogador.nome} substituído por ${proximoDaFila.nome}`);
-    }
-    
-    // Remover da fila e colocar na reserva
-    const userData = localStorage.getItem('user');
-    if (!userData) return;
-    const user = JSON.parse(userData);
-    const peladaId = user.id;
-    
-    // Buscar sessão ativa
-    const clienteDb = await getClienteSupabase(peladaId);
-    const { data: sessao } = await clienteDb
-      .from('sessoes')
-      .select('id')
-      .eq('pelada_id', peladaId)
-      .eq('status', 'ativa')
-      .single();
-    
-    if (!sessao) {
-      alert('❌ Sessão ativa não encontrada');
-      return;
-    }
-    
-    // ❌ REMOVIDO: update na tabela jogadores (status fila/reserva não pertencem aqui!)
-    // A tabela jogadores deve ter apenas: 'ativo' ou 'inativo'
-    
-    // Buscar a posição do jogador removido ANTES de alterar
-    const { data: jogadorRemovido } = await clienteDb
-      .from('fila')
-      .select('posicao_fila')
-      .eq('jogador_id', jogador.id)
-      .eq('status', 'fila')
-      .single();
-    
-    const posicaoRemovida = jogadorRemovido?.posicao_fila;
-    
-    if (modoSincronizacao === 'local_first') {
-      // MODO LOCAL FIRST: Atualizar localStorage e adicionar à fila de sync
-      console.log('⚡ Modo local: atualizando cache e agendando sync');
-      
-      const filaLocal = localStorage.getItem(`fila_${sessao.id}`);
-      const fila = filaLocal ? JSON.parse(filaLocal) : [];
-      
-      // Buscar posição do jogador removido
-      const jogadorItem = fila.find((item: any) => item.jogador_id === jogador.id && item.status === 'fila');
-      const posicaoRemovida = jogadorItem?.posicao_fila;
-      
-      // Atualizar status para reserva
-      let filaAtualizada = fila.map((item: any) => 
-        item.jogador_id === jogador.id 
-          ? { ...item, status: 'reserva', posicao_fila: 999 }
-          : item
-      );
-      
-      // Reorganizar posições (subir jogadores após posição removida)
-      if (posicaoRemovida !== undefined) {
-        filaAtualizada = filaAtualizada.map((item: any) => 
-          item.status === 'fila' && item.posicao_fila > posicaoRemovida
-            ? { ...item, posicao_fila: item.posicao_fila - 1 }
-            : item
-        );
-      }
-      
-      localStorage.setItem(`fila_${sessao.id}`, JSON.stringify(filaAtualizada));
-      
-      // Adicionar à fila de sincronização
-      await addToSyncQueue({
-        tipo: 'atualizar_fila',
-        jogador_id: jogador.id,
-        pelada_id: peladaId,
-        sessao_id: sessao.id,
-        dados: { status: 'reserva', posicao_fila: 999 }
-      });
-      
-      // Se houve reorganização, adicionar batch de atualizações
-      if (posicaoRemovida !== undefined) {
-        const jogadoresReorganizados = filaAtualizada.filter(
-          (item: any) => item.status === 'fila' && item.posicao_fila >= posicaoRemovida
-        );
-        
-        for (const item of jogadoresReorganizados) {
-          await addToSyncQueue({
-            tipo: 'atualizar_fila',
-            jogador_id: item.jogador_id,
-            pelada_id: peladaId,
-            sessao_id: sessao.id,
-            dados: { posicao_fila: item.posicao_fila }
-          });
-        }
-      }
-      
-      const pendentes = await getSyncQueueCount();
-      setItensPendentesSync(pendentes);
-      
-    } else {
-      // MODO TEMPO REAL: Atualizar direto no Supabase
-      console.log('🔄 Modo tempo real: atualizando Supabase');
-      
-      // Atualizar APENAS na tabela FILA (status e posição para reserva)
-      await clienteDb
-        .from('fila')
-        .update({ 
-          status: 'reserva',
-          posicao_fila: 999 
-        })
-        .eq('jogador_id', jogador.id);
-      
-      // Reorganizar posições: todos após a posição removida sobem 1 posição
-      if (posicaoRemovida !== undefined && posicaoRemovida !== null) {
-        const { data: jogadoresParaAtualizar } = await clienteDb
-          .from('fila')
-          .select('jogador_id, posicao_fila')
-          .eq('pelada_id', peladaId)
-          .eq('sessao_id', sessao.id)
-          .eq('status', 'fila')
-          .gt('posicao_fila', posicaoRemovida)
-          .order('posicao_fila', { ascending: true });
-        
-        // Atualizar cada jogador individualmente
-        if (jogadoresParaAtualizar && jogadoresParaAtualizar.length > 0) {
-          for (const jog of jogadoresParaAtualizar) {
-            await clienteDb
-              .from('fila')
-              .update({ posicao_fila: jog.posicao_fila - 1 })
-              .eq('jogador_id', jog.jogador_id)
-              .eq('pelada_id', peladaId)
-              .eq('sessao_id', sessao.id);
-          }
-        }
-      }
-    }
-    
-    // Recarregar dados
-    await carregarDados();
+  const handleRemover = (jogador: JogadorFila) => {
+    fila_remover(jogador, regras, setJogadoresJogando, setJogadoresFila, setJogadoresReserva);
   };
-  
-  // Nova função: inserir jogador em uma posição (empurrando os demais) - TEMPO REAL
-  const moverJogadorParaPosicao = async (jogador: JogadorFila, novaPosicao: number) => {
-    try {
-      console.log('🔄 Movendo jogador para nova posição (TEMPO REAL):', {
-        jogador: jogador.nome,
-        posicaoAtual: jogador.posicao_fila,
-        novaPosicao
-      });
 
-      const userData = localStorage.getItem('user');
-      const user = JSON.parse(userData!);
-      const peladaId = user.id;
-
-      // Buscar sessão ativa
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessoes } = await clienteDb
-        .from('sessoes')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .order('created_at', { ascending: false });
-
-      if (!sessoes || sessoes.length === 0) {
-        console.error('⚠️ Nenhuma sessão ativa encontrada!');
-        return;
-      }
-
-      const sessao = sessoes[0];
-
-      // Buscar todos os jogadores da fila
-      const { data: todosJogadores } = await clienteDb
-        .from('fila')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('sessao_id', sessao.id)
-        .eq('status', 'fila')
-        .order('posicao_fila');
-
-      if (!todosJogadores) return;
-
-      // Criar nova lista com o jogador na nova posição
-      const jogadoresSemOMover = todosJogadores.filter(j => j.jogador_id !== jogador.id);
-      
-      // Inserir o jogador na nova posição
-      const novaLista = [];
-      let indexInserido = false;
-      
-      for (let i = 0; i < jogadoresSemOMover.length; i++) {
-        if (i + 1 === novaPosicao && !indexInserido) {
-          novaLista.push({ ...jogador, posicao_fila: novaPosicao, jogador_id: jogador.id });
-          indexInserido = true;
-        }
-        novaLista.push({ ...jogadoresSemOMover[i], posicao_fila: novaLista.length + 1 });
-      }
-      
-      if (!indexInserido) {
-        novaLista.push({ ...jogador, posicao_fila: novaLista.length + 1, jogador_id: jogador.id });
-      }
-
-      // Atualizar todos os jogadores no banco EM TEMPO REAL
-      for (const jog of novaLista) {
-        await clienteDb
-          .from('fila')
-          .update({ posicao_fila: jog.posicao_fila })
-          .eq('jogador_id', jog.jogador_id)
-          .eq('pelada_id', peladaId)
-          .eq('sessao_id', sessao.id);
-      }
-
-      console.log('✅ Mudança aplicada em tempo real!');
-      await carregarDados();
-      
-    } catch (error) {
-      console.error('❌ Erro ao mover jogador:', error);
-    }
+  const handleAdicionar = (jogador: JogadorFila) => {
+    fila_adicionar(jogador, regras, setJogadoresJogando, setJogadoresFila, setJogadoresReserva);
   };
-  
-  const trocarPosicoes = async (jogador1: JogadorFila, jogador2: JogadorFila, aplicarAgora = false) => {
-    if (!aplicarAgora) {
-      // Adicionar às mudanças pendentes
-      setMudancasPendentes(prev => [...prev, { tipo: 'trocar', jogador1, jogador2 }]);
-      setJogadorSelecionadoTroca(null);
-      
-      // Aplicar mudança visual temporária
-      const pos1 = jogador1.posicao_fila;
-      const pos2 = jogador2.posicao_fila;
-      
-      setJogadoresJogando(prev => prev.map(j => {
-        if (j.id === jogador1.id) return { ...jogador2, posicao_fila: pos1 };
-        if (j.id === jogador2.id) return { ...jogador1, posicao_fila: pos2 };
-        return j;
-      }));
-      
-      setJogadoresFila(prev => prev.map(j => {
-        if (j.id === jogador1.id) return { ...jogador2, posicao_fila: pos1 };
-        if (j.id === jogador2.id) return { ...jogador1, posicao_fila: pos2 };
-        return j;
-      }));
-      
-      return;
-    }
-    
-    // Aplicar mudança agora
-    const jogador1Jogando = jogadoresJogando.some(j => j.id === jogador1.id);
-    const jogador2Jogando = jogadoresJogando.some(j => j.id === jogador2.id);
-    
-    // CASO 1: Ambos na fila (não estão jogando)
-    if (!jogador1Jogando && !jogador2Jogando) {
-      const userData = localStorage.getItem('user');
-      const user = JSON.parse(userData!);
-      const peladaId = user.id;
-      const clienteDb = await getClienteSupabase(peladaId);
-      
-      const pos1 = jogador1.posicao_fila;
-      const pos2 = jogador2.posicao_fila;
-      
-      await clienteDb
-        .from('fila')
-        .update({ posicao_fila: pos2 })
-        .eq('jogador_id', jogador1.id);
-      
-      await clienteDb
-        .from('fila')
-        .update({ posicao_fila: pos1 })
-        .eq('jogador_id', jogador2.id);
-      
-      setJogadorSelecionadoTroca(null);
-      await carregarDados();
-      return;
-    }
-    
-    // CASO 2: Um está jogando, outro na fila
-    if (jogador1Jogando && !jogador2Jogando) {
-      // Atualizar localStorage da partida
-      const partidaSalva = localStorage.getItem('partida_em_andamento');
-      if (partidaSalva) {
-        const estadoPartida = JSON.parse(partidaSalva);
-        if (estadoPartida.timeA.jogadores.some((j: any) => j.id === jogador1.id)) {
-          estadoPartida.timeA.jogadores = estadoPartida.timeA.jogadores.map((j: any) =>
-            j.id === jogador1.id ? { id: jogador2.id, nome: jogador2.nome } : j
-          );
-        } else if (estadoPartida.timeB.jogadores.some((j: any) => j.id === jogador1.id)) {
-          estadoPartida.timeB.jogadores = estadoPartida.timeB.jogadores.map((j: any) =>
-            j.id === jogador1.id ? { id: jogador2.id, nome: jogador2.nome } : j
-          );
-        }
-        localStorage.setItem('partida_em_andamento', JSON.stringify(estadoPartida));
-      }
-      
-      // Trocar posições na fila
-      const pos1 = jogador1.posicao_fila;
-      const pos2 = jogador2.posicao_fila;
-      
-      await supabase
-        .from('fila')
-        .update({ posicao_fila: pos2 })
-        .eq('jogador_id', jogador1.id);
-      
-      await supabase
-        .from('fila')
-        .update({ posicao_fila: pos1 })
-        .eq('jogador_id', jogador2.id);
-      
-      setJogadorSelecionadoTroca(null);
-      await carregarDados();
-      return;
-    }
-    
-    // CASO 3: Ambos jogando
-    if (jogador1Jogando && jogador2Jogando) {
-      alert('⚠️ Não pode trocar jogadores que estão em campo');
-      setJogadorSelecionadoTroca(null);
-      return;
-    }
+
+  const handleMover = (jogador: JogadorFila, novaPosicao: number) => {
+    handleMover(jogador, novaPosicao, regras, setJogadoresJogando, setJogadoresFila);
   };
-  
-  const voltarParaFila = async (jogador: JogadorFila, aplicarAgora = false) => {
-    if (!aplicarAgora) {
-      // Adicionar às mudanças pendentes
-      setMudancasPendentes(prev => [...prev, { tipo: 'voltar', jogador }]);
-      
-      // Aplicar mudança visual temporária
-      setJogadoresReserva(prev => prev.filter(j => j.id !== jogador.id));
-      setJogadoresFila(prev => [...prev, { ...jogador, status: 'fila' }]);
+
+  const handleCadastrar = () => {
+    const peladaId = buscar_pelada_id();
+    if (!peladaId) {
+      console.error('❌ peladaId não encontrado');
       return;
     }
-    
-    // Aplicar mudança agora - usar sessão ativa
-    if (!sessaoAtual || !peladaIdAtual) {
-      alert('❌ Sessão não encontrada! Por favor, recarregue a página.');
-      return;
-    }
-    
-    const peladaId = peladaIdAtual;
-    const sessaoId = sessaoAtual.id;
-    
-    // Usar banco dedicado
-    const clienteDb = await getClienteSupabase(peladaId);
-    
-    // Buscar a MAIOR posição atual na fila para adicionar no final
-    const { data: filaAtual } = await clienteDb
-      .from('fila')
-      .select('posicao_fila')
-      .eq('pelada_id', peladaId)
-      .eq('sessao_id', sessaoId)
-      .eq('status', 'fila')
-      .order('posicao_fila', { ascending: false })
-      .limit(1);
-    
-    const maiorPosicao = filaAtual?.[0]?.posicao_fila || 0;
-    const proximaPosicao = maiorPosicao + 1;
-    
-    console.log(`📍 Maior posição: ${maiorPosicao}, adicionando na: ${proximaPosicao}`);
-    
-    // ⚠️ NÃO atualizar tabela jogadores - ela deve manter status 'ativo'/'inativo' apenas!
-    // Status 'fila'/'reserva' pertencem APENAS à tabela 'fila'
-    
-    // IMPORTANTE: Fazer UPDATE em vez de INSERT para evitar duplicação
-    const { error: updateError } = await clienteDb
-      .from('fila')
-      .update({
-        status: 'fila',
-        posicao_fila: proximaPosicao
-      })
-      .eq('jogador_id', jogador.id)
-      .eq('pelada_id', peladaId)
-      .eq('sessao_id', sessaoId)
-      .eq('status', 'reserva'); // Filtrar apenas registros de reserva
-    
-    if (updateError) {
-      console.error('❌ Erro ao voltar para fila:', updateError);
-      alert('❌ Erro ao adicionar jogador à fila!');
-      return;
-    }
-    
-    console.log('✅ Jogador voltou para a fila na posição', proximaPosicao);
-    
-    await carregarDados();
+
+    fila_cadastrarnovo_adicionar(
+      novoJogadorNome,
+      novoJogadorEstrelas,
+      peladaId,
+      setJogadoresReserva,
+      () => {
+        // Callback de sucesso
+        setNovoJogadorNome('');
+        setNovoJogadorEstrelas(3);
+        setShowCadastroModal(false);
+      }
+    );
   };
 
   // Função para reorganizar toda a fila, garantindo sequência sem buracos
   const reorganizarFilaCompleta = async () => {
-    const userData = localStorage.getItem('user');
-    if (!userData) return;
-    
-    const user = JSON.parse(userData);
-    const peladaId = user.id;
+    const peladaId = buscar_pelada_id();
+    if (!peladaId) return;
     
     // Buscar sessão ativa
     const clienteDb = await getClienteSupabase(peladaId);
@@ -2500,128 +2375,70 @@ export default function FilaPage() {
     try {
       console.log('🆕 Iniciando nova partida...');
       
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      const peladaId = buscar_pelada_id();
+      const plano = buscar_plano();
+      
+      if (!peladaId) {
         console.error('Usuário não encontrado');
         return;
       }
       
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
+      console.log('📋 Pelada ID:', peladaId, '| Plano:', plano);
       
-      // 0. Salvar snapshot da fila ANTES de qualquer mudança
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessaoAtiva, error: sessaoError } = await clienteDb
-        .from('sessoes')
-        .select('id')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .single();
-      
-      if (sessaoError) {
-        console.error('❌ Erro ao buscar sessão ativa para snapshot:', sessaoError);
-      } else if (sessaoAtiva) {
-        console.log('📸 Salvando snapshot da fila...');
-        try {
-          // Buscar estado completo da fila
-          const { data: snapshotFila, error: filaError } = await clienteDb
-            .from('fila')
-            .select('*')
-            .eq('pelada_id', peladaId)
-            .eq('sessao_id', sessaoAtiva.id);
-          
-          if (filaError) {
-            console.error('❌ Erro ao buscar fila para snapshot:', filaError);
-          } else {
-            console.log('📊 Dados da fila para snapshot:', snapshotFila);
-            
-            // Limpar QUALQUER snapshot anterior (partida ou edição) - USA BANCO DEDICADO
-            const { error: deleteError } = await clienteDb
-              .from('fila_snapshot')
-              .delete()
-              .eq('pelada_id', peladaId);
-            
-            if (deleteError) {
-              console.warn('⚠️ Erro ao limpar snapshot antigo (pode não existir):', deleteError);
-            }
-            
-            // Criar novo snapshot do tipo 'partida' - USA BANCO DEDICADO
-            const { data: insertData, error: insertError } = await clienteDb
-              .from('fila_snapshot')
-              .insert({
-                pelada_id: peladaId,
-                snapshot_data: snapshotFila,
-                tipo: 'partida'
-              })
-              .select();
-            
-            if (insertError) {
-              console.error('❌ ERRO ao inserir snapshot:', insertError);
-              console.error('Detalhes do erro:', JSON.stringify(insertError, null, 2));
-            } else {
-              console.log('✅ Snapshot da fila salvo com sucesso!', insertData);
-            }
-          }
-        } catch (snapshotError: any) {
-          console.error('❌ EXCEÇÃO ao salvar snapshot:', snapshotError);
-          console.error('Mensagem:', snapshotError.message);
-          console.error('Stack:', snapshotError.stack);
-          // Continua a execução mesmo se falhar o snapshot
-        }
-      } else {
-        console.warn('⚠️ Nenhuma sessão ativa encontrada para snapshot');
+      // 0. Salvar snapshot da fila no localStorage ANTES de qualquer mudança
+      const filaAtualStr = localStorage.getItem('fila_ativa');
+      if (filaAtualStr) {
+        console.log('📸 Salvando snapshot da fila no localStorage...');
+        const snapshotFila = JSON.parse(filaAtualStr);
+        localStorage.setItem('fila_snapshot', JSON.stringify({
+          pelada_id: peladaId,
+          snapshot_data: snapshotFila,
+          tipo: 'partida',
+          timestamp: new Date().toISOString()
+        }));
+        console.log('✅ Snapshot da fila salvo com sucesso!');
       }
       
-      // 1. Carregar regras (banco principal)
-      const { data: regrasData } = await supabase
-        .from('regras')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .single();
+      // 1. Carregar regras do localStorage
+      const regrasLocalStr = localStorage.getItem(`regras_${peladaId}`);
+      const regrasData = regrasLocalStr ? JSON.parse(regrasLocalStr) : null;
       
-      console.log('📋 Regras completas do Supabase:', regrasData);
+      console.log('📋 Regras completas do localStorage:', regrasData);
       
       const jogadoresPorTime = regrasData?.jogadores_por_time || 5;
       const duracaoMinutos = regrasData?.duracao || 10;
       
-      // Buscar conexão do banco dedicado
-      const clienteDbPartida = await getClienteSupabase(peladaId);
+      // 2. Buscar sessão ativa do localStorage
+      const sessaoAtualStr = localStorage.getItem('sessao_ativa');
       
-      // 2. Buscar sessão ativa (banco dedicado)
-      const { data: sessoes } = await clienteDbPartida
-        .from('sessoes')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .order('created_at', { ascending: false });
-      
-      if (!sessoes || sessoes.length === 0) {
+      if (!sessaoAtualStr) {
         console.error('Nenhuma sessão ativa encontrada');
         alert('Nenhuma sessão ativa encontrada. Inicie uma sessão primeiro.');
         return;
       }
       
-      const sessao = sessoes[0];
+      const sessao = JSON.parse(sessaoAtualStr);
+      console.log('📦 Sessão ativa carregada:', sessao);
       
-      // 3. Carregar fila (banco dedicado)
-      const { data: filaData } = await clienteDbPartida
-        .from('fila')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('sessao_id', sessao.id)
-        .eq('status', 'fila')
-        .order('posicao_fila');
-      
-      if (!filaData || filaData.length === 0) {
+      // 3. Carregar fila do localStorage
+      const filaLocalStr = localStorage.getItem('fila_ativa');
+      if (!filaLocalStr) {
         alert('Nenhum jogador na fila para iniciar partida.');
         return;
       }
       
-      // 4. Carregar dados dos jogadores (banco dedicado)
-      const { data: todosJogadores } = await clienteDbPartida
-        .from('jogadores')
-        .select('*')
-        .eq('pelada_id', peladaId);
+      const filaCompleta = JSON.parse(filaLocalStr);
+      const filaData = filaCompleta.filter((j: any) => j.status === 'fila');
+      console.log(`📊 Fila carregada: ${filaData.length} jogadores`);
+      
+      if (filaData.length === 0) {
+        alert('Nenhum jogador na fila para iniciar partida.');
+        return;
+      }
+      
+      // 4. Carregar dados dos jogadores do localStorage
+      const jogadoresLocalStr = localStorage.getItem(`jogadores_${peladaId}`);
+      const todosJogadores = jogadoresLocalStr ? JSON.parse(jogadoresLocalStr) : [];
       
       // 5. Montar lista de jogadores jogando (primeiros 2 * jogadoresPorTime)
       const totalJogando = jogadoresPorTime * 2;
@@ -2783,134 +2600,6 @@ export default function FilaPage() {
       
     } catch (error) {
       console.error('❌ Erro geral ao mover jogador:', error);
-    }
-  };
-
-  const cadastrarNovoJogador = async () => {
-    try {
-      console.log('🆕 Cadastrando novo jogador:', novoJogadorNome);
-      
-      if (!novoJogadorNome.trim()) {
-        alert('Digite o nome do jogador!');
-        return;
-      }
-
-      const userData = localStorage.getItem('user');
-      const user = JSON.parse(userData!);
-      const peladaId = user.id;
-
-      // 1. PRIMEIRO: Buscar sessão ativa (SEM .single() para evitar erro)
-      console.log('🔍 Buscando sessão ativa...');
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: sessoes, error: sessaoError } = await clienteDb
-        .from('sessoes')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .order('created_at', { ascending: false });
-
-      if (sessaoError) {
-        console.error('❌ Erro ao buscar sessão:', sessaoError);
-        alert('❌ Erro ao buscar sessão ativa!');
-        return;
-      }
-
-      if (!sessoes || sessoes.length === 0) {
-        console.error('❌ Nenhuma sessão ativa encontrada');
-        alert('❌ Nenhuma sessão ativa! Inicie uma pelada primeiro.');
-        return;
-      }
-
-      const sessao = sessoes[0]; // Pega a mais recente
-      console.log('✅ Usando sessão:', sessao.id);
-
-      // 2. SEGUNDO: Cadastrar jogador na tabela jogadores
-      // Usar o jogadoresService que já respeita Free/Paid
-      const novoJogador = await jogadoresService.criar(
-        novoJogadorNome.trim(),
-        novoJogadorEstrelas
-      );
-
-      if (!novoJogador) {
-        console.error('❌ Erro ao cadastrar jogador');
-        alert('Erro ao cadastrar jogador!');
-        return;
-      }
-
-      // 3. TERCEIRO: Adicionar na fila como reserva
-      if (modoSincronizacao === 'local_first') {
-        // MODO LOCAL FIRST: Adicionar ao cache local e à fila de sync
-        console.log('⚡ Modo local: adicionando ao cache e agendando sync');
-        
-        const filaLocal = localStorage.getItem(`fila_${sessao.id}`);
-        const fila = filaLocal ? JSON.parse(filaLocal) : [];
-        
-        fila.push({
-          jogador_id: novoJogador.id,
-          pelada_id: peladaId,
-          sessao_id: sessao.id,
-          status: 'reserva',
-          posicao_fila: 999
-        });
-        
-        localStorage.setItem(`fila_${sessao.id}`, JSON.stringify(fila));
-        
-        // Adicionar jogadores ao cache local também
-        const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
-        const jogadores = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
-        jogadores.push(novoJogador);
-        localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
-        
-        // Adicionar à fila de sincronização
-        await addToSyncQueue({
-          tipo: 'criar_jogador',
-          pelada_id: peladaId,
-          dados: novoJogador
-        });
-        
-        await addToSyncQueue({
-          tipo: 'atualizar_fila',
-          jogador_id: novoJogador.id,
-          pelada_id: peladaId,
-          sessao_id: sessao.id,
-          dados: { status: 'reserva', posicao_fila: 999 }
-        });
-        
-        const pendentes = await getSyncQueueCount();
-        setItensPendentesSync(pendentes);
-        
-      } else {
-        // MODO TEMPO REAL: Inserir direto no Supabase
-        const { error: filaError } = await clienteDb
-          .from('fila')
-          .insert({
-            jogador_id: novoJogador.id,
-            pelada_id: peladaId,
-            sessao_id: sessao.id,
-            status: 'reserva',
-            posicao_fila: 999
-          });
-
-        if (filaError) {
-          console.error('❌ Erro ao adicionar na fila:', filaError);
-          alert('Jogador cadastrado mas erro ao adicionar na fila!');
-          return;
-        }
-      }
-
-      // 4. QUARTO: Limpar form e fechar modal
-      setNovoJogadorNome('');
-      setNovoJogadorEstrelas(3);
-      setShowCadastroModal(false);
-
-      // 5. QUINTO: Recarregar dados para mostrar o novo jogador
-      await carregarDados();
-      
-      console.log('✅ Novo jogador cadastrado e adicionado às reservas!');
-      
-    } catch (error) {
-      console.error('❌ Erro geral ao cadastrar jogador:', error);
-      alert('Erro inesperado!');
     }
   };
 
@@ -3230,7 +2919,8 @@ export default function FilaPage() {
   const jogadoresPorTime = regras.jogadores_por_time;
   
   // Usar APENAS todosJogadoresFila já ordenado (evita duplicação)
-  const todosJogadoresNaFila = (filaCompleta.length > 0 ? filaCompleta : [...jogadoresJogando, ...jogadoresFila]).sort((a, b) => a.posicao_fila - b.posicao_fila);
+  // Usar apenas jogadores com status 'fila' (jogando + fila de espera), EXCLUIR reservas
+  const todosJogadoresNaFila = [...jogadoresJogando, ...jogadoresFila].sort((a, b) => a.posicao_fila - b.posicao_fila);
   
   // Times: primeiros 2 times completos (adapta automaticamente ao jogadores_por_time)
   const time1 = todosJogadoresNaFila.slice(0, regras.jogadores_por_time);
@@ -3280,17 +2970,28 @@ export default function FilaPage() {
       setFinalizandoPartida(true);
       console.log('💾 Finalizando partida e rotacionando fila...');
       
-      // Verificar se temos sessão e pelada carregadas
-      if (!sessaoAtual || !peladaIdAtual) {
+      // Buscar pelada_id e plano das credenciais
+      const peladaId = buscar_pelada_id();
+      const plano = buscar_plano();
+      
+      if (!peladaId) {
+        alert('❌ Usuário não encontrado! Por favor, faça login novamente.');
+        return;
+      }
+      
+      // Buscar sessão do localStorage
+      const sessaoAtualStr = localStorage.getItem('sessao_ativa');
+      if (!sessaoAtualStr) {
         alert('❌ Sessão não encontrada! Por favor, recarregue a página.');
         return;
       }
-
-      const peladaId = peladaIdAtual;
+      
+      const sessaoAtual = JSON.parse(sessaoAtualStr);
       const sessaoId = sessaoAtual.id;
       
       console.log('📋 Usando sessão:', sessaoId);
       console.log('📋 Usando pelada:', peladaId);
+      console.log('💎 Plano:', plano);
       
       // Determinar vencedor
       let timeVencedor: 'A' | 'B' | null = null;
@@ -3305,173 +3006,249 @@ export default function FilaPage() {
         console.log('🎯 Time escolhido para retornar primeiro:', timeEscolhidoDesempate);
       }
       
-      // === 1. SALVAR JOGO NA TABELA jogos ===
-      let jogoId: string;
+      // === SALVAR JOGO E ESTATÍSTICAS NO LOCALSTORAGE (para deploy posterior) ===
       
-      if (modoSincronizacao === 'local_first') {
-        // MODO LOCAL FIRST: Gerar ID local e adicionar à fila de sync
-        jogoId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
-        const dadosJogo = {
-          id: jogoId,
-          sessao_id: sessaoId,
-          time_a: time1.map((j) => j.id),
-          time_b: time2.map((j) => j.id),
-          placar_a: placarTimeA,
-          placar_b: placarTimeB,
-          status: 'finalizado',
-          data_inicio: new Date().toISOString(),
-          data_fim: new Date().toISOString(),
-          time_vencedor: timeVencedor
-        };
-        
-        await addToSyncQueue({
-          tipo: 'inserir_jogo',
-          sessao_id: sessaoId,
-          dados: dadosJogo
+      // Incrementar contador de partidas
+      const contadorKey = `partidas_finalizadas_${sessaoId}`;
+      const partidasFinalizadas = parseInt(localStorage.getItem(contadorKey) || '0');
+      const numeroJogo = partidasFinalizadas + 1;
+      localStorage.setItem(contadorKey, String(numeroJogo));
+      
+      // ============================================
+      // SALVAR JOGO NA TABELA JOGOS (todos os planos)
+      // ============================================
+      const jogosKey = `jogos_${sessaoId}`;
+      const jogosStr = localStorage.getItem(jogosKey);
+      const jogos = jogosStr ? JSON.parse(jogosStr) : [];
+      
+      // Montar times com informações completas
+      const timeACompleto = time1.map(jogador => ({
+        id: jogador.id || `temp_${jogador.nome}`,
+        nome: jogador.nome,
+        nivel: 3, // Nível padrão (pode melhorar depois pegando do jogador)
+      }));
+      
+      const timeBCompleto = time2.map(jogador => ({
+        id: jogador.id || `temp_${jogador.nome}`,
+        nome: jogador.nome,
+        nivel: 3,
+      }));
+      
+      // Determinar vencedor para registro
+      let timeVencedorRegistro: 'A' | 'B' | 'empate' | null = null;
+      if (placarTimeA > placarTimeB) {
+        timeVencedorRegistro = 'A';
+      } else if (placarTimeB > placarTimeA) {
+        timeVencedorRegistro = 'B';
+      } else {
+        timeVencedorRegistro = 'empate';
+      }
+      
+      // Gerar UUID válido para o jogo
+      const gerarUUID = () => {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
         });
-        
-        console.log('⚡ Jogo adicionado à fila de sync local');
-      } else {
-        // MODO TEMPO REAL: Inserir direto no Supabase
-        const clienteDb = await getClienteSupabase(peladaId);
-        const { data: novoJogo, error: erroJogo } = await clienteDb
-          .from('jogos')
-          .insert({
-            sessao_id: sessaoId,
-            time_a: time1.map((j) => j.id),
-            time_b: time2.map((j) => j.id),
-            placar_a: placarTimeA,
-            placar_b: placarTimeB,
-            status: 'finalizado',
-            data_inicio: new Date().toISOString(),
-            data_fim: new Date().toISOString(),
-            time_vencedor: timeVencedor
-          })
-          .select()
-          .single();
-        
-        if (erroJogo || !novoJogo) {
-          console.error('Erro ao salvar jogo:', erroJogo);
-          alert('❌ Erro ao finalizar partida!');
-          return;
-        }
-        
-        jogoId = novoJogo.id;
-      }
+      };
       
-      // === 2. SALVAR GOLS NA TABELA gols ===
-      console.log('📊 Histórico de gols:', historicoAcoes);
+      const novoJogo = {
+        id: gerarUUID(),
+        sessao_id: sessaoId,
+        numero_jogo: numeroJogo,
+        time_a: timeACompleto,
+        time_b: timeBCompleto,
+        placar_a: placarTimeA,
+        placar_b: placarTimeB,
+        status: 'finalizado',
+        time_vencedor: timeVencedorRegistro,
+        tempo_decorrido: cronometro,
+        data_inicio: partidaAtiva?.data_inicio,
+        data_fim: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      };
       
-      if (historicoAcoes && historicoAcoes.length > 0) {
-        const golsParaSalvar = historicoAcoes.map((gol) => ({
-          jogo_id: jogoId,
-          jogador_id: gol.jogadorId,
-          time: gol.time,
-          created_at: new Date().toISOString()
-        }));
-        
-        console.log('💾 Gols para salvar:', golsParaSalvar);
-        
-        if (modoSincronizacao === 'local_first') {
-          // MODO LOCAL FIRST: Adicionar gols à fila de sync
-          for (const gol of golsParaSalvar) {
-            await addToSyncQueue({
-              tipo: 'inserir_gols',
-              jogo_id: jogoId,
-              dados: gol
-            });
-          }
-          console.log('⚡ Gols adicionados à fila de sync local');
-        } else {
-          // MODO TEMPO REAL: Inserir direto no Supabase
-          const clienteDb = await getClienteSupabase(peladaId);
-          const { error: erroGols } = await clienteDb
-            .from('gols')
-            .insert(golsParaSalvar);
-          
-          if (erroGols) {
-            console.error('Erro ao salvar gols:', erroGols);
-          } else {
-            console.log('✅ Gols salvos com sucesso!');
-          }
-        }
-      } else {
-        console.log('⚠️ Nenhum gol para salvar');
-      }
-      
-      // === 3. ATUALIZAR ESTATÍSTICAS DOS JOGADORES ===
-      const todosJogadores = [...time1, ...time2];
-      
-      // Verificar se é empate com desempate (não conta vitória nas estatísticas)
-      const ehEmpateComDesempate = placarTimeA === placarTimeB && vencedorDesempate !== null;
-      
-      console.log('📊 Tipo de resultado:', {
-        empate: placarTimeA === placarTimeB,
-        vencedorDesempate: vencedorDesempate,
-        ehEmpateComDesempate: ehEmpateComDesempate
+      jogos.push(novoJogo);
+      localStorage.setItem(jogosKey, JSON.stringify(jogos));
+      console.log(`✅ Jogo ${numeroJogo} salvo na tabela jogos (id: ${novoJogo.id})`);
+      console.log('📊 === TABELA JOGOS ATUALIZADA ===');
+      console.log(`   Total de jogos: ${jogos.length}`);
+      console.log(`   Último jogo:`, {
+        numero: novoJogo.numero_jogo,
+        time_a: novoJogo.time_a.map((j: any) => j.nome).join(', '),
+        time_b: novoJogo.time_b.map((j: any) => j.nome).join(', '),
+        placar: `${novoJogo.placar_a} x ${novoJogo.placar_b}`,
+        vencedor: novoJogo.time_vencedor
       });
       
-      for (const jogador of todosJogadores) {
-        // Contar gols do jogador
-        const golsJogador = historicoAcoes.filter(
-          (h) => h.jogadorId === jogador.id
-        ).length;
+      // ============================================
+      // SALVAR GOLS NA TABELA GOLS (Premium apenas)
+      // ============================================
+      console.log('⚽ DEBUG GOLS: Plano:', plano);
+      console.log('⚽ DEBUG GOLS: golsJogadores:', golsJogadores);
+      console.log('⚽ DEBUG GOLS: Quantidade de keys:', Object.keys(golsJogadores).length);
+      
+      const planoUpper2 = plano?.toUpperCase() || '';
+      if (planoUpper2 === 'PREMIUM' && Object.keys(golsJogadores).length > 0) {
+        console.log('⚽ Entrando no bloco de salvar gols...');
+        const golsKey = `gols_${sessaoId}`;
+        const golsStr = localStorage.getItem(golsKey);
+        const gols = golsStr ? JSON.parse(golsStr) : [];
         
-        // Determinar se venceu
-        const timeJogador = time1.find((j) => j.id === jogador.id) ? 'A' : 'B';
+        console.log('⚽ DEBUG: Gols já salvos anteriormente:', gols.length);
         
-        // Se for empate com desempate, NÃO conta vitória nas estatísticas
-        // Apenas conta vitória se for vitória real (placar diferente)
-        let venceu = false;
-        if (!ehEmpateComDesempate) {
-          venceu = timeVencedor === timeJogador;
-        }
+        // Função para gerar UUID válido
+        const gerarUUID = () => {
+          return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+        };
         
-        console.log(`👤 ${jogador.nome}: time=${timeJogador}, venceu estatística=${venceu}`);
-        
-        if (modoSincronizacao === 'local_first') {
-          // MODO LOCAL FIRST: Atualizar cache local e adicionar à fila de sync
-          const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
-          const jogadores = jogadoresLocal ? JSON.parse(jogadoresLocal) : [];
+        // Salvar gols - procurar por ID ou NOME
+        Object.entries(golsJogadores).forEach(([jogadorIdOuNome, quantidade]) => {
+          console.log(`⚽ Processando: ${jogadorIdOuNome} = ${quantidade} gols`);
           
-          const jogadorLocal = jogadores.find((j: any) => j.id === jogador.id);
-          if (jogadorLocal) {
-            jogadorLocal.jogos = (jogadorLocal.jogos || 0) + 1;
-            jogadorLocal.vitorias = (jogadorLocal.vitorias || 0) + (venceu ? 1 : 0);
-            jogadorLocal.gols = (jogadorLocal.gols || 0) + golsJogador;
-            localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
+          // Tentar encontrar por ID primeiro, depois por nome
+          const jogadorTimeA = timeACompleto.find(j => j.id === jogadorIdOuNome || j.nome === jogadorIdOuNome);
+          if (jogadorTimeA) {
+            console.log(`   ✅ Encontrado no Time A: ${jogadorTimeA.nome}`);
+            for (let i = 0; i < quantidade; i++) {
+              gols.push({
+                id: gerarUUID(),
+                jogo_id: novoJogo.id,
+                jogador_id: jogadorTimeA.id,
+                time: 'A',
+                created_at: new Date().toISOString(),
+              });
+            }
           }
           
-          // Adicionar à fila de sync
-          await addToSyncQueue({
-            tipo: 'atualizar_jogador',
-            jogador_id: jogador.id,
-            pelada_id: peladaId,
-            dados: {
-              jogos_increment: 1,
-              vitorias_increment: venceu ? 1 : 0,
-              gols_increment: golsJogador
+          // Verificar se é do Time B
+          const jogadorTimeB = timeBCompleto.find(j => j.id === jogadorIdOuNome || j.nome === jogadorIdOuNome);
+          if (jogadorTimeB) {
+            console.log(`   ✅ Encontrado no Time B: ${jogadorTimeB.nome}`);
+            for (let i = 0; i < quantidade; i++) {
+              gols.push({
+                id: gerarUUID(),
+                jogo_id: novoJogo.id,
+                jogador_id: jogadorTimeB.id,
+                time: 'B',
+                created_at: new Date().toISOString(),
+              });
+            }
+          }
+        });
+        
+        localStorage.setItem(golsKey, JSON.stringify(gols));
+        console.log(`⚽ ${gols.length} gols TOTAL salvos na tabela gols (Premium)`);
+        console.log('⚽ === TABELA GOLS ATUALIZADA ===');
+        console.log(`   Gols desta partida:`, golsJogadores);
+      } else {
+        console.log('⚽ NÃO entrou no bloco de gols. Motivo:');
+        console.log('   Plano é Premium?', planoUpper2 === 'PREMIUM');
+        console.log('   Tem gols marcados?', Object.keys(golsJogadores).length > 0);
+      }
+      
+      // ============================================
+      // ATUALIZAR ESTATÍSTICAS DOS JOGADORES (Gold/Premium)
+      // ============================================
+      const planoUpper = plano?.toUpperCase() || '';
+      if (planoUpper === 'GOLD' || planoUpper === 'PREMIUM') {
+        console.log('📊 Atualizando estatísticas dos jogadores...');
+        console.log('🔍 DEBUG: Plano detectado:', plano);
+        
+        const jogadoresKey = `jogadores_${peladaId}`;
+        const jogadoresStr = localStorage.getItem(jogadoresKey);
+        console.log('🔍 DEBUG: jogadoresKey:', jogadoresKey);
+        console.log('🔍 DEBUG: jogadores encontrados:', jogadoresStr ? 'SIM' : 'NÃO');
+        
+        if (jogadoresStr) {
+          const jogadores = JSON.parse(jogadoresStr);
+          console.log('🔍 DEBUG: Total jogadores na tabela:', jogadores.length);
+          console.log('🔍 DEBUG: Primeiro jogador:', jogadores[0]);
+          console.log('🔍 DEBUG: Time A para atualizar:', timeACompleto.map(j => ({ id: j.id, nome: j.nome })));
+          console.log('🔍 DEBUG: Time B para atualizar:', timeBCompleto.map(j => ({ id: j.id, nome: j.nome })));
+          
+          // Atualizar jogadores do Time A
+          timeACompleto.forEach(jogador => {
+            console.log(`🔍 Buscando jogador Time A: ${jogador.nome} (id: ${jogador.id})`);
+            const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
+            console.log(`   Encontrado?`, jogadorData ? `SIM - ${jogadorData.nome}` : 'NÃO');
+            
+            if (jogadorData) {
+              jogadorData.jogos = (jogadorData.jogos || 0) + 1;
+              
+              if (timeVencedorRegistro === 'A') {
+                jogadorData.vitorias = (jogadorData.vitorias || 0) + 1;
+              } else if (timeVencedorRegistro === 'B') {
+                jogadorData.derrotas = (jogadorData.derrotas || 0) + 1;
+              } else if (timeVencedorRegistro === 'empate') {
+                jogadorData.empates = (jogadorData.empates || 0) + 1;
+              }
+              
+              // Adicionar gols (Premium) - buscar por ID ou nome
+              if (planoUpper === 'PREMIUM' && (golsJogadores[jogador.id] || golsJogadores[jogador.nome])) {
+                const quantidade = golsJogadores[jogador.id] || golsJogadores[jogador.nome];
+                jogadorData.gols = (jogadorData.gols || 0) + quantidade;
+                console.log(`   ⚽ Gols adicionados: ${quantidade}`);
+              }
+              
+              console.log(`   Atualizado: ${jogadorData.jogos} jogos, ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E`);
             }
           });
-        } else {
-          // MODO TEMPO REAL: Atualizar direto no Supabase
-          // Buscar estatísticas atuais
-          const { data: jogadorAtual } = await supabase
-            .from('jogadores')
-            .select('jogos, vitorias, gols')
-            .eq('id', jogador.id)
-            .single();
           
-          // Atualizar estatísticas
-          await supabase
-            .from('jogadores')
-            .update({
-              jogos: (jogadorAtual?.jogos || 0) + 1,
-              vitorias: (jogadorAtual?.vitorias || 0) + (venceu ? 1 : 0),
-              gols: (jogadorAtual?.gols || 0) + golsJogador
-            })
-            .eq('id', jogador.id);
+          // Atualizar jogadores do Time B
+          timeBCompleto.forEach(jogador => {
+            console.log(`🔍 Buscando jogador Time B: ${jogador.nome} (id: ${jogador.id})`);
+            const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
+            console.log(`   Encontrado?`, jogadorData ? `SIM - ${jogadorData.nome}` : 'NÃO');
+            
+            if (jogadorData) {
+              jogadorData.jogos = (jogadorData.jogos || 0) + 1;
+              
+              if (timeVencedorRegistro === 'B') {
+                jogadorData.vitorias = (jogadorData.vitorias || 0) + 1;
+              } else if (timeVencedorRegistro === 'A') {
+                jogadorData.derrotas = (jogadorData.derrotas || 0) + 1;
+              } else if (timeVencedorRegistro === 'empate') {
+                jogadorData.empates = (jogadorData.empates || 0) + 1;
+              }
+              
+              // Adicionar gols (Premium) - buscar por ID ou nome
+              if (planoUpper === 'PREMIUM' && (golsJogadores[jogador.id] || golsJogadores[jogador.nome])) {
+                const quantidade = golsJogadores[jogador.id] || golsJogadores[jogador.nome];
+                jogadorData.gols = (jogadorData.gols || 0) + quantidade;
+                console.log(`   ⚽ Gols adicionados: ${quantidade}`);
+              }
+              
+              console.log(`   Atualizado: ${jogadorData.jogos} jogos, ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E`);
+            }
+          });
+          
+          localStorage.setItem(jogadoresKey, JSON.stringify(jogadores));
+          console.log('✅ Estatísticas dos jogadores atualizadas no localStorage');
+          console.log('📊 === ESTATÍSTICAS INDIVIDUAIS ATUALIZADAS ===');
+          
+          // Log Time A
+          console.log('   🔴 Time A:');
+          timeACompleto.forEach(jogador => {
+            const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
+            if (jogadorData) {
+              console.log(`      ${jogadorData.nome}: ${jogadorData.jogos} jogos | ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E | ${jogadorData.gols || 0} gols`);
+            }
+          });
+          
+          // Log Time B
+          console.log('   🔵 Time B:');
+          timeBCompleto.forEach(jogador => {
+            const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
+            if (jogadorData) {
+              console.log(`      ${jogadorData.nome}: ${jogadorData.jogos} jogos | ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E | ${jogadorData.gols || 0} gols`);
+            }
+          });
         }
       }
       
@@ -3482,7 +3259,7 @@ export default function FilaPage() {
       console.log('📋 regrasEmpate completo:', regrasEmpate);
       console.log('🔍 Verificação empate_modo:', regrasEmpate.empate_modo);
       console.log('🔍 Verificação empate_retorno:', regrasEmpate.empate_retorno);
-      await rotacionarFila(peladaId, sessaoId, timeVencedor, timeEscolhidoDesempate);
+      await rotacao_fila(peladaId, sessaoId, timeVencedor, timeEscolhidoDesempate);
       console.log('✅ Rotação concluída!');
       
       // Atualizar contador de sync se modo local_first
@@ -3516,25 +3293,18 @@ export default function FilaPage() {
       console.log('✅ Partida finalizada com sucesso!');
 
       // === 7. Verificar limites de partidas por plano ===
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: partidasFinalizadas } = await clienteDb
-        .from('jogos')
-        .select('id')
-        .eq('sessao_id', sessaoAtual.id);
-      
-      const totalPartidas = partidasFinalizadas?.length || 0;
-      
-      // FREE: 10 partidas
-      if (!possuiPermissao('usarSupabase') && totalPartidas >= 10) {
-        console.log('⚠️ FREE: Limite de 10 partidas atingido!');
-        setShowModalLimiteFree(true);
+      if (plano === 'Free') {
+        // FREE: Contar partidas do localStorage (usar tamanho do array jogos)
+        const jogosKey = `jogos_${sessaoId}`;
+        const jogosStr = localStorage.getItem(jogosKey);
+        const totalPartidas = jogosStr ? JSON.parse(jogosStr).length : 0;
+        
+        if (totalPartidas >= 10) {
+          console.log('⚠️ FREE: Limite de 10 partidas atingido!');
+          setShowModalLimiteFree(true);
+        }
       }
-      
-      // GOLD: 15 partidas
-      if (possuiPermissao('usarSupabase') && !possuiPermissao('usarModoPartida') && totalPartidas >= 15) {
-        console.log('⚠️ GOLD: Limite de 15 partidas atingido!');
-        setShowModalLimiteFree(true);
-      }
+      // GOLD/PREMIUM: Sem limites por enquanto (implementar quando tiver deploy)
 
       // Mostrar anúncio ao finalizar partida (apenas FREE)
       showAdOnPartidaEnd();
@@ -4025,68 +3795,8 @@ export default function FilaPage() {
               )}
               <div className="status-info">
                 {formatarData()} • <span style={{color: '#dc3545'}}>{jogadoresJogando.length + jogadoresFila.length} jogadores</span>
-                
-                {/* Badge do Modo de Sincronização */}
-                {modoSincronizacao && (
-                  <span style={{
-                    marginLeft: '12px',
-                    padding: '4px 12px',
-                    borderRadius: '12px',
-                    fontSize: '0.75rem',
-                    fontWeight: '600',
-                    background: modoSincronizacao === 'local_first' 
-                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                      : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                    color: '#fff',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  }}>
-                    {modoSincronizacao === 'local_first' ? '⚡ Modo Rápido' : '🔄 Tempo Real'}
-                    {!statusOnline && modoSincronizacao === 'local_first' && (
-                      <span style={{ fontSize: '0.7rem' }}>• Offline</span>
-                    )}
-                    {itensPendentesSync > 0 && (
-                      <span style={{
-                        background: '#fff',
-                        color: '#000',
-                        borderRadius: '10px',
-                        padding: '2px 6px',
-                        fontSize: '0.7rem',
-                        fontWeight: '700'
-                      }}>
-                        {itensPendentesSync}
-                      </span>
-                    )}
-                  </span>
-                )}
               </div>
-          </div>
-            
-            {/* Aviso de Modo Offline */}
-            {modoSincronizacao === 'local_first' && (
-              <div style={{
-                background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-                color: 'white',
-                borderRadius: '8px',
-                padding: '12px',
-                marginTop: '12px',
-                textAlign: 'center',
-                fontWeight: '600',
-                fontSize: '0.85rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px',
-                boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)'
-              }}>
-                <span>⚡ MODO OFFLINE ATIVO</span>
-                <span style={{ fontSize: '0.7rem', opacity: 0.9 }}>
-                  Todas as alterações serão salvas localmente e sincronizadas ao finalizar a pelada
-                  {itensPendentesSync > 0 && ` • ${itensPendentesSync} pendente(s)`}
-                </span>
-              </div>
-            )}
+            </div>
             
             {jogadorSelecionadoTroca && (
               <div style={{
@@ -4116,20 +3826,6 @@ export default function FilaPage() {
                 >
                   ❌ Cancelar
                 </button>
-              </div>
-            )}
-            {modoEdicao && (
-              <div style={{
-                background: '#fbbf24',
-                color: '#78350f',
-                borderRadius: '8px',
-                padding: '12px',
-                marginTop: '12px',
-                textAlign: 'center',
-                fontWeight: '600',
-                border: '2px solid #f59e0b'
-              }}>
-                ⚠️ Modo de Edição Ativo - Mudanças em tempo real
               </div>
             )}
           </section>
@@ -4573,7 +4269,7 @@ export default function FilaPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  removerDaFila(jogador);
+                                  handleRemover(jogador);
                                 }}
                                 style={{
                                   background: '#ef4444',
@@ -4675,7 +4371,7 @@ export default function FilaPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  removerDaFila(jogador);
+                                  handleRemover(jogador);
                                 }}
                                 style={{
                                   background: '#ef4444',
@@ -4838,6 +4534,14 @@ export default function FilaPage() {
                       console.error('Erro ao carregar regras:', error);
                     }
                   }
+                  
+                  // 📸 SALVAR SNAPSHOT DE PARTIDA (antes de abrir modal)
+                  const peladaId = buscar_pelada_id();
+                  if (peladaId) {
+                    console.log('📸 Salvando snapshot ANTES de finalizar partida...');
+                    fila_snapshot_salvar_partida(peladaId);
+                  }
+                  
                   setShowModalFinalizacao(true);
                 }}
                 disabled={modoEdicao}
@@ -4997,6 +4701,14 @@ export default function FilaPage() {
                       console.error('Erro ao carregar regras:', error);
                     }
                   }
+                  
+                  // 📸 SALVAR SNAPSHOT DE PARTIDA (antes de abrir modal)
+                  const peladaId = buscar_pelada_id();
+                  if (peladaId) {
+                    console.log('📸 Salvando snapshot ANTES de finalizar partida...');
+                    fila_snapshot_salvar_partida(peladaId);
+                  }
+                  
                   setShowModalFinalizacao(true);
                 }}
                 disabled={modoEdicao}
@@ -5125,7 +4837,7 @@ export default function FilaPage() {
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        removerDaFila(jogador);
+                                        handleRemover(jogador);
                                       }}
                                       style={{
                                         background: '#ef4444',
@@ -5323,6 +5035,7 @@ export default function FilaPage() {
             </button>
           </div>
         )}
+        </div>
 
         {/* Footer Mobile */}
         <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden z-30 safe-area-padding">
@@ -5349,70 +5062,40 @@ export default function FilaPage() {
             
             {/* Botão Peladeiros - Modo Edição */}
             <button
-              onClick={async () => {
-                if (modoEdicao) {
-                  // Já está em modo edição - abrir modal de confirmação (evitar duplicação)
-                  if (!showResumoMudancasModal) {
-                    setShowResumoMudancasModal(true);
+              onClick={() => {
+                const novoModo = !modoEdicao;
+                
+                if (novoModo) {
+                  // ATIVANDO modo edição: Salvar snapshot TEMPORÁRIO
+                  console.log('✏️ ATIVANDO modo edição - Salvando snapshot temp...');
+                  const peladaId = buscar_pelada_id();
+                  if (peladaId) {
+                    fila_snapshot_salvar_edicao_temp(peladaId);
                   }
                 } else {
-                  // Entrar em modo edição - salvar snapshot
-                  try {
-                    const userData = localStorage.getItem('user');
-                    if (userData) {
-                      const user = JSON.parse(userData);
-                      const peladaId = user.id;
-                      
-                      // Buscar sessão ativa
-                      const clienteDb = await getClienteSupabase(peladaId);
-                      const { data: sessaoAtiva } = await clienteDb
-                        .from('sessoes')
-                        .select('id')
-                        .eq('pelada_id', peladaId)
-                        .eq('status', 'ativa')
-                        .single();
-                      
-                      if (sessaoAtiva) {
-                        // Buscar fila atual
-                        const { data: filaAtual } = await clienteDb
-                          .from('fila')
-                          .select('*')
-                          .eq('pelada_id', peladaId)
-                          .eq('sessao_id', sessaoAtiva.id);
-                        
-                        if (filaAtual) {
-                          // Limpar QUALQUER snapshot anterior (partida ou edição) - USA BANCO DEDICADO
-                          await clienteDb
-                            .from('fila_snapshot')
-                            .delete()
-                            .eq('pelada_id', peladaId);
-                          
-                          // Salvar novo snapshot de edição - USA BANCO DEDICADO
-                          await clienteDb
-                            .from('fila_snapshot')
-                            .insert({
-                              pelada_id: peladaId,
-                              snapshot_data: filaAtual,
-                              tipo: 'edicao'
-                            });
-                          
-                          console.log('📸 Snapshot de edição salvo!');
-                        }
-                      }
+                  // DESATIVANDO modo edição: Confirmar ou descartar snapshot
+                  console.log('✏️ DESATIVANDO modo edição - Verificando alterações...');
+                  const peladaId = buscar_pelada_id();
+                  if (peladaId) {
+                    const resultado = fila_snapshot_confirmar_edicao(peladaId);
+                    if (resultado === 'confirmado') {
+                      console.log('✅ Snapshot confirmado (alterações detectadas)');
+                    } else if (resultado === 'descartado') {
+                      console.log('🔄 Snapshot descartado (sem alterações - oficial preservado)');
                     }
-                  } catch (error) {
-                    console.error('❌ Erro ao salvar snapshot de edição:', error);
                   }
-                  
-                  setModoEdicao(true);
+                  // Limpar seleção
+                  setJogadorSelecionadoTroca(null);
                 }
+                
+                setModoEdicao(novoModo);
+                console.log('✏️ Modo edição:', novoModo ? 'ATIVADO' : 'DESATIVADO');
               }}
               className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
               style={{ 
                 flex: 1,
                 color: modoEdicao ? '#10b981' : '#9ca3af',
-                background: modoEdicao ? '#d1fae5' : 'transparent',
-                animation: modoEdicao && mudancasPendentes.length > 0 ? 'pulse 2s infinite' : 'none'
+                background: modoEdicao ? '#d1fae5' : 'transparent'
               }}
             >
               <span className="text-2xl" style={{
@@ -6106,7 +5789,7 @@ export default function FilaPage() {
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
-                      cadastrarNovoJogador();
+                      handleCadastrar();
                     }
                   }}
                 />
@@ -6179,7 +5862,7 @@ export default function FilaPage() {
                   Cancelar
                 </button>
                 <button
-                  onClick={cadastrarNovoJogador}
+                  onClick={handleCadastrar}
                   disabled={!novoJogadorNome.trim()}
                   style={{
                     background: novoJogadorNome.trim() ? '#28a745' : '#ccc',
@@ -6378,7 +6061,8 @@ export default function FilaPage() {
                 </button>
                 <button
                   onClick={() => {
-                    trocarPosicoes(jogadorSelecionadoTroca, jogadorParaTroca);
+                    // Mover jogador selecionado para a posição do jogador clicado
+                    handleMover(jogadorSelecionadoTroca, jogadorParaTroca.posicao_fila);
                     setShowConfirmarTrocaModal(false);
                     setJogadorParaTroca(null);
                     setJogadorSelecionadoTroca(null);
@@ -6454,7 +6138,7 @@ export default function FilaPage() {
                     <button
                       key={jogador.id}
                       onClick={() => {
-                        voltarParaFila(jogador);
+                        handleAdicionar(jogador);
                         setShowSelecionarJogadorModal(false);
                         setPosicaoParaAdicionar(null);
                       }}
@@ -6560,221 +6244,6 @@ export default function FilaPage() {
           </div>
         )}
 
-        {/* Modal de Resumo de Mudanças */}
-        {showResumoMudancasModal && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10000,
-            padding: '20px'
-          }}>
-            <div style={{
-              backgroundColor: '#fff',
-              borderRadius: '16px',
-              maxWidth: '550px',
-              width: '100%',
-              padding: '32px',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-              textAlign: 'center',
-              maxHeight: '80vh',
-              overflow: 'auto'
-            }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
-              <h2 style={{ 
-                fontSize: '24px', 
-                fontWeight: '700', 
-                color: '#1a1a1a',
-                marginBottom: '8px'
-              }}>
-                Confirmar Mudanças?
-              </h2>
-              <p style={{ 
-                fontSize: '14px', 
-                color: '#6b7280',
-                marginBottom: '24px'
-              }}>
-                As alterações foram aplicadas. Deseja mantê-las ou desfazer?
-              </p>
-              
-              {/* Aviso */}
-              <div style={{
-                background: '#fef3c7',
-                border: '2px solid #f59e0b',
-                borderRadius: '12px',
-                padding: '16px',
-                marginBottom: '24px',
-                textAlign: 'left'
-              }}>
-                <p style={{
-                  margin: 0,
-                  fontSize: '14px',
-                  color: '#92400e',
-                  fontWeight: '500'
-                }}>
-                  ℹ️ As mudanças já foram aplicadas em tempo real. Clique em:
-                </p>
-                <ul style={{
-                  margin: '8px 0 0 20px',
-                  padding: 0,
-                  fontSize: '13px',
-                  color: '#92400e'
-                }}>
-                  <li><strong>SIM</strong> para manter as alterações</li>
-                  <li><strong>NÃO</strong> para desfazer tudo (restaura o estado inicial)</li>
-                </ul>
-              </div>
-
-              {/* Botões */}
-              <div style={{
-                display: 'flex',
-                gap: '12px',
-                justifyContent: 'center'
-              }}>
-                <button
-                  onClick={async () => {
-                    // Cancelar - restaurar snapshot
-                    setShowResumoMudancasModal(false);
-                    
-                    try {
-                      const userData = localStorage.getItem('user');
-                      if (userData) {
-                        const user = JSON.parse(userData);
-                        const peladaId = user.id;
-                        
-                        // Buscar snapshot - USA BANCO DEDICADO
-                        const clienteDb = await getClienteSupabase(peladaId);
-                        const { data: snapshots } = await clienteDb
-                          .from('fila_snapshot')
-                          .select('*')
-                          .eq('pelada_id', peladaId)
-                          .order('created_at', { ascending: false })
-                          .limit(1);
-                        
-                        if (!snapshots || snapshots.length === 0) {
-                          alert('❌ Não há ações para desfazer.\n\nEsta funcionalidade só funciona após iniciar o modo de edição.');
-                          setModoEdicao(false);
-                          return;
-                        }
-                        
-                        const snapshot = snapshots[0];
-                        const snapshotData = snapshot.snapshot_data;
-                        
-                        console.log('🔄 Restaurando snapshot:', snapshotData);
-                        
-                        // Buscar sessão ativa
-                        const { data: sessoes } = await clienteDb
-                          .from('sessoes')
-                          .select('id')
-                          .eq('pelada_id', peladaId)
-                          .eq('status', 'ativa')
-                          .order('created_at', { ascending: false })
-                          .limit(1);
-                        
-                        if (sessoes && sessoes.length > 0) {
-                          const sessaoId = sessoes[0].id;
-                          
-                          // Restaurar cada jogador
-                          for (const jogador of snapshotData.jogadores) {
-                            await clienteDb
-                              .from('fila')
-                              .update({
-                                posicao_fila: jogador.posicao_fila,
-                                status: jogador.status
-                              })
-                              .eq('jogador_id', jogador.jogador_id)
-                              .eq('pelada_id', peladaId)
-                              .eq('sessao_id', sessaoId);
-                          }
-                          
-                          console.log('✅ Snapshot restaurado!');
-                        }
-                        
-                        // Recarregar dados e sair do modo edição
-                        await carregarDados();
-                        setModoEdicao(false);
-                        setMudancasPendentes([]);
-                        setJogadorSelecionadoTroca(null);
-                      }
-                    } catch (error) {
-                      console.error('❌ Erro ao restaurar snapshot:', error);
-                      alert('Erro ao desfazer alterações. Recarregue a página.');
-                    }
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '14px 24px',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    borderRadius: '8px',
-                    border: '2px solid #ef4444',
-                    backgroundColor: '#fff',
-                    color: '#ef4444',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  ❌ Desfazer
-                </button>
-
-                <button
-                  onClick={async () => {
-                    try {
-                      console.log('✅ Aplicando mudanças pendentes...', mudancasPendentes);
-                      
-                      // Aplicar todas as mudanças pendentes no banco
-                      for (const mudanca of mudancasPendentes) {
-                        if (mudanca.tipo === 'remover') {
-                          console.log('🗑️ Removendo:', mudanca.jogador.nome);
-                          await removerDaFila(mudanca.jogador, true); // aplicarAgora = true
-                        } else if (mudanca.tipo === 'voltar') {
-                          console.log('⬅️ Voltando para fila:', mudanca.jogador.nome);
-                          await voltarParaFila(mudanca.jogador, true); // aplicarAgora = true
-                        } else if (mudanca.tipo === 'trocar') {
-                          console.log('🔄 Trocando jogadores:', mudanca.jogador1.nome, '↔️', mudanca.jogador2.nome);
-                          // Implementar lógica de trocar se necessário
-                        }
-                      }
-                      
-                      // Fechar modal e limpar
-                      setShowResumoMudancasModal(false);
-                      setModoEdicao(false);
-                      setMudancasPendentes([]);
-                      setJogadorSelecionadoTroca(null);
-                      await carregarDados();
-                      
-                      console.log('✅ Mudanças aplicadas com sucesso!');
-                    } catch (error) {
-                      console.error('❌ Erro ao aplicar mudanças:', error);
-                      alert('Erro ao salvar alterações!');
-                    }
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '14px 24px',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    borderRadius: '8px',
-                    border: 'none',
-                    backgroundColor: '#10b981',
-                    color: 'white',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  ✅ Manter
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Modal de Confirmação de Mudança de Posição */}
         {showConfirmarMudancaPosicaoModal && jogadorMoverPosicao && posicaoDestino && (
           <div style={{
@@ -6858,7 +6327,7 @@ export default function FilaPage() {
 
                 <button
                   onClick={async () => {
-                    await moverJogadorParaPosicao(jogadorMoverPosicao, posicaoDestino);
+                    await handleMover(jogadorMoverPosicao, posicaoDestino);
                     setShowConfirmarMudancaPosicaoModal(false);
                     setJogadorMoverPosicao(null);
                     setPosicaoDestino(null);
@@ -7662,7 +7131,7 @@ export default function FilaPage() {
                 </button>
                 <button
                   onClick={finalizarPelada}
-                  disabled={!senhaEncerramento}
+                  disabled={!senhaEncerramento || loadingEncerramento}
                   style={{
                     flex: 1,
                     padding: '14px',
@@ -7670,12 +7139,13 @@ export default function FilaPage() {
                     fontWeight: '600',
                     border: 'none',
                     borderRadius: '10px',
-                    background: senhaEncerramento ? '#dc2626' : '#e5e7eb',
-                    color: senhaEncerramento ? '#fff' : '#999',
-                    cursor: senhaEncerramento ? 'pointer' : 'not-allowed'
+                    background: (senhaEncerramento && !loadingEncerramento) ? '#dc2626' : '#e5e7eb',
+                    color: (senhaEncerramento && !loadingEncerramento) ? '#fff' : '#999',
+                    cursor: (senhaEncerramento && !loadingEncerramento) ? 'pointer' : 'not-allowed',
+                    opacity: loadingEncerramento ? 0.7 : 1
                   }}
                 >
-                  Confirmar
+                  {loadingEncerramento ? '⏳ Encerrando...' : 'Confirmar'}
                 </button>
               </div>
             </div>
@@ -7987,7 +7457,7 @@ export default function FilaPage() {
               </h2>
 
               {/* Mostrar apenas a ação correspondente ao snapshot encontrado */}
-              {tipoAcaoDesfazer === 'partida' && ultimaPartida && (
+              {tipoAcaoDesfazer === 'partida' && (
                 <button
                   onClick={() => {
                     setShowDesfazerModal(false);
@@ -8019,7 +7489,7 @@ export default function FilaPage() {
                   <div style={{ fontSize: '0.9rem', color: '#78350f', lineHeight: '1.4' }}>
                     Restaura a fila para antes da última partida
                   </div>
-                  {ultimaPartida.placar_a !== undefined && (
+                  {ultimaPartida && ultimaPartida.placar_a !== undefined && (
                     <div style={{ fontSize: '0.85rem', color: '#92400e', marginTop: '8px', fontWeight: '600' }}>
                       Placar: {ultimaPartida.placar_a} x {ultimaPartida.placar_b}
                     </div>
@@ -8435,6 +7905,14 @@ export default function FilaPage() {
                 <button
                   onClick={() => {
                     setShowModalDesempate(false);
+                    
+                    // 📸 SALVAR SNAPSHOT DE PARTIDA (antes de abrir modal de finalização)
+                    const peladaId = buscar_pelada_id();
+                    if (peladaId) {
+                      console.log('📸 Salvando snapshot ANTES de finalizar partida...');
+                      fila_snapshot_salvar_partida(peladaId);
+                    }
+                    
                     setShowModalFinalizacao(true);
                     setVencedorDesempate(null);
                   }}
@@ -8847,10 +8325,9 @@ export default function FilaPage() {
         {shouldShowInterstitial && (
           <AdInterstitial onClose={resetInterstitial} motivo="navegacao" />
         )}
-      </div>
-      
       </>
-      )}
-    </>
+    )}
+  </>
   );
 }
+

@@ -6,6 +6,7 @@ import { jogadoresService, Jogador, supabase, validarSenhaPelada, getClienteSupa
 import { usePermissions } from '../../lib/usePermissions';
 import { addToSyncQueue } from '../../lib/syncService';
 import { logger } from '../../lib/logger';
+import { buscar_pelada_id } from '../../lib/credenciais';
 
 export default function CadastroPage() {
   const { possuiPermissao, verificarLimite, nomePlano } = usePermissions();
@@ -53,11 +54,10 @@ export default function CadastroPage() {
       setIsLoading(true);
       logger.log('🔍 Carregando jogadores do Supabase...');
       
-      // Debug: verificar se usuário está logado
-      const user = localStorage.getItem('user');
-      logger.log('👤 Usuário logado:', user ? 'SIM' : 'NÃO');
+      const peladaId = buscar_pelada_id();
+      logger.log('👤 Pelada ID:', peladaId ? 'SIM' : 'NÃO');
       
-      if (!user) {
+      if (!peladaId) {
         logger.log('❌ Usuário não está logado, redirecionando para login...');
         mostrarMensagem('❌ Você precisa fazer login primeiro', 'error');
         setTimeout(() => {
@@ -66,11 +66,9 @@ export default function CadastroPage() {
         return;
       }
       
-      const userData = JSON.parse(user);
-      logger.log('🆔 ID do usuário:', userData.id);
+      logger.log('🆔 Pelada ID:', peladaId);
       
       // Verificar modo offline
-      const peladaId = userData.id;
       const regrasStr = localStorage.getItem(`regras_${peladaId}`);
       let modoOffline = false;
       
@@ -138,14 +136,10 @@ export default function CadastroPage() {
     setIsLoading(true);
     
     try {
-      // Verificar modo offline
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) {
         throw new Error('Usuário não encontrado');
       }
-      
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
       const regrasStr = localStorage.getItem(`regras_${peladaId}`);
       let modoOffline = false;
       
@@ -224,6 +218,7 @@ export default function CadastroPage() {
             pelada_id: peladaId,
             jogos: 0,
             vitorias: 0,
+            derrotas: 0,
             gols: 0
           };
           
@@ -268,6 +263,11 @@ export default function CadastroPage() {
   };
 
   const handleStarClick = (value: number) => {
+    // Sugerir nível mínimo 2 para Gold e Premium
+    if (possuiPermissao('cadastrarNivel') && value === 1) {
+      mostrarMensagem('💡 Sugerimos no mínimo 2 estrelas para melhor classificação', 'info');
+      return;
+    }
     setNivel(value);
   };
 
@@ -320,10 +320,8 @@ export default function CadastroPage() {
 
   const excluirJogador = async (id: string, nome: string) => {
     // Verificar se está em modo offline
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
+    const peladaId = buscar_pelada_id();
+    if (peladaId) {
       const regrasStr = localStorage.getItem(`regras_${peladaId}`);
       
       if (regrasStr) {
@@ -378,14 +376,13 @@ export default function CadastroPage() {
   };
 
   const solicitarSenhaAdmin = async (): Promise<boolean> => {
-    const user = localStorage.getItem('user');
-    if (!user) {
+    const peladaId = buscar_pelada_id();
+    if (!peladaId) {
       mostrarMensagem('❌ Usuário não está logado!', 'error');
       return false;
     }
     
-    const userData = JSON.parse(user);
-    const senha = window.prompt(`🔐 Digite a senha da pelada de ${userData.nome}:`);
+    const senha = window.prompt(`🔐 Digite a senha da pelada:`);
     if (!senha) return false;
     
     // Validar usando função centralizada (async)
@@ -420,21 +417,25 @@ export default function CadastroPage() {
   };
 
   const renderStars = (nivel: number) => {
-    return Array.from({ length: 5 }, (_, i) => (
-      <span
-        key={i}
-        onClick={() => handleStarClick(i + 1)}
-        className={`inline-block text-3xl cursor-pointer transition-all duration-200 hover:scale-125 ${
-          i < nivel ? 'opacity-100 scale-110' : 'opacity-30'
-        }`}
-        style={{ 
-          transform: i < nivel ? 'scale(1.1)' : 'scale(1)',
-          marginRight: '10px'
-        }}
-      >
-        ⭐
-      </span>
-    ));
+    return Array.from({ length: 5 }, (_, i) => {
+      const nivelEstrela = i + 1;
+      
+      return (
+        <span
+          key={i}
+          onClick={() => handleStarClick(nivelEstrela)}
+          className={`inline-block text-3xl transition-all duration-200 cursor-pointer hover:scale-125 ${
+            i < nivel ? 'opacity-100 scale-110' : 'opacity-30'
+          }`}
+          style={{ 
+            transform: i < nivel ? 'scale(1.1)' : 'scale(1)',
+            marginRight: '10px'
+          }}
+        >
+          ⭐
+        </span>
+      );
+    });
   };
 
   // Ordenar jogadores: ativos primeiro, depois inativos, ambos em ordem alfabética

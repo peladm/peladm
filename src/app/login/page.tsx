@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '../../lib/supabase';
 import { CONTATO } from '../../config/contato';
+import { salvarCredenciais } from '../../lib/credenciais';
 
 export default function Login() {
   const [peladaId, setPeladaId] = useState('');
@@ -16,13 +17,14 @@ export default function Login() {
   
   const router = useRouter();
 
-  // Login completo (Pelada ID + Usuário + Senha)
+  // Login completo (Username + Senha)
   const handleLoginCompleto = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    // Validação básica
+    console.log('🔐 Tentando login...', { peladaId, usuario });
+
     if (!peladaId || !usuario || !senha) {
       setError('Preencha todos os campos');
       setLoading(false);
@@ -30,78 +32,64 @@ export default function Login() {
     }
 
     try {
-      // 1. Validar usuário na tabela usuarios
-      const { data: usuarioData, error: userError } = await supabase
-        .from('usuarios')
+      console.log('📡 Buscando no Supabase...');
+      
+      const { data, error: dbError } = await supabase
+        .from('clientes')
         .select('*')
         .eq('pelada_id', peladaId.toUpperCase())
         .eq('username', usuario)
         .eq('senha', senha)
         .single();
       
-      if (userError || !usuarioData) {
-        setError('Pelada ID, usuário ou senha inválidos');
-        setLoading(false);
-        return;
-      }
-
-      // 2. Buscar dados do cliente (pelada) para informações adicionais
-      const { data: clienteData, error: clienteError } = await supabase
-        .from('clientes')
-        .select('*')
-        .eq('id', peladaId.toUpperCase())
-        .single();
+      console.log('📊 Resultado:', { data, dbError });
       
-      if (clienteError || !clienteData) {
-        setError('Pelada não encontrada');
+      if (dbError || !data) {
+        console.error('❌ Erro:', dbError);
+        setError('Código, usuário ou senha inválidos');
         setLoading(false);
         return;
       }
 
-      // Verificar status do cliente
-      if (clienteData.status === 'bloqueado') {
+      console.log('✅ Cliente encontrado:', data.pelada_id);
+
+      if (data.status === 'bloqueado') {
         setShowBlockedModal(true);
+        setPeladaId(data.pelada_id);
         setLoading(false);
         return;
       }
 
-      if (clienteData.status === 'inativo') {
-        setError('⏸️ Pelada inativa. Entre em contato com o administrador.');
+      if (data.status === 'inativo') {
+        setError('⏸️ Pelada inativa');
         setLoading(false);
         return;
       }
+
+      console.log('💾 Salvando credenciais...');
       
-      // Atualizar last_access no banco
-      await supabase
-        .from('clientes')
-        .update({ last_access: new Date().toISOString() })
-        .eq('id', peladaId.toUpperCase());
+      salvarCredenciais({
+        pelada_id: data.pelada_id,
+        username: data.username,
+        senha: data.senha,
+        plano: (data.plano || 'free').toLowerCase(),
+        supabase_url: data.supabase_url,
+        supabase_anon_key: data.supabase_anon_key
+      });
       
-      setTimeout(() => {
-        setLoading(false);
-        // Salvar dados completos do usuário logado
-        localStorage.setItem('user', JSON.stringify({
-          id: clienteData.id, // pelada_id (ex: GD3974)
-          nome: clienteData.nome,
-          email: clienteData.email,
-          usuario_pelada: usuarioData.username,
-          senha_pelada: usuarioData.senha,
-          plano: clienteData.plano || 'Básico',
-          is_master: usuarioData.role === 'admin',
-          status: true,
-          tipo_acesso: 'completo' // Acesso completo
-        }));
-        router.push('/'); // Redireciona para home
-      }, 1000);
+      console.log('✅ Credenciais salvas! Redirecionando...');
       
-    } catch (error) {
-      console.error('Erro no login:', error);
-      setError('Erro no servidor. Tente novamente.');
+      setLoading(false);
+      window.location.href = '/';
+      
+    } catch (err) {
+      console.error('💥 Erro no catch:', err);
+      setError('Erro ao fazer login');
       setLoading(false);
     }
   };
 
-  // Acesso visitante (apenas Pelada ID)
+  // Acesso visitante
   const handleAcessoVisitante = async () => {
     setError('');
     setLoading(true);
@@ -113,66 +101,58 @@ export default function Login() {
     }
 
     try {
-      // Validar se pelada existe
-      const { data: clienteData, error: clienteError } = await supabase
+      const { data, error: dbError } = await supabase
         .from('clientes')
         .select('*')
-        .eq('id', peladaId.toUpperCase())
+        .eq('pelada_id', peladaId.toUpperCase())
         .single();
       
-      if (clienteError || !clienteData) {
-        setError('Código da pelada inválido');
+      if (dbError || !data) {
+        setError('Código inválido');
         setLoading(false);
         return;
       }
 
-      // Verificar status do cliente
-      if (clienteData.status === 'bloqueado') {
+      if (data.status === 'bloqueado') {
         setShowBlockedModal(true);
         setLoading(false);
         return;
       }
 
-      if (clienteData.status === 'inativo') {
-        setError('⏸️ Pelada inativa. Entre em contato com o administrador.');
+      if (data.status === 'inativo') {
+        setError('⏸️ Pelada inativa');
         setLoading(false);
         return;
       }
 
-      setTimeout(() => {
-        setLoading(false);
-        // Salvar acesso visitante (limitado)
-        localStorage.setItem('user', JSON.stringify({
-          id: clienteData.id, // pelada_id (ex: GD3974)
-          nome: clienteData.nome,
-          plano: clienteData.plano || 'Básico',
-          tipo_acesso: 'visitante', // Acesso limitado
-          status: true,
-          is_master: false
-        }));
-        router.push('/resultados'); // Redireciona direto para resultados
-      }, 1000);
+      localStorage.setItem('user', JSON.stringify({
+        id: data.pelada_id,
+        nome: data.nome,
+        plano: (data.plano || 'free').toLowerCase(),
+        tipo_acesso: 'visitante',
+        status: true,
+        is_master: false
+      }));
       
-    } catch (error) {
-      console.error('Erro no acesso visitante:', error);
-      setError('Erro no servidor. Tente novamente.');
+      setLoading(false);
+      router.push('/resultados');
+      
+    } catch (err) {
+      setError('Erro ao acessar');
       setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
-      {/* Modal de Bloqueio */}
       {showBlockedModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
             <div className="text-center">
-              <div className="mb-4">
-                <span className="text-6xl">🚫</span>
-              </div>
+              <div className="mb-4"><span className="text-6xl">🚫</span></div>
               <h2 className="text-2xl font-bold text-gray-800 mb-3">Acesso Bloqueado</h2>
               <p className="text-gray-600 mb-6">
-                Sua conta foi bloqueada. Entre em contato com o administrador para mais informações.
+                Sua conta foi bloqueada. Entre em contato com o administrador.
               </p>
               <div className="space-y-3">
                 <a
@@ -202,7 +182,6 @@ export default function Login() {
       )}
 
       <div className="max-w-md w-full">
-        {/* Card do Login */}
         <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-200">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-gray-800 mb-2">Acessar Pelada</h2>
@@ -211,59 +190,51 @@ export default function Login() {
 
           <form onSubmit={handleLoginCompleto}>
             <div className="space-y-3">
-              {/* Campo Código da Pelada */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Código da Pelada
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Código da Pelada</label>
                 <input
                   type="text"
                   value={peladaId}
                   onChange={(e) => setPeladaId(e.target.value.toUpperCase())}
-                  className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase text-center text-lg font-bold tracking-wider"
-                  maxLength={6}
+                  placeholder="Digite o código"
+                  className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase"
+                  maxLength={10}
                   required
                 />
               </div>
 
-              {/* Campo Usuário */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Usuário
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Usuário</label>
                 <input
                   type="text"
                   value={usuario}
                   onChange={(e) => setUsuario(e.target.value)}
                   className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
                 />
               </div>
 
-              {/* Campo Senha */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Senha
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Senha</label>
                 <input
                   type="password"
                   value={senha}
                   onChange={(e) => setSenha(e.target.value)}
                   className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
                 />
               </div>
 
-              {/* Mensagem de Erro */}
               {error && (
                 <div className="text-red-600 text-sm text-center bg-red-50 py-2 px-4 rounded-lg">
                   {error}
                 </div>
               )}
 
-              {/* Botão Login Completo */}
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-xl font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-xl font-semibold transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
               >
                 {loading ? (
                   <>
@@ -278,7 +249,6 @@ export default function Login() {
                 )}
               </button>
 
-              {/* Divisor */}
               <div className="relative my-4">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-300"></div>
@@ -288,12 +258,25 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Botão Acesso Visitante */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 text-center">
+                  Código da Pelada (apenas visitante)
+                </label>
+                <input
+                  type="text"
+                  value={peladaId}
+                  onChange={(e) => setPeladaId(e.target.value.toUpperCase())}
+                  placeholder="Ex: GD3974"
+                  className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase text-center text-lg font-bold tracking-wider"
+                  maxLength={6}
+                />
+              </div>
+
               <button
                 type="button"
                 onClick={handleAcessoVisitante}
                 disabled={loading}
-                className="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 py-3 px-4 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 border border-blue-200"
+                className="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 py-3 px-4 rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 border border-blue-200"
               >
                 <span>📊</span>
                 <span>Ver Estatísticas</span>
@@ -305,11 +288,9 @@ export default function Login() {
             </div>
           </form>
           
-          {/* Seção de Cadastro */}
           <div className="mt-6 pt-6 border-t border-gray-200">
             <p className="text-center text-sm text-gray-600 mb-3">Ainda não tem uma conta?</p>
             
-            {/* Botão Criar Conta GRÁTIS */}
             <button
               type="button"
               onClick={() => router.push('/cadastro-free')}
@@ -322,7 +303,6 @@ export default function Login() {
               25 jogadores • 10 partidas • Com Anúncios
             </p>
             
-            {/* Link Gold/Premium */}
             <div className="mt-4 text-center">
               <a
                 href={`https://wa.me/${CONTATO.whatsapp}?text=${encodeURIComponent(CONTATO.mensagemGoldPremium)}`}
@@ -338,17 +318,14 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Footer com Logo e Info */}
         <div className="text-center mt-8 space-y-4">
-          {/* Logo */}
           <div>
             <Image src="/logo.png" alt="PelADM Logo" width={90} height={90} className="mx-auto mb-3" />
           </div>
           
-          {/* Informações */}
           <div>
-            <p className="text-sm text-gray-500">Sistema de gestão de peladas</p>
-            <p className="text-xs text-gray-400 mt-2">v1.0.0 • © 2025 PelADM</p>
+            <p className="text-sm font-medium text-gray-700">PelADM - Gestão Inteligente de Peladas</p>
+            <p className="text-xs text-gray-500 mt-1">Versão 2.1.0</p>
           </div>
         </div>
       </div>

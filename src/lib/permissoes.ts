@@ -43,7 +43,69 @@ export interface Permissoes {
   // Admin
   gerenciarUsuarios: boolean;
   multipalasPeladas: boolean;
+  
+  // Deploy/Sincronização
+  deployAoEncerrar: boolean; // Deploy para Supabase ao encerrar pelada (Gold/Premium)
 }
+
+/**
+ * FLUXO DO BOTÃO "CONFIRMAR TIMES" (sorteio):
+ * 
+ * 1. VALIDAÇÃO OBRIGATÓRIA (todos os planos):
+ *    - Verificar se existe regras_${peladaId} no localStorage
+ *    - Se NÃO existir: Alertar para configurar regras primeiro
+ * 
+ * 2. BUSCA DE DADOS:
+ *    - pelada_id e plano: localStorage via buscar_pelada_id() e buscar_plano()
+ *    - regras: Sempre do localStorage (independente do plano)
+ *    - jogadores:
+ *      • Free: localStorage jogadores_${peladaId}
+ *      • Gold/Premium: Supabase + baixa para localStorage ao Confirmar Times
+ * 
+ * 3. TABELAS GERADAS (TUDO LOCAL PRIMEIRO):
+ *    
+ *    Todos os planos (localStorage):
+ *    - sessao_ativa
+ *    - fila_ativa (deletada ao encerrar - SEM DEPLOY)
+ *    - jogos_${sessaoId}
+ *    - partidas_finalizadas_${sessaoId}
+ *    - jogadores_${peladaId} (veja detalhes abaixo)
+ *    
+ *    Gold/Premium adicional (localStorage):
+ *    - fila_snapshot_${sessaoId} (deletado ao encerrar - SEM DEPLOY)
+ *    
+ *    Premium adicional (localStorage):
+ *    - gols_${sessaoId}
+ * 
+ * 4. TABELA JOGADORES - COMPORTAMENTO POR PLANO:
+ *    
+ *    Free:
+ *    - Tudo local (localStorage)
+ *    - Ao encerrar pelada: EXCLUÍDA (limpa do localStorage)
+ *    - Força usuário a recriar jogadores na próxima pelada
+ *    - SEM DEPLOY
+ *    
+ *    Gold:
+ *    - Baixada do Supabase ao Confirmar Times
+ *    - Durante fila: modo edição permite adicionar jogador não cadastrado
+ *      (único momento que Gold preenche jogadores localmente)
+ *    - Ao encerrar: SEM DEPLOY (Gold não armazena estatísticas)
+ *    
+ *    Premium:
+ *    - Baixada do Supabase ao Confirmar Times
+ *    - Armazena estatísticas localmente: Vitórias, Gols, Empate, Derrota
+ *    - Durante fila: modo edição permite adicionar jogador não cadastrado
+ *    - Ao encerrar: DEPLOY para Supabase (com estatísticas atualizadas)
+ * 
+ * 5. DEPLOY AO SUPABASE (apenas Premium - Gold não tem estatísticas):
+ *    - Acontece APENAS ao encerrar a pelada (não ao confirmar times)
+ *    - Premium: Sincroniza sessoes, jogos, gols e jogadores para Supabase
+ *    - Gold: NÃO faz deploy (não armazena estatísticas)
+ *    - Free: Permanece tudo local
+ *    - fila e fila_snapshot: NUNCA fazem deploy (são deletados ao encerrar)
+ * 
+ * IMPORTANTE: Durante a fila aberta, TUDO é alimentado localmente (todos os planos)
+ */
 
 export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
   Free: {
@@ -53,7 +115,7 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     multiUsuario: false,
     
     // Cadastro
-    cadastrarNivel: false, // Só nome
+    cadastrarNivel: false, // Só nome (sem estrelas)
     limiteJogadores: 25,
     limitePartidas: 10,
     limiteUsuarios: 0, // 0 usuários adicionais (apenas o admin master)
@@ -88,6 +150,9 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     // Admin
     gerenciarUsuarios: false,
     multipalasPeladas: false,
+    
+    // Deploy/Sincronização
+    deployAoEncerrar: false, // Free mantém tudo local
   },
   
   Gold: {
@@ -97,9 +162,9 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     multiUsuario: true,
     
     // Cadastro
-    cadastrarNivel: true,
-    limiteJogadores: 40,
-    limitePartidas: 15,
+    cadastrarNivel: true, // Níveis 1-5 (bloquear nível 1)
+    limiteJogadores: 50,
+    limitePartidas: 40,
     limiteUsuarios: 3, // 3 usuários adicionais (além do admin master)
     
     // Sorteio
@@ -132,6 +197,9 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     // Admin
     gerenciarUsuarios: true,
     multipalasPeladas: false, // Só 1 pelada
+    
+    // Deploy/Sincronização
+    deployAoEncerrar: false, // Gold não armazena estatísticas (sem deploy)
   },
   
   Premium: {
@@ -176,6 +244,9 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     // Admin
     gerenciarUsuarios: true,
     multipalasPeladas: true, // Múltiplas peladas
+    
+    // Deploy/Sincronização
+    deployAoEncerrar: true, // Premium armazena estatísticas (deploy de sessoes, jogos e gols)
   },
 };
 

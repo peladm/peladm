@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePermissions } from '../lib/usePermissions';
+import { buscar_plano } from '../lib/credenciais';
 import { usePathname } from 'next/navigation';
 
 interface AdBannerProps {
@@ -9,23 +9,11 @@ interface AdBannerProps {
 }
 
 export default function AdBanner({ position = 'bottom' }: AdBannerProps) {
-  const { possuiPermissao, plano } = usePermissions();
+  const plano = buscar_plano();
   const pathname = usePathname();
 
-  useEffect(() => {
-    // Carregar script do AdMob/AdSense quando o componente montar
-    if (!possuiPermissao('removerAnuncios')) {
-      try {
-        // @ts-ignore
-        (window.adsbygoogle = window.adsbygoogle || []).push({});
-      } catch (err) {
-        console.error('Erro ao carregar banner:', err);
-      }
-    }
-  }, [possuiPermissao]);
-
-  // Premium: SEM anúncios
-  if (plano === 'Premium') {
+  // Premium e Gold: SEM anúncios
+  if (plano === 'premium' || plano === 'gold') {
     return null;
   }
 
@@ -34,15 +22,17 @@ export default function AdBanner({ position = 'bottom' }: AdBannerProps) {
     return null;
   }
 
-  // Gold: banner APENAS em home, cadastro, sorteio e regras
-  if (plano === 'Gold') {
-    const paginasComBanner = ['/', '/cadastro', '/sorteio', '/regras'];
-    if (!paginasComBanner.includes(pathname)) {
-      return null;
+  useEffect(() => {
+    // Carregar script do AdMob/AdSense quando o componente montar (somente Free)
+    if (plano === 'free') {
+      try {
+        // @ts-ignore
+        (window.adsbygoogle = window.adsbygoogle || []).push({});
+      } catch (err) {
+        console.error('Erro ao carregar banner:', err);
+      }
     }
-  }
-
-  // Free: banner em todas as páginas (exceto login)
+  }, [plano]);
 
   return (
     <div

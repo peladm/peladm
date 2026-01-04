@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
 import { supabase, validarSenhaPelada } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
-import { baixarTodasTabelasParaOffline, limparCacheOffline } from '../../lib/syncService';
+import { buscar_pelada_id, buscar_plano } from '../../lib/credenciais';
+import { createClient } from '@supabase/supabase-js';
 
 interface Regras {
   jogadores_por_time: number;
@@ -16,7 +17,6 @@ interface Regras {
   regra_apos_empate: 'desempate_decide' | 'mesclar_times';
   empate_conta_vitoria: boolean;
   tipo_fila: 'modo_partida' | 'modo_prancheta';
-  modo_sincronizacao?: 'tempo_real' | 'local_first';
 }
 
 export default function RegrasPage() {
@@ -31,8 +31,7 @@ export default function RegrasPage() {
     regra_empate: 'ambos_saem',
     regra_apos_empate: 'desempate_decide',
     empate_conta_vitoria: false,
-    tipo_fila: 'modo_prancheta',
-    modo_sincronizacao: 'tempo_real'
+    tipo_fila: 'modo_prancheta'
   });
   const [activeTab, setActiveTab] = useState<'4x4' | '5x5' | '6x6' | '7x7'>('5x5');
   const [isLoading, setIsLoading] = useState(false);
@@ -49,81 +48,48 @@ export default function RegrasPage() {
 
   const carregarRegras = async () => {
     try {
-      console.log('🔍 Carregando regras do Supabase...');
+      // Buscar pelada_id e plano das credenciais
+      const peladaId = buscar_pelada_id();
+      const plano = buscar_plano(); // 'free', 'gold' ou 'premium'
       
-      // Buscar ID do cliente logado
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      if (!peladaId) {
         console.log('⚠️ Usuário não logado, usando configurações padrão');
         return;
       }
       
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
+      console.log('🔍 Carregando regras...');
+      console.log('💳 Plano:', plano);
+      console.log('🆔 Pelada ID:', peladaId);
       
-      // Buscar plano atualizado do cliente no Supabase
-      console.log('🔍 Buscando plano do cliente ID:', peladaId);
-      const { data: clienteData, error: clienteError } = await supabase
-        .from('clientes')
-        .select('plano')
-        .eq('id', peladaId)
-        .single();
-      
-      console.log('📦 Resposta do Supabase - clienteData:', clienteData);
-      console.log('⚠️ Erro (se houver):', clienteError);
-      
-      if (clienteData) {
-        const planoAtual = clienteData.plano || 'free';
-        console.log('💳 Plano do usuário:', planoAtual);
-      } else {
-        console.log('❌ Nenhum dado de cliente retornado');
-      }
-      
-      // Buscar regras no Supabase
-      const { data: regrasSupabase, error } = await supabase
-        .from('regras')
-        .select('*')
-        .eq('pelada_id', peladaId)
-        .single();
-      
-      if (error) {
-        if (error.code === 'PGRST116') {
-          console.log('⚠️ Nenhuma configuração encontrada para este cliente, usando padrões');
-        } else {
-          console.error('💥 Erro ao buscar regras:', error);
+      // PLANO FREE: Carregar apenas do localStorage
+      if (plano === 'free') {
+        console.log('📦 Plano FREE: carregando do localStorage');
+        const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+        
+        if (regrasLocal) {
+          const regrasCarregadas = JSON.parse(regrasLocal);
+          setRegras({
+            jogadores_por_time: regrasCarregadas.jogadores_por_time || 5,
+            modelo_sorteio: regrasCarregadas.modelo_sorteio || 'aleatorio',
+            duracao: regrasCarregadas.duracao || 10,
+            vitorias_consecutivas: regrasCarregadas.vitorias_consecutivas || 0,
+            prioridade_retorno: regrasCarregadas.prioridade_retorno || 'mesclar',
+            regra_empate: regrasCarregadas.regra_empate || 'desempate',
+            regra_apos_empate: regrasCarregadas.regra_apos_empate || 'desempate_decide',
+            empate_conta_vitoria: regrasCarregadas.empate_conta_vitoria || false,
+            tipo_fila: regrasCarregadas.tipo_fila || 'modo_prancheta'
+          });
+          console.log('✅ Regras carregadas do localStorage');
         }
         return;
       }
       
-      if (regrasSupabase) {
-        // Compatibilizar valores antigos com novos
-        let tipoFilaAtual = regrasSupabase.tipo_fila || 'modo_prancheta';
-        if (tipoFilaAtual === 'fila1') tipoFilaAtual = 'modo_partida';
-        if (tipoFilaAtual === 'fila2') tipoFilaAtual = 'modo_prancheta';
-        
-        setRegras({
-          jogadores_por_time: regrasSupabase.jogadores_por_time || 5,
-          modelo_sorteio: regrasSupabase.modelo_sorteio || 'equilibrado',
-          duracao: regrasSupabase.duracao || 10,
-          vitorias_consecutivas: regrasSupabase.vitorias_consecutivas || 0,
-          prioridade_retorno: regrasSupabase.prioridade_retorno || 'prioridade',
-          regra_empate: regrasSupabase.regra_empate || 'ambos_saem',
-          regra_apos_empate: regrasSupabase.regra_apos_empate || 'desempate_decide',
-          empate_conta_vitoria: regrasSupabase.empate_conta_vitoria || false,
-          tipo_fila: tipoFilaAtual as 'modo_partida' | 'modo_prancheta',
-          modo_sincronizacao: regrasSupabase.modo_sincronizacao || 'tempo_real'
-        });
-        console.log('✅ Regras carregadas do Supabase:', regrasSupabase);
-      }
+      // PLANO GOLD/PREMIUM: Carregar do localStorage (cache local)
+      // Salva no Supabase principal mas mantém cache local para performance
+      console.log('📦 Plano GOLD/PREMIUM: carregando do cache local');
+      const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
       
-    } catch (error) {
-      console.warn('💥 Erro ao carregar regras:', error);
-      // Fallback para localStorage se Supabase falhar
-      const user = localStorage.getItem('user');
-      if (user) {
-        const userData = JSON.parse(user);
-        const regrasLocal = localStorage.getItem(`regras_${userData.id}`);
-        if (regrasLocal) {
+      if (regrasLocal) {
         const regrasCarregadas = JSON.parse(regrasLocal);
         setRegras({
           jogadores_por_time: regrasCarregadas.jogadores_por_time || 5,
@@ -136,19 +102,18 @@ export default function RegrasPage() {
           empate_conta_vitoria: regrasCarregadas.empate_conta_vitoria || false,
           tipo_fila: regrasCarregadas.tipo_fila || 'modo_prancheta'
         });
-        console.log('✅ Regras carregadas do localStorage (fallback)');
-        }
+        console.log('✅ Regras carregadas do cache local');
       }
+      
+    } catch (error) {
+      console.error('💥 Erro ao carregar regras:', error);
     }
   };
 
   const verificarSessaoAtiva = async () => {
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) return;
-
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) return;
 
       const { data: sessao } = await supabase
         .from('sessoes')
@@ -203,75 +168,33 @@ export default function RegrasPage() {
     console.log('📋 Dados a serem salvos:', regras);
 
     try {
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      const peladaId = buscar_pelada_id();
+      const plano = buscar_plano(); // 'free', 'gold' ou 'premium'
+      
+      if (!peladaId) {
         throw new Error('Usuário não encontrado');
       }
       
-      const user = JSON.parse(userData);
-      const peladaId = user.id;
-      
       // Plano FREE: salvar apenas no localStorage
-      if (!possuiPermissao('usarSupabase')) {
-        console.log('📦 Plano FREE: salvando regras no localStorage');
+      if (plano === 'free') {
+        console.log('📦 Plano FREE: salvando no localStorage');
         localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
-        console.log('✅ Regras salvas no localStorage com sucesso');
+        console.log('✅ Regras salvas com sucesso');
         setMessage('💾 Regras salvas com sucesso!');
         setTimeout(() => setMessage(''), 3000);
+        setIsLoading(false);
         return;
       }
 
-      // Plano GOLD/PREMIUM: salvar no Supabase
-      console.log('☁️ Plano GOLD/PREMIUM: salvando regras no Supabase');
+      // Plano GOLD/PREMIUM: salvar no Supabase Principal E no localStorage
+      console.log('☁️ Plano GOLD/PREMIUM: salvando no Supabase Principal');
       
-      // Detectar mudança de modo de sincronização
-      const { data: regrasAtuais } = await supabase
-        .from('regras')
-        .select('modo_sincronizacao')
-        .eq('pelada_id', peladaId)
-        .single();
+      // Constantes do banco principal
+      const BANCO_PRINCIPAL_URL = 'https://ewcswczqvelhlwpbraea.supabase.co';
+      const BANCO_PRINCIPAL_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks';
       
-      const modoAtual = regrasAtuais?.modo_sincronizacao || 'tempo_real';
-      const modoNovo = regras.modo_sincronizacao || 'tempo_real';
-      
-      // Se HABILITOU modo offline: baixar todas as tabelas
-      if (modoAtual === 'tempo_real' && modoNovo === 'local_first') {
-        console.log('📥 Habilitando modo offline: baixando todas as tabelas...');
-        setMessage('📥 Preparando modo offline... Aguarde.');
-        
-        const downloadResult = await baixarTodasTabelasParaOffline(peladaId);
-        
-        if (!downloadResult.sucesso) {
-          throw new Error(`Falha ao preparar modo offline: ${downloadResult.erro}`);
-        }
-        
-        console.log('✅ Modo offline pronto!', downloadResult.tabelas);
-        setMessage('✅ Modo offline ativado! Todas as tabelas baixadas.');
-      }
-      
-      // Se DESABILITOU modo offline: limpar cache
-      if (modoAtual === 'local_first' && modoNovo === 'tempo_real') {
-        console.log('🧹 Desabilitando modo offline: limpando cache...');
-        
-        // Buscar sessão ativa para limpar cache completo
-        const { data: sessaoAtiva } = await supabase
-          .from('sessoes')
-          .select('id')
-          .eq('pelada_id', peladaId)
-          .eq('status', 'ativa')
-          .single();
-        
-        limparCacheOffline(peladaId, sessaoAtiva?.id);
-        console.log('✅ Modo tempo real restaurado!');
-        setMessage('✅ Modo tempo real restaurado! Cache limpo.');
-      }
-      
-      // Verificar se já existe configuração para este cliente
-      const { data: regrasExistentes } = await supabase
-        .from('regras')
-        .select('id')
-        .eq('pelada_id', peladaId)
-        .single();
+      // Cliente do banco principal
+      const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
       
       const dadosRegras = {
         pelada_id: peladaId,
@@ -283,35 +206,22 @@ export default function RegrasPage() {
         prioridade_retorno: regras.prioridade_retorno,
         regra_empate: regras.regra_empate,
         regra_apos_empate: regras.regra_apos_empate,
-        empate_conta_vitoria: regras.empate_conta_vitoria,
-        modo_sincronizacao: regras.modo_sincronizacao || 'tempo_real'
+        empate_conta_vitoria: regras.empate_conta_vitoria
       };
       
-      let resultado;
+      // Tentar atualizar (upsert usando pelada_id como chave)
+      const { error: upsertError } = await supabasePrincipal
+        .from('regras')
+        .upsert(dadosRegras, { onConflict: 'pelada_id' });
       
-      if (regrasExistentes) {
-        // Atualizar regras existentes
-        resultado = await supabase
-          .from('regras')
-          .update(dadosRegras)
-          .eq('pelada_id', peladaId);
-        console.log('📝 Atualizando regras existentes...');
-      } else {
-        // Inserir novas regras
-        resultado = await supabase
-          .from('regras')
-          .insert([dadosRegras]);
-        console.log('➕ Inserindo novas regras...');
+      if (upsertError) {
+        throw new Error(upsertError.message);
       }
       
-      if (resultado.error) {
-        throw new Error(resultado.error.message);
-      }
-      
-      // Também salvar no localStorage com a chave correta
+      // Salvar também no localStorage (cache local)
       localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
       
-      console.log('✅ Regras salvas no Supabase com sucesso');
+      console.log('✅ Regras salvas no Supabase Principal e cache local');
       setMessage('💾 Regras salvas com sucesso!');
       setTimeout(() => setMessage(''), 3000);
       
@@ -832,39 +742,6 @@ export default function RegrasPage() {
                   </button>
                 </div>
               </div>
-
-              {/* Modo de Sincronização (Gold/Premium) */}
-              {possuiPermissao('usarSupabase') && (
-                <div className="space-y-2">
-                  <label className="block text-sm font-bold text-gray-800 mb-2">
-                    🔄 Modo de Sincronização
-                  </label>
-                  <div className="space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => setRegras({ ...regras, modo_sincronizacao: 'tempo_real' })}
-                      className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all ${
-                        regras.modo_sincronizacao === 'tempo_real'
-                          ? 'bg-green-500 text-white shadow-lg'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Tempo Real (Multi-usuário)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRegras({ ...regras, modo_sincronizacao: 'local_first' })}
-                      className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all ${
-                        regras.modo_sincronizacao === 'local_first'
-                          ? 'bg-purple-500 text-white shadow-lg'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Rápido (Offline + Sync ao finalizar)
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {/* Botões de Ação */}
               <div className="flex gap-3 pt-4">

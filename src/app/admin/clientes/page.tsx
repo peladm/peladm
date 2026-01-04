@@ -12,7 +12,7 @@ const supabase = createClient(
 );
 
 interface Cliente {
-  id: string;
+  pelada_id: string;
   nome: string;
   email?: string;
   telefone?: string;
@@ -20,6 +20,7 @@ interface Cliente {
   plano?: string;
   data_vencimento?: string;
   valor_plano?: number;
+  username?: string;
 }
 
 export default function AdminClientes() {
@@ -125,6 +126,15 @@ export default function AdminClientes() {
       case 'bloqueado': return 'bg-red-50 border-red-200';
       default: return 'bg-gray-50 border-gray-200';
     }
+  };
+
+  const getPlanoColor = (plano: string, isMaster: boolean) => {
+    if (isMaster) return 'bg-gray-100 border-2 border-black';
+    
+    const planoLower = plano?.toLowerCase() || 'free';
+    if (planoLower === 'premium') return 'bg-yellow-50 border-2 border-yellow-400';
+    if (planoLower === 'gold') return 'bg-red-50 border-2 border-red-800';
+    return 'bg-white border border-gray-200';
   };
 
   const salvarAvisoSistema = async () => {
@@ -352,6 +362,16 @@ export default function AdminClientes() {
           return orderA - orderB;
         });
         break;
+      case 'plano':
+        const planoOrder = { 'premium': 1, 'gold': 2, 'free': 3 };
+        clientesOrdenados.sort((a, b) => {
+          const planoA = (a.plano || 'free').toLowerCase();
+          const planoB = (b.plano || 'free').toLowerCase();
+          const orderA = planoOrder[planoA as keyof typeof planoOrder] || 999;
+          const orderB = planoOrder[planoB as keyof typeof planoOrder] || 999;
+          return orderA - orderB;
+        });
+        break;
     }
     
     // Adicionar master no início
@@ -460,6 +480,12 @@ export default function AdminClientes() {
                     >
                       🔰 Status
                     </button>
+                    <button
+                      onClick={() => { setFiltroOrdenacao('plano'); setMostrarFiltro(false); }}
+                      className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors ${filtroOrdenacao === 'plano' ? 'bg-green-50 font-semibold' : ''}`}
+                    >
+                      💎 Plano
+                    </button>
                   </div>
                 )}
               </div>
@@ -490,27 +516,48 @@ export default function AdminClientes() {
           ) : (
             <div className="p-6">
               <div className="space-y-3">
-                {ordenarClientes().map((cliente, index) => {
-                  const isMaster = index === 0 && (cliente.nome.toLowerCase().includes('adm') || cliente.email?.includes('matheus'));
+                {ordenarClientes().map((cliente) => {
+                  const isMaster = cliente.is_master === true;
+                  const planoLower = (cliente.plano || 'free').toLowerCase();
+                  
+                  // Definir classes completas (Tailwind precisa de classes completas)
+                  let cardClasses = '';
+                  
+                  if (isMaster) {
+                    cardClasses = 'border-2 border-black bg-gray-100';
+                  } else if (planoLower === 'premium') {
+                    cardClasses = 'border-2 border-yellow-400 bg-yellow-50';
+                  } else if (planoLower === 'gold') {
+                    cardClasses = 'border-2 border-red-800 bg-red-50';
+                  } else {
+                    cardClasses = 'border-2 border-gray-300 bg-white';
+                  }
+                  
                   return (
                   <div 
-                    key={cliente.id} 
-                    onClick={() => router.push(`/admin/clientes/${cliente.id}`)}
-                    className={`flex items-center justify-between p-4 rounded-lg border transition-all cursor-pointer hover:shadow-lg hover:scale-[1.02] ${getStatusColor(cliente.status)} ${isMaster ? 'ring-2 ring-yellow-400' : ''}`}
+                    key={cliente.pelada_id} 
+                    onClick={() => router.push(`/admin/clientes/${cliente.pelada_id}`)}
+                    className={`flex items-center justify-between p-4 rounded-lg ${cardClasses} transition-all cursor-pointer hover:shadow-lg hover:scale-[1.02]`}
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-800">{cliente.nome}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800">{cliente.nome}</span>
                         {isMaster && <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold">MASTER</span>}
                       </div>
-                      <p className="text-sm text-gray-600">
-                        {cliente.data_vencimento 
-                          ? `Vencimento: ${new Date(cliente.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR')}`
-                          : 'Sem vencimento definido'}
-                      </p>
+                      <div className="space-y-0.5">
+                        <p className="text-xs text-gray-600">
+                          <span className="font-medium">Plano:</span> {cliente.plano || 'Free'}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          <span className="font-medium">Vencimento:</span>{' '}
+                          {cliente.data_vencimento 
+                            ? new Date(cliente.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR')
+                            : 'Sem vencimento definido'}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-xl">{getStatusEmoji(cliente.status)}</span>
+                      <span className="text-2xl">{getStatusEmoji(cliente.status)}</span>
                     </div>
                   </div>
                   );

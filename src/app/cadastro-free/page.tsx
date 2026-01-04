@@ -5,35 +5,31 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
 import { CONTATO } from '../../config/contato';
 
-// Função para gerar pelada_id de 6 caracteres (2 letras do nome + 4 números)
-const gerarPeladaId = (nomeCompleto: string): string => {
-  const numeros = '0123456789';
-  
+// Função para gerar pelada_id de 6 caracteres (2 letras dos primeiros nomes + 4 últimos dígitos do telefone)
+const gerarPeladaId = (nomeCompleto: string, telefone: string): string => {
   // Remover espaços extras e dividir o nome
   const nomes = nomeCompleto.trim().toUpperCase().split(/\s+/);
   
-  let prefixo = '';
-  if (nomes.length >= 2) {
-    // Se tem 2 ou mais nomes: primeira letra de cada
-    prefixo = nomes[0][0] + nomes[1][0];
-  } else {
-    // Se tem apenas 1 nome: duas primeiras letras
-    const primeiroNome = nomes[0];
-    if (primeiroNome.length >= 2) {
-      prefixo = primeiroNome.substring(0, 2);
-    } else {
-      // Se o nome tem apenas 1 letra, duplica
-      prefixo = primeiroNome[0] + primeiroNome[0];
-    }
+  // Validar que tem ao menos 2 nomes
+  if (nomes.length < 2) {
+    throw new Error('Nome completo deve ter ao menos 2 nomes (Nome e Sobrenome)');
   }
   
-  // 4 números aleatórios
-  let codigo = prefixo;
-  for (let i = 0; i < 4; i++) {
-    codigo += numeros[Math.floor(Math.random() * numeros.length)];
-  }
+  // Primeira letra de cada um dos 2 primeiros nomes
+  const prefixo = nomes[0][0] + nomes[1][0];
   
+  // 4 últimos dígitos do telefone
+  const apenasNumeros = telefone.replace(/\D/g, '');
+  const ultimos4 = apenasNumeros.slice(-4);
+  
+  const codigo = prefixo + ultimos4;
   return codigo;
+};
+
+// Função para gerar username (primeiro nome em minúsculo)
+const gerarUsername = (nomeCompleto: string): string => {
+  const nomes = nomeCompleto.trim().split(/\s+/);
+  return nomes[0].toLowerCase();
 };
 
 // Função para gerar senha de 4 números
@@ -50,24 +46,20 @@ const gerarSenha = (): string => {
 const verificarPeladaIdExiste = async (peladaId: string): Promise<boolean> => {
   const { data, error } = await supabase
     .from('clientes')
-    .select('id')
-    .eq('id', peladaId)
+    .select('pelada_id')
+    .eq('pelada_id', peladaId)
     .single();
   
   return !!data && !error;
 };
 
 // Função para gerar pelada_id único
-const gerarPeladaIdUnico = async (nomeCompleto: string): Promise<string> => {
-  let tentativas = 0;
-  let peladaId = gerarPeladaId(nomeCompleto);
+const gerarPeladaIdUnico = async (nomeCompleto: string, telefone: string): Promise<string> => {
+  const peladaId = gerarPeladaId(nomeCompleto, telefone);
   
-  while (await verificarPeladaIdExiste(peladaId)) {
-    tentativas++;
-    if (tentativas > 10) {
-      throw new Error('Erro ao gerar código único. Tente novamente.');
-    }
-    peladaId = gerarPeladaId(nomeCompleto);
+  // Verificar se já existe
+  if (await verificarPeladaIdExiste(peladaId)) {
+    throw new Error('Já existe um cliente com estas iniciais e telefone. Entre em contato com o suporte.');
   }
   
   return peladaId;
@@ -115,21 +107,33 @@ export default function CadastroFree() {
     setLoading(true);
 
     try {
-      // Gerar credenciais baseadas no nome
-      const peladaId = await gerarPeladaIdUnico(formData.nome);
+      // Validar nome completo (mínimo 2 nomes)
+      const nomes = formData.nome.trim().split(/\s+/);
+      if (nomes.length < 2) {
+        alert('❌ Por favor, informe o nome completo (Nome e Sobrenome)!');
+        setLoading(false);
+        return;
+      }
+
+      // Gerar credenciais
+      const peladaId = await gerarPeladaIdUnico(formData.nome, formData.telefone);
+      const username = gerarUsername(formData.nome);
       const senhaAdmin = gerarSenha();
 
       console.log('🆔 Gerando pelada_id:', peladaId);
+      console.log('👤 Gerando username:', username);
       console.log('🔑 Gerando senha admin:', senhaAdmin);
 
-      // 1. Inserir cliente no banco
+      // 1. Inserir cliente no banco com username e senha
       const result = await supabase
         .from('clientes')
         .insert([{
-          id: peladaId,
+          pelada_id: peladaId,
           telefone: formData.telefone,
           nome: formData.nome,
-          plano: 'Free',
+          username: username,
+          senha: senhaAdmin,
+          plano: 'free',
           is_master: false,
           status: 'ativo',
           supabase_url: null,
@@ -148,29 +152,36 @@ export default function CadastroFree() {
         return;
       }
 
-      // 2. Se cliente criado com sucesso, criar usuário admin
+      // 2. Se cliente criado com sucesso
       if (result.data && result.data.length > 0) {
-        console.log('✅ Cliente criado, criando usuário admin...');
-        
-        const resultUsuario = await supabase
-          .from('usuarios')
+        console.log('✅ Cliente criado com sucesso!');
+
+        // 3. Criar regras padrão para o novo cliente
+        console.log('📋 Criando regras padrão...');
+        const resultRegras = await supabase
+          .from('regras')
           .insert([{
             pelada_id: peladaId,
-            username: 'admin',
-            senha: senhaAdmin,
-            role: 'admin'
+            jogadores_por_time: 5,
+            modelo_sorteio: 'aleatorio',
+            duracao: 10,
+            vitorias_consecutivas: 0,
+            prioridade_retorno: 'mesclar',
+            regra_empate: 'desempate',
+            regra_apos_empate: 'desempate_decide',
+            empate_conta_vitoria: false,
+            tipo_fila: 'modo_prancheta',
+            modo_sincronizacao: 'tempo_real'
           }]);
 
-        if (resultUsuario.error) {
-          console.error('❌ Erro ao criar usuário admin:', resultUsuario.error);
-          alert('❌ Cliente criado, mas erro ao criar usuário! Entre em contato com o suporte.');
-          setLoading(false);
-          return;
+        if (resultRegras.error) {
+          console.error('⚠️ Erro ao criar regras padrão:', resultRegras.error);
+          // Não bloqueia o cadastro, apenas avisa
+        } else {
+          console.log('✅ Regras padrão criadas com sucesso!');
         }
 
-        console.log('✅ Usuário admin criado com sucesso!');
-
-        // 3. Salvar credenciais e mostrar modal
+        // 4. Salvar credenciais e mostrar modal
         setCredenciais({ 
           peladaId: peladaId, 
           senha: senhaAdmin 

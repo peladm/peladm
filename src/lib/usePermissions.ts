@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from './supabase';
+import { buscar_plano } from './credenciais';
 import { Plano, Permissoes, PERMISSOES_POR_PLANO, NOMES_PLANOS, CORES_PLANOS } from './permissoes';
 
 interface UsePermissionsReturn {
@@ -22,36 +22,22 @@ export function usePermissions(): UsePermissionsReturn {
 
   const carregarPlano = async () => {
     try {
-      const userData = localStorage.getItem('user');
+      const planoStr = buscar_plano();
       
-      if (!userData) {
+      if (!planoStr) {
         setPlano('Free');
         setLoading(false);
         return;
       }
 
-      const user = JSON.parse(userData);
+      // Converter de lowercase para capitalizado
+      let planoFinal: Plano = 'Free';
       
-      // Buscar plano do cliente no Supabase
-      const { data: cliente, error } = await supabase
-        .from('clientes')
-        .select('plano')
-        .eq('id', user.id)
-        .single();
-
-      if (error || !cliente) {
-        setPlano('Free');
-      } else {
-        // Normalizar plano do banco (lowercase) para o formato TypeScript (capitalizado)
-        const planoNormalizado = cliente.plano?.toLowerCase();
-        let planoFinal: Plano = 'Free';
-        
-        if (planoNormalizado === 'premium') planoFinal = 'Premium';
-        else if (planoNormalizado === 'gold') planoFinal = 'Gold';
-        else if (planoNormalizado === 'free') planoFinal = 'Free';
-        
-        setPlano(planoFinal);
-      }
+      if (planoStr === 'premium') planoFinal = 'Premium';
+      else if (planoStr === 'gold') planoFinal = 'Gold';
+      else if (planoStr === 'free') planoFinal = 'Free';
+      
+      setPlano(planoFinal);
     } catch (err) {
       console.error('Erro ao carregar plano:', err);
       setPlano('Free');

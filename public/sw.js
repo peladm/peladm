@@ -1,5 +1,5 @@
 // Service Worker para PWA - PelADM
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.1.1';
 const CACHE_NAME = `peladm-v${APP_VERSION}`;
 const CACHE_ASSETS = `peladm-assets-v${APP_VERSION}`;
 
@@ -8,12 +8,9 @@ const urlsToCache = [
   '/',
   '/login',
   '/cadastro',
-  '/cadastro-free',
   '/sorteio',
   '/fila',
-  '/page-fila',
   '/regras',
-  '/usuarios',
   '/manifest.json'
 ];
 

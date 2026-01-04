@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '../lib/supabase';
+import { obterCredenciais } from '../lib/credenciais';
 import { obterUsuario, temAcessoCompleto, ehVisitante, ehAdmin } from '../lib/verificarAcesso';
 import AdBanner from './AdBanner';
 import AdInterstitial from './AdInterstitial';
@@ -77,46 +78,65 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
   useEffect(() => {
     const loadUserData = async () => {
       const usuario = obterUsuario();
+      const credenciais = obterCredenciais();
       
-      if (usuario) {
+      if (usuario || credenciais) {
         setIsLoggedIn(true);
-        setTipoAcesso(usuario.tipo_acesso);
         
-        // Visitante tem dados limitados
-        if (ehVisitante()) {
-          setUserName('Visitante');
-          setUserEmail('');
-          setUserPlan(normalizarPlano(usuario.plano || 'Free'));
-          setClienteData(usuario);
+        // Se tem credenciais, usar elas (novo sistema)
+        if (credenciais) {
+          setUserName(credenciais.username);
+          setUserPlan(normalizarPlano(credenciais.plano || 'free'));
+          setClienteData({
+            pelada_id: credenciais.pelada_id,
+            username: credenciais.username,
+            plano: credenciais.plano,
+            supabase_url: credenciais.supabase_url,
+            supabase_anon_key: credenciais.supabase_anon_key
+          });
           return;
         }
         
-        // Acesso completo - buscar dados do Supabase
-        try {
-          const { data: cliente, error } = await supabase
-            .from('clientes')
-            .select('*')
-            .eq('id', usuario.id)
-            .single();
+        // Fallback para sistema antigo (visitante)
+        if (usuario) {
+          setTipoAcesso(usuario.tipo_acesso);
+          
+          // Visitante tem dados limitados
+          if (ehVisitante()) {
+            setUserName('Visitante');
+            setUserEmail('');
+            setUserPlan(normalizarPlano(usuario.plano || 'Free'));
+            setClienteData(usuario);
+            return;
+          }
+          
+          // Acesso completo - buscar dados do Supabase (sistema antigo)
+          try {
+            const { data: cliente, error } = await supabase
+              .from('clientes')
+              .select('*')
+              .eq('pelada_id', usuario.id)
+              .single();
 
-          if (error) {
-            console.error('Erro ao buscar dados do cliente:', error);
+            if (error) {
+              console.error('Erro ao buscar dados do cliente:', error);
+              setUserEmail(usuario.email || '');
+              setUserName(usuario.usuario_pelada || usuario.nome);
+              setUserPlan(normalizarPlano(usuario.plano || 'Free'));
+              setClienteData(usuario);
+            } else {
+              setUserEmail(cliente.email);
+              setUserName(usuario.usuario_pelada || cliente.nome);
+              setUserPlan(normalizarPlano(cliente.plano || 'Free'));
+              setClienteData(cliente);
+            }
+          } catch (err) {
+            console.error('Erro na consulta:', err);
             setUserEmail(usuario.email || '');
             setUserName(usuario.usuario_pelada || usuario.nome);
             setUserPlan(normalizarPlano(usuario.plano || 'Free'));
             setClienteData(usuario);
-          } else {
-            setUserEmail(cliente.email);
-            setUserName(usuario.usuario_pelada || cliente.nome);
-            setUserPlan(normalizarPlano(cliente.plano || 'Free'));
-            setClienteData(cliente);
           }
-        } catch (err) {
-          console.error('Erro na consulta:', err);
-          setUserEmail(usuario.email || '');
-          setUserName(usuario.usuario_pelada || usuario.nome);
-          setUserPlan(normalizarPlano(usuario.plano || 'Free'));
-          setClienteData(usuario);
         }
       }
     };
@@ -128,8 +148,9 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
   const handleLogout = () => {
     console.log('🚪 Realizando logout e limpando cache...');
     
-    // Limpar dados do usuário
+    // Limpar dados do usuário (sistema novo e antigo)
     localStorage.removeItem('user');
+    localStorage.removeItem('credenciais');
     
     // Limpar estados de partida/prancheta
     localStorage.removeItem('partida_em_andamento');
@@ -172,6 +193,55 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
   const navigateTo = (page: string) => {
     router.push(`/${page}`);
     setIsSidebarOpen(false);
+  };
+
+  // Função para relembrar senha via WhatsApp
+  const handleRelembrarSenha = async () => {
+    try {
+      const peladaId = clienteData?.pelada_id;
+      
+      if (!peladaId) {
+        alert('❌ Erro: Pelada ID não encontrado.');
+        return;
+      }
+
+      // Buscar dados do cliente no banco
+      const { data: cliente, error } = await supabase
+        .from('clientes')
+        .select('username, senha, telefone, nome')
+        .eq('pelada_id', peladaId)
+        .single();
+
+      if (error || !cliente) {
+        alert('❌ Erro ao buscar dados. Tente novamente.');
+        console.error('Erro ao buscar cliente:', error);
+        return;
+      }
+
+      // Montar mensagem de credenciais
+      const mensagem = `🔐 *Suas Credenciais - PelADM*\n\n` +
+        `Olá *${cliente.nome}*!\n\n` +
+        `Aqui estão suas credenciais de acesso:\n\n` +
+        `📋 *Pelada ID:* ${peladaId}\n` +
+        `👤 *Usuário:* ${cliente.username}\n` +
+        `🔑 *Senha:* ${cliente.senha}\n\n` +
+        `Guarde essas informações em local seguro! 🔒`;
+
+      // Remover caracteres especiais do telefone
+      const telefone = cliente.telefone.replace(/\D/g, '');
+      
+      // Abrir WhatsApp do próprio cliente com a mensagem pronta
+      const urlWhatsApp = `https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`;
+      window.open(urlWhatsApp, '_blank');
+      
+      alert('✅ WhatsApp aberto! Clique em "Enviar" para receber suas credenciais.');
+      
+      setIsSidebarOpen(false);
+      
+    } catch (error) {
+      console.error('Erro ao relembrar senha:', error);
+      alert('❌ Erro ao processar. Tente novamente.');
+    }
   };
 
   // Função para verificar atualizações manualmente
@@ -277,13 +347,13 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                 {/* Detalhes do usuário logado */}
                 <div className="mb-4 p-3 bg-gray-50 rounded-lg border">
                   <div className="text-sm text-gray-600 mb-2">
-                    <span className="font-bold text-green-600">Versão {userPlan}</span>
+                    Pelada ID: <span className="font-bold text-gray-800">{clienteData?.pelada_id || 'N/A'}</span>
                   </div>
                   <div className="text-sm text-gray-600 mb-2">
-                    Pelada ID: <span className="font-bold text-gray-800">{clienteData?.id || 'N/A'}</span>
+                    Usuário: <span className="font-bold text-gray-800">{clienteData?.username || 'N/A'}</span>
                   </div>
                   <div className="text-sm text-gray-600">
-                    Usuário: <span className="font-bold text-gray-800">{ehVisitante() ? 'Visitante' : userName}</span>
+                    Plano: <span className="font-bold text-green-600">{userPlan}</span>
                   </div>
                 </div>
                 
@@ -322,18 +392,15 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             </div>
           )}
 
-          {/* Botão Gerenciar Usuários */}
+          {/* Botão Relembrar Senha */}
           {isLoggedIn && (
             <div className="px-6 pb-4">
               <button
-                onClick={() => {
-                  navigateTo('usuarios');
-                  toggleSidebar();
-                }}
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 shadow-md"
+                onClick={handleRelembrarSenha}
+                className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 shadow-md"
               >
-                <span>👥</span>
-                <span>Manut. Usuários</span>
+                <span>🔑</span>
+                <span>Relembrar Senha</span>
               </button>
             </div>
           )}
@@ -563,8 +630,8 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Regras</span>
                 </button>
               </>
-            ) : title === 'Usuários' ? (
-              // Rodapé do USUÁRIOS (mesmo padrão Home/Cadastro/Sorteio)
+            ) : false ? (
+              // Removido: rodapé de usuários
               <>
                 <button
                   onClick={() => navigateTo('')}
