@@ -2117,7 +2117,8 @@ export default function FilaPage() {
         } catch (syncError) {
           console.error('❌ ========== ERRO NO SYNC PREMIUM ==========');
           console.error('Erro:', syncError);
-          alert(`❌ Erro ao sincronizar dados Premium:\n${syncError.message}\n\nO encerramento foi abortado. Verifique os logs no console.`);
+          const errorMessage = syncError instanceof Error ? syncError.message : String(syncError);
+          alert(`❌ Erro ao sincronizar dados Premium:\n${errorMessage}\n\nO encerramento foi abortado. Verifique os logs no console.`);
           return; // ABORTA o encerramento
         }
       }
@@ -2223,7 +2224,8 @@ export default function FilaPage() {
         } catch (syncError) {
           console.error('❌ ========== ERRO NO SYNC JOGADORES ==========');
           console.error('Erro:', syncError);
-          alert(`❌ Erro ao sincronizar jogadores:\n${syncError.message}\n\nO encerramento foi abortado. Verifique os logs no console.`);
+          const errorMessage = syncError instanceof Error ? syncError.message : String(syncError);
+          alert(`❌ Erro ao sincronizar jogadores:\n${errorMessage}\n\nO encerramento foi abortado. Verifique os logs no console.`);
           return; // ABORTA o encerramento
         }
       }
@@ -2276,7 +2278,8 @@ export default function FilaPage() {
     } catch (error) {
       console.error('❌ ========== ERRO CRÍTICO NO ENCERRAMENTO ==========');
       console.error('Erro:', error);
-      alert(`❌ Erro ao encerrar pelada:\n${error.message || error}\n\nO encerramento foi abortado. Verifique os logs no console.`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`❌ Erro ao encerrar pelada:\n${errorMessage}\n\nO encerramento foi abortado. Verifique os logs no console.`);
       setLoadingEncerramento(false); // Re-habilitar botão em caso de erro
     }
   };
