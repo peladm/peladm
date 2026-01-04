@@ -28,7 +28,7 @@ export default function AdminClientes() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [filtroOrdenacao, setFiltroOrdenacao] = useState<'nome' | 'vencimento' | 'status'>('nome');
+  const [filtroOrdenacao, setFiltroOrdenacao] = useState<'nome' | 'vencimento' | 'status' | 'plano'>('nome');
   
   // Estados dos modais de cada template
   const [modalNovidades, setModalNovidades] = useState(false);
