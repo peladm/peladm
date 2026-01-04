@@ -1714,7 +1714,7 @@ export default function FilaPage() {
         .sort();
 
       // Calcular total de gols
-      const totalGolsCalculado = artilheiros.reduce((total, artilheiro) => total + artilheiro.gols, 0);
+      const totalGolsCalculado = artilheiros.reduce((total: number, artilheiro: any) => total + artilheiro.gols, 0);
       
       console.log('🏆 Artilheiros:', artilheiros);
       console.log('🙈 Sem gols:', semGols);
