@@ -862,7 +862,7 @@ export default function SorteioPage() {
       // 4.2. JOGADORES NÃO SELECIONADOS PARA O SORTEIO - status "reserva"
       const jogadoresReserva = todosJogadores.filter((j: any) => !nomesJogadoresNaFila.has(j.nome));
       
-      jogadoresReserva.forEach((jogadorDB) => {
+      jogadoresReserva.forEach((jogadorDB: any) => {
         filaLocal.push({
           id: `fila_reserva_${Date.now()}_${jogadorDB.nome}`,
           pelada_id: peladaId,
