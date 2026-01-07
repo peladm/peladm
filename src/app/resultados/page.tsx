@@ -180,6 +180,8 @@ export default function ResultadosPage() {
         return;
       }
       
+      const supabase = getClienteSupabase();
+      
       // Buscar senha do cliente no Supabase
       const { data: cliente, error } = await supabase
         .from('clientes')
