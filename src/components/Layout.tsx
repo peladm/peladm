@@ -697,24 +697,17 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                 </button>
                 <button
                   onClick={() => {
-                    if (isClient && tipoAcesso === 'completo') {
-                      if (onAdminClick) {
-                        onAdminClick();
-                      } else {
-                        alert('🔒 Área administrativa - Em desenvolvimento');
-                      }
+                    if (onAdminClick) {
+                      onAdminClick();
                     } else {
-                      alert('🚫 Acesso negado. Apenas usuários completos podem acessar o Admin.');
+                      alert('🔒 Área administrativa - Em desenvolvimento');
                     }
                   }}
-                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
-                    isClient && tipoAcesso === 'completo' ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-300 cursor-not-allowed opacity-50'
-                  }`}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400 hover:text-red-600 hover:bg-red-50"
                   style={{ flex: 1 }}
                   title="Área administrativa"
-                  disabled={!isClient || tipoAcesso !== 'completo'}
                 >
-                  <span className="text-2xl">{isClient && tipoAcesso === 'completo' ? '🔒' : '🚫'}</span>
+                  <span className="text-2xl">🔒</span>
                   <span className="text-xs font-medium mt-1">Admin</span>
                 </button>
               </>

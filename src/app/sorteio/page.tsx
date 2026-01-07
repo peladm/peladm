@@ -803,8 +803,18 @@ export default function SorteioPage() {
           throw new Error('Falha ao carregar jogadores do Supabase');
         }
         
-        localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresSupabase));
-        console.log(`✅ ${jogadoresSupabase.length} jogadores baixados do Supabase`);
+        // Zerar estatísticas ao baixar jogadores do Supabase
+        const jogadoresZerados = (jogadoresSupabase || []).map(jogador => ({
+          ...jogador,
+          jogos: 0,
+          gols: 0,
+          vitorias: 0,
+          empates: 0,
+          derrotas: 0
+        }));
+        
+        localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresZerados));
+        console.log(`✅ ${jogadoresZerados.length} jogadores baixados do Supabase (estatísticas zeradas)`);
       }
       
       // 2. BUSCAR TODOS OS JOGADORES CADASTRADOS DO LOCALSTORAGE

@@ -677,7 +677,51 @@ export default function FilaPage() {
   };
 
   // Função para registrar gol
-  const registrarGol = (jogadorId: string, time: 'A' | 'B') => {
+  const registrarGol = (jogadorIdFila: string, time: 'A' | 'B') => {
+    // Se for gol contra, usar ID como está
+    if (jogadorIdFila === 'gol_contra') {
+      // Incrementar placar
+      if (time === 'A') {
+        setPlacarTimeA(prev => {
+          const novoPlacar = prev + 1;
+          atualizarPlacarNoLocalStorage('A', novoPlacar);
+          return novoPlacar;
+        });
+      } else {
+        setPlacarTimeB(prev => {
+          const novoPlacar = prev + 1;
+          atualizarPlacarNoLocalStorage('B', novoPlacar);
+          return novoPlacar;
+        });
+      }
+      
+      setGolsJogadores(prev => ({
+        ...prev,
+        [jogadorIdFila]: (prev[jogadorIdFila] || 0) + 1
+      }));
+      
+      setHistoricoAcoes(prev => [...prev, { tipo: 'gol', time, jogadorId: jogadorIdFila }]);
+      setSelecionandoGolPara(null);
+      console.log(`⚽ Gol contra registrado no Time ${time}`);
+      return;
+    }
+    
+    // Buscar ID real do jogador na tabela jogadores
+    const peladaId = buscar_pelada_id();
+    const jogadoresKey = `jogadores_${peladaId}`;
+    const jogadoresStr = localStorage.getItem(jogadoresKey);
+    const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+    
+    // Buscar jogador na lista de times jogando para pegar o nome
+    const jogadorFila = [...time1, ...time2].find(j => j.id === jogadorIdFila);
+    const nomeJogador = jogadorFila?.nome;
+    
+    // Buscar ID real pelo nome
+    const jogadorReal = todosJogadores.find((j: any) => j.nome === nomeJogador);
+    const jogadorIdReal = jogadorReal?.id || jogadorIdFila;
+    
+    console.log(`⚽ DEBUG registrarGol: ID fila=${jogadorIdFila}, nome=${nomeJogador}, ID real=${jogadorIdReal}`);
+    
     // Incrementar placar
     if (time === 'A') {
       setPlacarTimeA(prev => {
@@ -695,19 +739,19 @@ export default function FilaPage() {
       });
     }
     
-    // Registrar gol do jogador
+    // Registrar gol do jogador usando ID REAL
     setGolsJogadores(prev => ({
       ...prev,
-      [jogadorId]: (prev[jogadorId] || 0) + 1
+      [jogadorIdReal]: (prev[jogadorIdReal] || 0) + 1
     }));
     
-    // Adicionar ao histórico
-    setHistoricoAcoes(prev => [...prev, { tipo: 'gol', time, jogadorId }]);
+    // Adicionar ao histórico usando ID REAL
+    setHistoricoAcoes(prev => [...prev, { tipo: 'gol', time, jogadorId: jogadorIdReal }]);
     
     // Desativar modo seleção
     setSelecionandoGolPara(null);
     
-    console.log(`⚽ Gol registrado: Jogador ${jogadorId} do Time ${time}`);
+    console.log(`⚽ Gol registrado: Jogador ${nomeJogador} (ID real: ${jogadorIdReal}) do Time ${time}`);
   };
 
   // Função auxiliar para atualizar placar no localStorage
@@ -1413,7 +1457,16 @@ export default function FilaPage() {
       .select('*')
       .eq('pelada_id', peladaId);
     
-    const todosJogadores = jogadoresData || [];
+    // Zerar estatísticas ao baixar jogadores do Supabase
+    const todosJogadores = (jogadoresData || []).map(jogador => ({
+      ...jogador,
+      jogos: 0,
+      gols: 0,
+      vitorias: 0,
+      empates: 0,
+      derrotas: 0
+    }));
+    
     const fila = filaData || [];
     
     // Filtrar por status na tabela fila e enriquecer com dados dos jogadores
@@ -2035,8 +2088,8 @@ export default function FilaPage() {
                   id: jogo.id,
                   sessao_id: jogo.sessao_id,
                   numero_jogo: jogo.numero_jogo,
-                  time_a: jogo.time_a,
-                  time_b: jogo.time_b,
+                  time_a: jogo.time_a.map((j: any) => j.nome || j),
+                  time_b: jogo.time_b.map((j: any) => j.nome || j),
                   placar_a: jogo.placar_a,
                   placar_b: jogo.placar_b,
                   status: jogo.status,
@@ -3011,12 +3064,6 @@ export default function FilaPage() {
       
       // === SALVAR JOGO E ESTATÍSTICAS NO LOCALSTORAGE (para deploy posterior) ===
       
-      // Incrementar contador de partidas
-      const contadorKey = `partidas_finalizadas_${sessaoId}`;
-      const partidasFinalizadas = parseInt(localStorage.getItem(contadorKey) || '0');
-      const numeroJogo = partidasFinalizadas + 1;
-      localStorage.setItem(contadorKey, String(numeroJogo));
-      
       // ============================================
       // SALVAR JOGO NA TABELA JOGOS (todos os planos)
       // ============================================
@@ -3024,18 +3071,32 @@ export default function FilaPage() {
       const jogosStr = localStorage.getItem(jogosKey);
       const jogos = jogosStr ? JSON.parse(jogosStr) : [];
       
-      // Montar times com informações completas
-      const timeACompleto = time1.map(jogador => ({
-        id: jogador.id || `temp_${jogador.nome}`,
-        nome: jogador.nome,
-        nivel: 3, // Nível padrão (pode melhorar depois pegando do jogador)
-      }));
+      // Calcular número do jogo baseado na quantidade de jogos existentes
+      const numeroJogo = jogos.length + 1;
       
-      const timeBCompleto = time2.map(jogador => ({
-        id: jogador.id || `temp_${jogador.nome}`,
-        nome: jogador.nome,
-        nivel: 3,
-      }));
+      // Buscar jogadores do localStorage para pegar IDs reais
+      const jogadoresKey = `jogadores_${peladaId}`;
+      const jogadoresStr = localStorage.getItem(jogadoresKey);
+      const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+      
+      // Montar times com informações completas usando ID real da tabela jogadores
+      const timeACompleto = time1.map(jogador => {
+        const jogadorDB = todosJogadores.find((j: any) => j.nome === jogador.nome);
+        return {
+          id: jogadorDB?.id || jogador.id || `temp_${jogador.nome}`,
+          nome: jogador.nome,
+          nivel: jogadorDB?.nivel || 3,
+        };
+      });
+      
+      const timeBCompleto = time2.map(jogador => {
+        const jogadorDB = todosJogadores.find((j: any) => j.nome === jogador.nome);
+        return {
+          id: jogadorDB?.id || jogador.id || `temp_${jogador.nome}`,
+          nome: jogador.nome,
+          nivel: jogadorDB?.nivel || 3,
+        };
+      });
       
       // Determinar vencedor para registro
       let timeVencedorRegistro: 'A' | 'B' | 'empate' | null = null;
@@ -3100,6 +3161,8 @@ export default function FilaPage() {
         const gols = golsStr ? JSON.parse(golsStr) : [];
         
         console.log('⚽ DEBUG: Gols já salvos anteriormente:', gols.length);
+        console.log('⚽ DEBUG: timeACompleto:', timeACompleto.map(j => ({ id: j.id, nome: j.nome })));
+        console.log('⚽ DEBUG: timeBCompleto:', timeBCompleto.map(j => ({ id: j.id, nome: j.nome })));
         
         // Função para gerar UUID válido
         const gerarUUID = () => {
@@ -3111,37 +3174,46 @@ export default function FilaPage() {
         };
         
         // Salvar gols - procurar por ID ou NOME
+        console.log('⚽ DEBUG: Iniciando processamento de golsJogadores:', golsJogadores);
         Object.entries(golsJogadores).forEach(([jogadorIdOuNome, quantidade]) => {
           console.log(`⚽ Processando: ${jogadorIdOuNome} = ${quantidade} gols`);
           
           // Tentar encontrar por ID primeiro, depois por nome
           const jogadorTimeA = timeACompleto.find(j => j.id === jogadorIdOuNome || j.nome === jogadorIdOuNome);
           if (jogadorTimeA) {
-            console.log(`   ✅ Encontrado no Time A: ${jogadorTimeA.nome}`);
+            console.log(`   ✅ Encontrado no Time A: ${jogadorTimeA.nome} (ID: ${jogadorTimeA.id})`);
             for (let i = 0; i < quantidade; i++) {
-              gols.push({
+              const novoGol = {
                 id: gerarUUID(),
                 jogo_id: novoJogo.id,
                 jogador_id: jogadorTimeA.id,
                 time: 'A',
                 created_at: new Date().toISOString(),
-              });
+              };
+              gols.push(novoGol);
+              console.log(`   📝 Gol registrado:`, novoGol);
             }
+          } else {
+            console.log(`   ❌ NÃO encontrado no Time A`);
           }
           
           // Verificar se é do Time B
           const jogadorTimeB = timeBCompleto.find(j => j.id === jogadorIdOuNome || j.nome === jogadorIdOuNome);
           if (jogadorTimeB) {
-            console.log(`   ✅ Encontrado no Time B: ${jogadorTimeB.nome}`);
+            console.log(`   ✅ Encontrado no Time B: ${jogadorTimeB.nome} (ID: ${jogadorTimeB.id})`);
             for (let i = 0; i < quantidade; i++) {
-              gols.push({
+              const novoGol = {
                 id: gerarUUID(),
                 jogo_id: novoJogo.id,
                 jogador_id: jogadorTimeB.id,
                 time: 'B',
                 created_at: new Date().toISOString(),
-              });
+              };
+              gols.push(novoGol);
+              console.log(`   📝 Gol registrado:`, novoGol);
             }
+          } else {
+            console.log(`   ❌ NÃO encontrado no Time B`);
           }
         });
         
@@ -4233,7 +4305,16 @@ export default function FilaPage() {
                     {time1.map((jogador, index) => {
                       const estaSelecionado = jogadorSelecionadoTroca?.id === jogador.id;
                       const estaEsperandoGol = selecionandoGolPara === 'A';
-                      const golsDoJogador = golsJogadores[jogador.id] || 0;
+                      
+                      // Buscar ID real do jogador pelo nome
+                      const peladaId = buscar_pelada_id();
+                      const jogadoresKey = `jogadores_${peladaId}`;
+                      const jogadoresStr = localStorage.getItem(jogadoresKey);
+                      const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+                      const jogadorReal = todosJogadores.find((j: any) => j.nome === jogador.nome);
+                      const jogadorIdReal = jogadorReal?.id || jogador.id;
+                      
+                      const golsDoJogador = golsJogadores[jogadorIdReal] || 0;
                       return (
                         <tr 
                           key={jogador.id}
@@ -4335,7 +4416,16 @@ export default function FilaPage() {
                     {time2.map((jogador, index) => {
                       const estaSelecionado = jogadorSelecionadoTroca?.id === jogador.id;
                       const estaEsperandoGol = selecionandoGolPara === 'B';
-                      const golsDoJogador = golsJogadores[jogador.id] || 0;
+                      
+                      // Buscar ID real do jogador pelo nome
+                      const peladaId = buscar_pelada_id();
+                      const jogadoresKey = `jogadores_${peladaId}`;
+                      const jogadoresStr = localStorage.getItem(jogadoresKey);
+                      const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+                      const jogadorReal = todosJogadores.find((j: any) => j.nome === jogador.nome);
+                      const jogadorIdReal = jogadorReal?.id || jogador.id;
+                      
+                      const golsDoJogador = golsJogadores[jogadorIdReal] || 0;
                       return (
                         <tr 
                           key={jogador.id}

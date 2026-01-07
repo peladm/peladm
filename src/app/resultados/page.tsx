@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '../../components/Layout';
-import { supabase } from '../../lib/supabase';
+import { getClienteSupabase } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
+import { buscar_pelada_id } from '../../lib/credenciais';
 
 interface Jogador {
   id: string;
@@ -111,12 +112,23 @@ export default function ResultadosPage() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [jogosFiltrados]);
 
-  const buscarJogador = (jogadorId: string): string => {
-    const jogador = jogadores[jogadorId];
-    if (!jogador) {
-      console.log('⚠️ Jogador não encontrado:', jogadorId);
+  const buscarJogador = (jogadorId: any): string => {
+    // Se for objeto com nome, retornar nome diretamente
+    if (typeof jogadorId === 'object' && jogadorId?.nome) {
+      return jogadorId.apelido || jogadorId.nome;
     }
-    return jogador ? (jogador.apelido || jogador.nome) : jogadorId.substring(0, 8);
+    
+    // Se for string, buscar no map
+    const idStr = String(jogadorId);
+    const jogador = jogadores[idStr];
+    
+    if (jogador) {
+      return jogador.apelido || jogador.nome;
+    }
+    
+    // Fallback: retornar os primeiros 8 caracteres do ID
+    console.log('⚠️ Jogador não encontrado:', jogadorId);
+    return idStr.substring(0, 8);
   };
 
   const compartilharResultado = async (jogo: Jogo, numeroPartida: number) => {
@@ -162,19 +174,17 @@ export default function ResultadosPage() {
 
   const validarSenhaAdmin = async () => {
     try {
-      const userStorage = localStorage.getItem('user');
-      if (!userStorage) {
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) {
         setErroSenha('Usuário não está logado');
         return;
       }
-
-      const userData = JSON.parse(userStorage);
       
       // Buscar senha do cliente no Supabase
       const { data: cliente, error } = await supabase
         .from('clientes')
         .select('senha')
-        .eq('pelada_id', userData.id)
+        .eq('pelada_id', peladaId)
         .single();
 
       if (error || !cliente) {
@@ -397,16 +407,24 @@ export default function ResultadosPage() {
   const carregarDados = async () => {
     try {
       setLoading(true);
-      const userData = localStorage.getItem('user');
-      if (!userData) {
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) {
         router.push('/login');
         return;
       }
 
-      // Buscar todos os jogadores (sem filtro, banco dedicado)
-      const { data: jogadoresData, error: erroJogadores } = await supabase
+      // Obter cliente Supabase dedicado
+      const clienteDb = await getClienteSupabase();
+      if (!clienteDb) {
+        console.error('❌ Erro ao obter cliente Supabase');
+        return;
+      }
+
+      // Buscar todos os jogadores DO SUPABASE DEDICADO (filtrado por pelada_id)
+      const { data: jogadoresData, error: erroJogadores } = await clienteDb
         .from('jogadores')
-        .select('*');
+        .select('*')
+        .eq('pelada_id', peladaId);
       
       if (erroJogadores) {
         console.error('❌ Erro ao buscar jogadores:', erroJogadores);
@@ -419,13 +437,14 @@ export default function ResultadosPage() {
         const jogadoresMap: { [id: string]: Jogador } = {};
         jogadoresData.forEach(j => {
           jogadoresMap[j.id] = j;
+          jogadoresMap[j.nome] = j; // Indexar também pelo nome para busca
         });
         setJogadores(jogadoresMap);
         console.log('📋 Map de jogadores:', Object.keys(jogadoresMap).length);
       }
 
       // Buscar todos os jogos finalizados (banco dedicado premium)
-      const { data: jogosData, error } = await supabase
+      const { data: jogosData, error } = await clienteDb
         .from('jogos')
         .select('*')
         .eq('status', 'finalizado')
@@ -439,7 +458,7 @@ export default function ResultadosPage() {
       // Buscar gols de todos os jogos
       if (jogosData && jogosData.length > 0) {
         const jogosIds = jogosData.map(j => j.id);
-        const { data: golsData } = await supabase
+        const { data: golsData } = await clienteDb
           .from('gols')
           .select('*')
           .in('jogo_id', jogosIds);
@@ -637,15 +656,30 @@ export default function ResultadosPage() {
                     Partida #{jogosFiltrados.length - index}
                   </div>
                   <div className="text-right">
-                    {(jogo.data_inicio && jogo.data_fim) && (
+                    {jogo.tempo_decorrido !== undefined && (
                       <div className="text-sm font-semibold text-gray-700">
                         ⏱️ {(() => {
-                          const inicio = new Date(jogo.data_inicio);
-                          const fim = new Date(jogo.data_fim);
-                          const duracaoMs = fim.getTime() - inicio.getTime();
-                          const duracaoSeg = Math.floor(duracaoMs / 1000);
-                          const minutos = Math.floor(duracaoSeg / 60);
-                          const segundos = duracaoSeg % 60;
+                          // tempo_decorrido = tempo que RESTOU (cronômetro regressivo)
+                          // Buscar tempo inicial da partida (geralmente 10min = 600seg)
+                          const tempoInicial = 600; // 10 minutos padrão
+                          const tempoRestante = jogo.tempo_decorrido;
+                          const duracaoReal = tempoInicial - tempoRestante;
+                          
+                          // Se for negativo (cronômetro passou do tempo), usar tempo das datas
+                          if (duracaoReal < 0 && jogo.data_inicio && jogo.data_fim) {
+                            const inicio = new Date(jogo.data_inicio);
+                            const fim = new Date(jogo.data_fim);
+                            const duracaoMs = fim.getTime() - inicio.getTime();
+                            if (duracaoMs > 0) {
+                              const duracaoSeg = Math.floor(duracaoMs / 1000);
+                              const minutos = Math.floor(duracaoSeg / 60);
+                              const segundos = duracaoSeg % 60;
+                              return `${minutos}:${String(segundos).padStart(2, '0')}`;
+                            }
+                          }
+                          
+                          const minutos = Math.floor(Math.abs(duracaoReal) / 60);
+                          const segundos = Math.abs(duracaoReal) % 60;
                           return `${minutos}:${String(segundos).padStart(2, '0')}`;
                         })()}
                       </div>
@@ -675,9 +709,12 @@ export default function ResultadosPage() {
                   <div className="bg-green-50 rounded-lg p-3 border border-green-200">
                     <div className="font-semibold text-green-700 mb-2 text-center">Time 1</div>
                     {jogo.time_a.map((jogadorId, i) => {
-                      const golsJogador = (jogo.gols || []).filter(
-                        g => g.jogador_id === jogadorId && g.time === 'A'
-                      ).length;
+                      // Obter nome do jogador para comparação
+                      const nomeJogador = buscarJogador(jogadorId);
+                      const golsJogador = (jogo.gols || []).filter(g => {
+                        const nomeGol = buscarJogador(g.jogador_id);
+                        return (g.jogador_id === jogadorId || nomeGol === nomeJogador) && g.time === 'A';
+                      }).length;
                       const substituicaoEntrada = (jogo.substituicoes || []).find(s => s.jogador_entrou_id === jogadorId && s.time === 'A');
                       
                       return (
@@ -686,9 +723,11 @@ export default function ResultadosPage() {
                             <div className="bg-green-100 border-l-4 border-green-500 px-2 py-1 my-1">
                               <div className="text-red-600 text-xs">↓ {buscarJogador(substituicaoEntrada.jogador_saiu_id)}
                                 {(() => {
-                                  const golsSaiu = (jogo.gols || []).filter(
-                                    g => g.jogador_id === substituicaoEntrada.jogador_saiu_id && g.time === 'A'
-                                  ).length;
+                                  const nomeSaiu = buscarJogador(substituicaoEntrada.jogador_saiu_id);
+                                  const golsSaiu = (jogo.gols || []).filter(g => {
+                                    const nomeGol = buscarJogador(g.jogador_id);
+                                    return (g.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeGol === nomeSaiu) && g.time === 'A';
+                                  }).length;
                                   return golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '';
                                 })()}
                               </div>
@@ -709,9 +748,12 @@ export default function ResultadosPage() {
                   <div className="bg-gray-100 rounded-lg p-3 border border-gray-300">
                     <div className="font-semibold text-gray-800 mb-2 text-center">Time 2</div>
                     {jogo.time_b.map((jogadorId, i) => {
-                      const golsJogador = (jogo.gols || []).filter(
-                        g => g.jogador_id === jogadorId && g.time === 'B'
-                      ).length;
+                      // Obter nome do jogador para comparação
+                      const nomeJogador = buscarJogador(jogadorId);
+                      const golsJogador = (jogo.gols || []).filter(g => {
+                        const nomeGol = buscarJogador(g.jogador_id);
+                        return (g.jogador_id === jogadorId || nomeGol === nomeJogador) && g.time === 'B';
+                      }).length;
                       const substituicaoEntrada = (jogo.substituicoes || []).find(s => s.jogador_entrou_id === jogadorId && s.time === 'B');
                       
                       return (
@@ -720,9 +762,11 @@ export default function ResultadosPage() {
                             <div className="bg-blue-50 border-l-4 border-blue-500 px-2 py-1 my-1">
                               <div className="text-red-600 text-xs">↓ {buscarJogador(substituicaoEntrada.jogador_saiu_id)}
                                 {(() => {
-                                  const golsSaiu = (jogo.gols || []).filter(
-                                    g => g.jogador_id === substituicaoEntrada.jogador_saiu_id && g.time === 'B'
-                                  ).length;
+                                  const nomeSaiu = buscarJogador(substituicaoEntrada.jogador_saiu_id);
+                                  const golsSaiu = (jogo.gols || []).filter(g => {
+                                    const nomeGol = buscarJogador(g.jogador_id);
+                                    return (g.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeGol === nomeSaiu) && g.time === 'B';
+                                  }).length;
                                   return golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '';
                                 })()}
                               </div>

@@ -68,7 +68,6 @@ export interface Permissoes {
  *    - sessao_ativa
  *    - fila_ativa (deletada ao encerrar - SEM DEPLOY)
  *    - jogos_${sessaoId}
- *    - partidas_finalizadas_${sessaoId}
  *    - jogadores_${peladaId} (veja detalhes abaixo)
  *    
  *    Gold/Premium adicional (localStorage):
