@@ -1195,7 +1195,7 @@ export default function Estatisticas() {
                       {/* Resumo de Vitórias/Empates/Derrotas */}
                       <div className="grid grid-cols-4 gap-3 mb-4">
                         <div className="bg-white rounded-lg shadow p-4 flex flex-col items-center justify-center">
-                          {stats2 ? (
+                          {stats2 && historico2 ? (
                             <p className="text-sm font-bold mb-1">
                               <span className="text-blue-600">{historico.vitorias}</span>
                               <span className="text-gray-400 mx-1">|</span>
@@ -1208,7 +1208,7 @@ export default function Estatisticas() {
                         </div>
 
                         <div className="bg-white rounded-lg shadow p-4 flex flex-col items-center justify-center">
-                          {stats2 ? (
+                          {stats2 && historico2 ? (
                             <p className="text-sm font-bold mb-1">
                               <span className="text-blue-600">{historico.empates}</span>
                               <span className="text-gray-400 mx-1">|</span>
@@ -1221,7 +1221,7 @@ export default function Estatisticas() {
                         </div>
 
                         <div className="bg-white rounded-lg shadow p-4 flex flex-col items-center justify-center">
-                          {stats2 ? (
+                          {stats2 && historico2 ? (
                             <p className="text-sm font-bold mb-1">
                               <span className="text-blue-600">{historico.derrotas}</span>
                               <span className="text-gray-400 mx-1">|</span>
@@ -1234,7 +1234,7 @@ export default function Estatisticas() {
                         </div>
 
                         <div className="bg-white rounded-lg shadow p-4 flex flex-col items-center justify-center">
-                          {stats2 ? (
+                          {stats2 && historico2 ? (
                             <p className="text-sm font-bold mb-1">
                               <span className="text-blue-600">{historico.taxaVitoria}%</span>
                               <span className="text-gray-400 mx-1">|</span>
@@ -1249,7 +1249,7 @@ export default function Estatisticas() {
 
                       {/* Últimos 5 Jogos */}
                       <div className="bg-white rounded-lg shadow p-4 mb-4">
-                        {stats2 ? (
+                        {stats2 && historico2 ? (
                           <>
                             {/* Jogador 1 */}
                             <div className="mb-4">
@@ -1342,7 +1342,7 @@ export default function Estatisticas() {
                           </div>
                           <div className="w-3/5 flex flex-col items-center justify-center border-l border-gray-100">
                             <h2 className="text-xs font-bold text-gray-800">Seq. Vitórias</h2>
-                            {stats2 ? (
+                            {stats2 && historico2 ? (
                               <p className="text-sm font-bold">
                                 <span className="text-green-600">{historico.seqVitorias}</span>
                                 <span className="text-gray-400 mx-1">|</span>
@@ -1360,7 +1360,7 @@ export default function Estatisticas() {
                           </div>
                           <div className="w-3/5 flex flex-col items-center justify-center border-l border-gray-100">
                             <h2 className="text-xs font-bold text-gray-800">Seq. Derrotas</h2>
-                            {stats2 ? (
+                            {stats2 && historico2 ? (
                               <p className="text-sm font-bold">
                                 <span className="text-red-600">{historico.seqDerrotas}</span>
                                 <span className="text-gray-400 mx-1">|</span>
@@ -1378,7 +1378,7 @@ export default function Estatisticas() {
                           </div>
                           <div className="w-3/5 flex flex-col items-center justify-center border-l border-gray-100">
                             <h2 className="text-xs font-bold text-gray-800">Sem Perder</h2>
-                            {stats2 ? (
+                            {stats2 && historico2 ? (
                               <p className="text-xs font-bold">
                                 <span className="text-blue-600">{historico.seqSemPerder}</span>
                                 <span className="text-gray-400 mx-1">|</span>
@@ -1396,7 +1396,7 @@ export default function Estatisticas() {
                           </div>
                           <div className="w-3/5 flex flex-col items-center justify-center border-l border-gray-100">
                             <h2 className="text-xs font-bold text-gray-800">Sem Vencer</h2>
-                            {stats2 ? (
+                            {stats2 && historico2 ? (
                               <p className="text-sm font-bold">
                                 <span className="text-orange-600">{historico.seqSemVencer}</span>
                                 <span className="text-gray-400 mx-1">|</span>
