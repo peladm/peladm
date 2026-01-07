@@ -976,6 +976,8 @@ export default function Estatisticas() {
                         <span className="text-orange-600">{jogador2Selecionado.nome}</span>
                       </h4>
                       {(() => {
+                        if (!stats2 || !historico2) return null;
+                        
                         let pontos1 = 0, pontos2 = 0;
                         
                         // Estatísticas individuais
