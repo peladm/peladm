@@ -211,6 +211,8 @@ export default function ResultadosPage() {
 
   const excluirPartida = async (jogoId: string) => {
     try {
+      const supabase = await getClienteSupabase();
+      
       // Excluir gols da partida
       await supabase
         .from('gols')
@@ -237,6 +239,7 @@ export default function ResultadosPage() {
 
   const excluirTodasPartidas = async () => {
     try {
+      const supabase = await getClienteSupabase();
       const jogosIds = jogosFiltrados.map(j => j.id);
 
       // Excluir todos os gols das partidas filtradas
