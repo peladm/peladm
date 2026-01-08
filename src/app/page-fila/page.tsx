@@ -429,10 +429,12 @@ export default function FilaPage() {
       
       // Buscar regras de empate
       const empateModo = regrasConfig.empate_modo || 'ambos_saem';
-      const empateRetorno = regrasConfig.empate_retorno || 'desempate_decide';
+      const empateRetornoRaw = regrasConfig.regra_apos_empate || regrasConfig.empate_retorno || 'desempate_decide';
+      // Normalizar valor: "mesclar_times" → "mesclar"
+      const empateRetorno = empateRetornoRaw === 'mesclar_times' ? 'mesclar' : empateRetornoRaw;
       const empateContaVitoria = regrasConfig.empate_conta_vitoria || false;
       
-      console.log(`⚖️ Empate modo: ${empateModo} | Retorno: ${empateRetorno} | Conta vitória: ${empateContaVitoria}`);
+      console.log(`⚖️ Empate modo: ${empateModo} | Retorno: ${empateRetorno} (raw: ${empateRetornoRaw}) | Conta vitória: ${empateContaVitoria}`);
       
       // Calcular novas vitórias
       let vitoriasConsecutivasNovas = 0;
@@ -1953,6 +1955,13 @@ export default function FilaPage() {
         return;
       }
       
+      // Buscar modo de partida das regras
+      const regrasStr = localStorage.getItem(`regras_${peladaId}`);
+      const tipoFila = regrasStr ? JSON.parse(regrasStr).tipo_fila : 'modo_prancheta';
+      const isModoPartida = tipoFila === 'modo_partida';
+      
+      console.log('🎮 Modo:', isModoPartida ? 'PARTIDA' : 'PRANCHETA');
+      
       // Validar usando função centralizada (async)
       console.log('🔐 Validando senha...');
       const senhaValida = await validarSenhaPelada(senhaEncerramento);
@@ -1995,8 +2004,11 @@ export default function FilaPage() {
         console.log('  ✓ Removido: fila_ativa');
         localStorage.removeItem(`fila_snapshot_${peladaId}`);
         console.log(`  ✓ Removido: fila_snapshot_${peladaId}`);
+        
+        // ⚠️ FREE: DELETAR TABELA JOGADORES (força recadastro na próxima pelada)
         localStorage.removeItem(`jogadores_${peladaId}`);
-        console.log(`  ✓ Removido: jogadores_${peladaId}`);
+        console.log('  🗑️ ⚠️ DELETADO: jogadores (FREE força recadastro)');
+        
         localStorage.removeItem('partida_em_andamento');
         localStorage.removeItem('modo_partida_estado');
         localStorage.removeItem('modo_prancheta_ativo');
@@ -2064,10 +2076,10 @@ export default function FilaPage() {
       console.log('📦 Sessão a ser finalizada:', sessaoAtiva.id);
       
       // ============================================
-      // SYNC PREMIUM: JOGOS, GOLS, SESSOES
+      // SYNC PREMIUM + MODO PARTIDA: JOGOS, GOLS, SESSOES
       // ============================================
-      if (plano === 'premium') {
-        console.log('☁️ ========== SYNC PREMIUM ==========');
+      if (plano === 'premium' && isModoPartida) {
+        console.log('☁️ ========== SYNC PREMIUM + MODO PARTIDA ==========');
         console.log('☁️ PREMIUM: Sincronizando tabelas com Supabase...');
         
         try {
@@ -2077,14 +2089,15 @@ export default function FilaPage() {
           const jogosStr = localStorage.getItem(jogosKey);
           
           if (jogosStr) {
-            const jogos = JSON.parse(jogosStr);
+            let jogos = JSON.parse(jogosStr);
             console.log(`📊 ${jogos.length} jogos encontrados no localStorage`);
             
-            for (const jogo of jogos) {
+            for (let i = jogos.length - 1; i >= 0; i--) {
+              const jogo = jogos[i];
               console.log(`  ⚙️ Sincronizando jogo #${jogo.numero_jogo}...`);
               const { error } = await clienteDb
                 .from('jogos')
-                .insert({
+                .upsert({
                   id: jogo.id,
                   sessao_id: jogo.sessao_id,
                   numero_jogo: jogo.numero_jogo,
@@ -2093,17 +2106,21 @@ export default function FilaPage() {
                   placar_a: jogo.placar_a,
                   placar_b: jogo.placar_b,
                   status: jogo.status,
-                  time_vencedor: jogo.time_vencedor,
+                  time_vencedor: jogo.time_vencedor === 'A' || jogo.time_vencedor === 'B' ? jogo.time_vencedor : null,
                   tempo_decorrido: jogo.tempo_decorrido,
                   data_inicio: jogo.data_inicio,
                   data_fim: jogo.data_fim,
-                });
+                }, { onConflict: 'id' });
               
               if (error) {
                 console.error(`❌ ERRO ao sincronizar jogo ${jogo.numero_jogo}:`, error);
                 throw new Error(`Falha no sync do jogo ${jogo.numero_jogo}: ${error.message}`);
               }
-              console.log(`  ✓ Jogo #${jogo.numero_jogo} sincronizado`);
+              
+              // ✅ Sucesso: REMOVE do array local (cut)
+              jogos.splice(i, 1);
+              localStorage.setItem(jogosKey, JSON.stringify(jogos));
+              console.log(`  ✓ Jogo #${jogo.numero_jogo} sincronizado e removido do localStorage`);
             }
             
             console.log('✅ Todos os jogos sincronizados com Supabase');
@@ -2117,26 +2134,31 @@ export default function FilaPage() {
           const golsStr = localStorage.getItem(golsKey);
           
           if (golsStr) {
-            const gols = JSON.parse(golsStr);
+            let gols = JSON.parse(golsStr);
             console.log(`⚽ ${gols.length} gols encontrados no localStorage`);
             
-            for (const gol of gols) {
+            for (let i = gols.length - 1; i >= 0; i--) {
+              const gol = gols[i];
               console.log(`  ⚙️ Sincronizando gol ${gol.id.substring(0, 10)}...`);
               const { error } = await clienteDb
                 .from('gols')
-                .insert({
+                .upsert({
                   id: gol.id,
                   jogo_id: gol.jogo_id,
                   jogador_id: gol.jogador_id,
                   time: gol.time,
                   created_at: gol.created_at,
-                });
+                }, { onConflict: 'id' });
               
               if (error) {
                 console.error(`❌ ERRO ao sincronizar gol:`, error);
                 throw new Error(`Falha no sync do gol: ${error.message}`);
               }
-              console.log(`  ✓ Gol sincronizado`);
+              
+              // ✅ Sucesso: REMOVE do array local (cut)
+              gols.splice(i, 1);
+              localStorage.setItem(golsKey, JSON.stringify(gols));
+              console.log(`  ✓ Gol sincronizado e removido do localStorage`);
             }
             
             console.log('✅ Todos os gols sincronizados com Supabase');
@@ -2149,7 +2171,7 @@ export default function FilaPage() {
           console.log(`  ⚙️ Inserindo sessão ${sessaoAtiva.id}...`);
           const { error: sessaoError } = await clienteDb
             .from('sessoes')
-            .insert({
+            .upsert({
               id: sessaoAtiva.id,
               pelada_id: sessaoAtiva.pelada_id,
               data: sessaoAtiva.data,
@@ -2157,12 +2179,16 @@ export default function FilaPage() {
               total_jogadores: sessaoAtiva.total_jogadores,
               vitorias_consecutivas: sessaoAtiva.vitorias_consecutivas,
               observacoes: sessaoAtiva.observacoes,
-            });
+            }, { onConflict: 'id' });
           
           if (sessaoError) {
             console.error('❌ ERRO ao sincronizar sessão:', sessaoError);
             throw new Error(`Falha no sync da sessão: ${sessaoError.message}`);
           }
+          
+          // ✅ Sucesso: marca como sincronizada para controlar sync de estatísticas
+          const sessaoSincronizadaKey = `sessao_sincronizada_${sessaoAtiva.id}`;
+          localStorage.setItem(sessaoSincronizadaKey, 'true');
           console.log('✅ Sessão sincronizada com Supabase');
           
           console.log('✅ Sync Premium concluído com sucesso');
@@ -2177,19 +2203,101 @@ export default function FilaPage() {
       }
       
       // ============================================
-      // SYNC JOGADORES (Gold/Premium) - SOMAR ESTATÍSTICAS
+      // SYNC JOGADORES (Gold/Premium)
       // ============================================
       if (plano === 'gold' || plano === 'premium') {
-        console.log(`👥 ========== SYNC JOGADORES (${plano}) ==========`);
-        console.log(`☁️ ${plano}: Sincronizando jogadores com Supabase (somando estatísticas)...`);
+        console.log(`👥 ========== SYNC JOGADORES (${plano.toUpperCase()}) ==========`);
+        console.log(`🎮 Modo: ${isModoPartida ? 'PARTIDA' : 'PRANCHETA'}`);
         
-        try {
-          const jogadoresKey = `jogadores_${peladaId}`;
-          const jogadoresStr = localStorage.getItem(jogadoresKey);
+        // Verificar se esta sessão já foi sincronizada (evitar soma duplicada)
+        const sessaoSincronizadaKey = `sessao_sincronizada_${sessaoAtiva.id}`;
+        const jaSincronizada = localStorage.getItem(sessaoSincronizadaKey);
+        
+        if (jaSincronizada) {
+          console.log('⚠️ ATENÇÃO: Sessão já foi sincronizada anteriormente!');
+          console.log('⚠️ Pulando sync de jogadores para evitar duplicação de estatísticas');
+        } else if (!isModoPartida) {
+          // MODO PRANCHETA (Gold/Premium): Sync apenas jogadores novos
+          console.log('📋 MODO PRANCHETA: Sincronizando apenas jogadores novos...');
           
-          if (jogadoresStr) {
-            const jogadoresLocal = JSON.parse(jogadoresStr);
-            console.log(`👥 ${jogadoresLocal.length} jogadores encontrados no localStorage`);
+          try {
+            const jogadoresKey = `jogadores_${peladaId}`;
+            const jogadoresStr = localStorage.getItem(jogadoresKey);
+            
+            if (jogadoresStr) {
+              const jogadoresLocal = JSON.parse(jogadoresStr);
+              console.log(`👥 ${jogadoresLocal.length} jogadores encontrados no localStorage`);
+              
+              // Buscar todos os IDs do Supabase
+              const { data: jogadoresSupabase, error: errorBuscaTodos } = await clienteDb
+                .from('jogadores')
+                .select('id')
+                .eq('pelada_id', peladaId);
+              
+              if (errorBuscaTodos) {
+                console.error('❌ Erro ao buscar jogadores:', errorBuscaTodos);
+                throw errorBuscaTodos;
+              }
+              
+              const idsExistentes = new Set((jogadoresSupabase || []).map(j => j.id));
+              const jogadoresNovos = jogadoresLocal.filter((j: any) => !idsExistentes.has(j.id));
+              
+              console.log(`🆕 ${jogadoresNovos.length} jogadores novos encontrados`);
+              
+              if (jogadoresNovos.length > 0) {
+                console.log('☁️ Sincronizando apenas jogadores novos...');
+                
+                for (const jogadorNovo of jogadoresNovos) {
+                  console.log(`  ➕ Inserindo ${jogadorNovo.nome}`);
+                  
+                  const { error } = await clienteDb
+                    .from('jogadores')
+                    .insert({
+                      id: jogadorNovo.id,
+                      nome: jogadorNovo.nome,
+                      nivel: jogadorNovo.nivel,
+                      pelada_id: jogadorNovo.pelada_id,
+                      jogos: 0, // Modo prancheta não contabiliza
+                      vitorias: 0,
+                      derrotas: 0,
+                      empates: 0,
+                      gols: 0,
+                      status: jogadorNovo.status || 'ativo',
+                    });
+                  
+                  if (error) {
+                    console.error(`❌ Erro ao inserir ${jogadorNovo.nome}:`, error);
+                    throw error;
+                  }
+                  console.log(`  ✓ ${jogadorNovo.nome} inserido`);
+                }
+                
+                console.log('✅ Jogadores novos sincronizados');
+              } else {
+                console.log('✅ Nenhum jogador novo para sincronizar');
+              }
+              
+              // Marcar sessão como sincronizada
+              localStorage.setItem(sessaoSincronizadaKey, 'true');
+              console.log('✅ Sessão marcada como sincronizada');
+            }
+          } catch (syncError) {
+            console.error('❌ Erro no sync de jogadores:', syncError);
+            const errorMessage = syncError instanceof Error ? syncError.message : String(syncError);
+            alert(`❌ Erro ao sincronizar jogadores:\n${errorMessage}`);
+            return;
+          }
+        } else {
+          // MODO PARTIDA (Premium only): Sync completo (soma estatísticas)
+          console.log(`☁️ MODO PARTIDA: Sincronizando jogadores (somando estatísticas)...`);
+        
+          try {
+            const jogadoresKey = `jogadores_${peladaId}`;
+            const jogadoresStr = localStorage.getItem(jogadoresKey);
+            
+            if (jogadoresStr) {
+              const jogadoresLocal = JSON.parse(jogadoresStr);
+              console.log(`👥 ${jogadoresLocal.length} jogadores encontrados no localStorage`);
             
             for (const jogadorLocal of jogadoresLocal) {
               console.log(`  ⚙️ Processando ${jogadorLocal.nome}...`);
@@ -2270,6 +2378,10 @@ export default function FilaPage() {
             }
             
             console.log('✅ Jogadores sincronizados com Supabase');
+            
+            // Marcar sessão como sincronizada para evitar duplicação
+            localStorage.setItem(sessaoSincronizadaKey, 'true');
+            console.log('✅ Sessão marcada como sincronizada');
           } else {
             console.log('⚠️ Nenhum jogador encontrado no localStorage');
           }
@@ -2281,7 +2393,8 @@ export default function FilaPage() {
           alert(`❌ Erro ao sincronizar jogadores:\n${errorMessage}\n\nO encerramento foi abortado. Verifique os logs no console.`);
           return; // ABORTA o encerramento
         }
-      }
+      } // Fim else (modo partida)
+    } // Fim if Gold/Premium
       
       // ============================================
       // LIMPAR TODAS AS TABELAS DO LOCALSTORAGE
@@ -3063,13 +3176,16 @@ export default function FilaPage() {
       }
       
       // === SALVAR JOGO E ESTATÍSTICAS NO LOCALSTORAGE (para deploy posterior) ===
+      // ⚠️ MODO PRANCHETA: Não salva NADA (apenas rotaciona a fila)
+      console.log('🔍 Modo ativo:', modoPrancheta ? 'PRANCHETA (sem estatísticas)' : 'PARTIDA (com estatísticas)');
       
       // ============================================
-      // SALVAR JOGO NA TABELA JOGOS (todos os planos)
+      // SALVAR JOGO NA TABELA JOGOS (todos os planos, EXCETO modo prancheta)
       // ============================================
-      const jogosKey = `jogos_${sessaoId}`;
-      const jogosStr = localStorage.getItem(jogosKey);
-      const jogos = jogosStr ? JSON.parse(jogosStr) : [];
+      if (!modoPrancheta) {
+        const jogosKey = `jogos_${sessaoId}`;
+        const jogosStr = localStorage.getItem(jogosKey);
+        const jogos = jogosStr ? JSON.parse(jogosStr) : [];
       
       // Calcular número do jogo baseado na quantidade de jogos existentes
       const numeroJogo = jogos.length + 1;
@@ -3099,13 +3215,13 @@ export default function FilaPage() {
       });
       
       // Determinar vencedor para registro
-      let timeVencedorRegistro: 'A' | 'B' | 'empate' | null = null;
+      let timeVencedorRegistro: 'A' | 'B' | null = null;
       if (placarTimeA > placarTimeB) {
         timeVencedorRegistro = 'A';
       } else if (placarTimeB > placarTimeA) {
         timeVencedorRegistro = 'B';
       } else {
-        timeVencedorRegistro = 'empate';
+        timeVencedorRegistro = null; // Empate = null
       }
       
       // Gerar UUID válido para o jogo
@@ -3135,26 +3251,30 @@ export default function FilaPage() {
       
       jogos.push(novoJogo);
       localStorage.setItem(jogosKey, JSON.stringify(jogos));
-      console.log(`✅ Jogo ${numeroJogo} salvo na tabela jogos (id: ${novoJogo.id})`);
-      console.log('📊 === TABELA JOGOS ATUALIZADA ===');
-      console.log(`   Total de jogos: ${jogos.length}`);
-      console.log(`   Último jogo:`, {
-        numero: novoJogo.numero_jogo,
-        time_a: novoJogo.time_a.map((j: any) => j.nome).join(', '),
-        time_b: novoJogo.time_b.map((j: any) => j.nome).join(', '),
-        placar: `${novoJogo.placar_a} x ${novoJogo.placar_b}`,
-        vencedor: novoJogo.time_vencedor
-      });
+        console.log(`✅ Jogo ${numeroJogo} salvo na tabela jogos (id: ${novoJogo.id})`);
+        console.log('📊 === TABELA JOGOS ATUALIZADA ===');
+        console.log(`   Total de jogos: ${jogos.length}`);
+        console.log(`   Último jogo:`, {
+          numero: novoJogo.numero_jogo,
+          time_a: novoJogo.time_a.map((j: any) => j.nome).join(', '),
+          time_b: novoJogo.time_b.map((j: any) => j.nome).join(', '),
+          placar: `${novoJogo.placar_a} x ${novoJogo.placar_b}`,
+          vencedor: novoJogo.time_vencedor
+        });
+      } else {
+        console.log('📋 Modo prancheta ativo - jogo NÃO será salvo');
+      }
       
       // ============================================
-      // SALVAR GOLS NA TABELA GOLS (Premium apenas)
+      // SALVAR GOLS NA TABELA GOLS (Premium apenas, EXCETO modo prancheta)
       // ============================================
       console.log('⚽ DEBUG GOLS: Plano:', plano);
       console.log('⚽ DEBUG GOLS: golsJogadores:', golsJogadores);
       console.log('⚽ DEBUG GOLS: Quantidade de keys:', Object.keys(golsJogadores).length);
+      console.log('⚽ DEBUG GOLS: modoPrancheta:', modoPrancheta);
       
       const planoUpper2 = plano?.toUpperCase() || '';
-      if (planoUpper2 === 'PREMIUM' && Object.keys(golsJogadores).length > 0) {
+      if (!modoPrancheta && planoUpper2 === 'PREMIUM' && Object.keys(golsJogadores).length > 0) {
         console.log('⚽ Entrando no bloco de salvar gols...');
         const golsKey = `gols_${sessaoId}`;
         const golsStr = localStorage.getItem(golsKey);
@@ -3228,10 +3348,10 @@ export default function FilaPage() {
       }
       
       // ============================================
-      // ATUALIZAR ESTATÍSTICAS DOS JOGADORES (Gold/Premium)
+      // ATUALIZAR ESTATÍSTICAS DOS JOGADORES (Gold/Premium, EXCETO modo prancheta)
       // ============================================
       const planoUpper = plano?.toUpperCase() || '';
-      if (planoUpper === 'GOLD' || planoUpper === 'PREMIUM') {
+      if (!modoPrancheta && (planoUpper === 'GOLD' || planoUpper === 'PREMIUM')) {
         console.log('📊 Atualizando estatísticas dos jogadores...');
         console.log('🔍 DEBUG: Plano detectado:', plano);
         
@@ -3325,9 +3445,16 @@ export default function FilaPage() {
             }
           });
         }
+      } else {
+        if (modoPrancheta) {
+          console.log('📋 Modo prancheta ativo - estatísticas NÃO serão atualizadas');
+        } else {
+          console.log('⚠️ Plano não permite salvar estatísticas');
+        }
       }
       
       // === 4. ROTACIONAR FILA ===
+      console.log('🔄 MODO:', modoPrancheta ? 'PRANCHETA (rotação sem estatísticas)' : 'PARTIDA (rotação com estatísticas)');
       console.log('🔄 Rotacionando fila...');
       console.log('🏆 Time vencedor para rotação:', timeVencedor);
       console.log('🎯 Time escolhido no desempate:', timeEscolhidoDesempate);
@@ -4603,23 +4730,30 @@ export default function FilaPage() {
                   // Carregar regras ao abrir modal (caso não tenha sido carregado antes)
                   if (!regraEmpateConfig) {
                     try {
-                      const userData = localStorage.getItem('user');
-                      if (userData) {
-                        const user = JSON.parse(userData);
+                      const credenciaisStr = localStorage.getItem('credenciais');
+                      if (credenciaisStr) {
+                        const credenciais = JSON.parse(credenciaisStr);
+                        const peladaId = credenciais.pelada_id;
                         const { data: regrasData } = await supabase
                           .from('regras')
                           .select('*')
-                          .eq('pelada_id', user.id)
+                          .eq('pelada_id', peladaId)
                           .single();
                         
                         if (regrasData) {
                           setRegraEmpateConfig(regrasData.regra_empate || 'ambos_saem');
-                          setRegrasEmpate({
-                            empate_modo: regrasData.regra_empate || null,
-                            empate_retorno: regrasData.regra_apos_empate || null,
-                            desempate_modo: regrasData.regra_empate || null,
-                            empate_conta_vitoria: regrasData.empate_conta_vitoria || false
+                          
+                          // Aguardar setRegrasEmpate ser processado
+                          await new Promise(resolve => {
+                            setRegrasEmpate({
+                              empate_modo: regrasData.regra_empate || null,
+                              empate_retorno: regrasData.regra_apos_empate || null,
+                              desempate_modo: regrasData.regra_empate || null,
+                              empate_conta_vitoria: regrasData.empate_conta_vitoria || false
+                            });
+                            setTimeout(resolve, 0);
                           });
+                          
                           console.log('📋 Regra de empate carregada:', regrasData.regra_empate);
                         }
                       }
@@ -4772,14 +4906,16 @@ export default function FilaPage() {
               <button
                 onClick={async () => {
                   // Carregar regras antes de finalizar
-                  const userData = localStorage.getItem('user');
-                  if (userData) {
-                    const user = JSON.parse(userData);
+                  const credenciaisStr = localStorage.getItem('credenciais');
+                  if (credenciaisStr) {
+                    const credenciais = JSON.parse(credenciaisStr);
+                    const peladaId = credenciais.pelada_id;
+                    
                     try {
                       const { data: regrasData } = await supabase
                         .from('regras')
                         .select('regra_empate, regra_apos_empate, empate_conta_vitoria')
-                        .eq('pelada_id', user.id)
+                        .eq('pelada_id', peladaId)
                         .single();
                       
                       if (regrasData) {
@@ -4789,6 +4925,9 @@ export default function FilaPage() {
                           desempate_modo: regrasData.regra_empate || null,
                           empate_conta_vitoria: regrasData.empate_conta_vitoria || false
                         });
+                        
+                        // Aguardar state atualizar
+                        await new Promise(resolve => setTimeout(resolve, 50));
                       }
                     } catch (error) {
                       console.error('Erro ao carregar regras:', error);
@@ -4798,7 +4937,6 @@ export default function FilaPage() {
                   // 📸 SALVAR SNAPSHOT DE PARTIDA (antes de abrir modal)
                   const peladaId = buscar_pelada_id();
                   if (peladaId) {
-                    console.log('📸 Salvando snapshot ANTES de finalizar partida...');
                     fila_snapshot_salvar_partida(peladaId);
                   }
                   
@@ -6201,13 +6339,14 @@ export default function FilaPage() {
               borderRadius: '16px',
               maxWidth: '500px',
               width: '100%',
-              maxHeight: '80vh',
-              overflow: 'auto',
-              padding: '32px',
+              maxHeight: '95vh',
+              display: 'flex',
+              flexDirection: 'column',
               boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
             }}>
               <h2 style={{ 
-                marginBottom: '24px', 
+                marginBottom: '24px',
+                padding: '32px 32px 0 32px', 
                 fontSize: '24px',
                 color: '#1f2937',
                 fontWeight: '700',
@@ -6218,7 +6357,11 @@ export default function FilaPage() {
 
               {/* Lista de jogadores na reserva */}
               {jogadoresReserva.length > 0 ? (
-                <div style={{ marginBottom: '20px' }}>
+                <div style={{ 
+                  padding: '0 32px',
+                  overflow: 'auto',
+                  flex: 1
+                }}>
                   <h3 style={{ 
                     fontSize: '16px', 
                     color: '#6b7280', 
@@ -6227,56 +6370,67 @@ export default function FilaPage() {
                   }}>
                     Jogadores na Reserva
                   </h3>
-                  {jogadoresReserva.map((jogador) => (
-                    <button
-                      key={jogador.id}
-                      onClick={() => {
-                        handleAdicionar(jogador);
-                        setShowSelecionarJogadorModal(false);
-                        setPosicaoParaAdicionar(null);
-                      }}
-                      style={{
-                        width: '100%',
-                        background: '#f8f9fa',
-                        border: '2px solid #e9ecef',
-                        borderRadius: '12px',
-                        padding: '16px',
-                        marginBottom: '10px',
-                        cursor: 'pointer',
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        color: '#1f2937',
-                        textAlign: 'left',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#e0f2fe';
-                        e.currentTarget.style.borderColor = '#3b82f6';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#f8f9fa';
-                        e.currentTarget.style.borderColor = '#e9ecef';
-                      }}
-                    >
-                      {jogador.nome}
-                    </button>
-                  ))}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '10px',
+                    marginBottom: '20px'
+                  }}>
+                    {jogadoresReserva.map((jogador) => (
+                      <button
+                        key={jogador.id}
+                        onClick={() => {
+                          handleAdicionar(jogador);
+                          setShowSelecionarJogadorModal(false);
+                          setPosicaoParaAdicionar(null);
+                        }}
+                        style={{
+                          width: '100%',
+                          background: '#f8f9fa',
+                          border: '2px solid #e9ecef',
+                          borderRadius: '12px',
+                          padding: '12px',
+                          cursor: 'pointer',
+                          fontSize: '15px',
+                          fontWeight: '600',
+                          color: '#1f2937',
+                          textAlign: 'left',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#e0f2fe';
+                          e.currentTarget.style.borderColor = '#3b82f6';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#f8f9fa';
+                          e.currentTarget.style.borderColor = '#e9ecef';
+                        }}
+                      >
+                        {jogador.nome}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                <p style={{ 
-                  textAlign: 'center', 
-                  color: '#6b7280', 
-                  marginBottom: '20px',
-                  fontSize: '14px'
+                <div style={{ 
+                  padding: '0 32px',
+                  overflow: 'auto',
+                  flex: 1
                 }}>
-                  Nenhum jogador na reserva
-                </p>
+                  <p style={{ 
+                    textAlign: 'center', 
+                    color: '#6b7280', 
+                    marginBottom: '20px',
+                    fontSize: '14px'
+                  }}>
+                    Nenhum jogador na reserva
+                  </p>
+                </div>
               )}
 
               <div style={{
                 borderTop: '2px solid #e9ecef',
-                paddingTop: '20px',
-                marginTop: '20px'
+                padding: '20px 32px 32px 32px'
               }}>
                 <button
                   onClick={() => {

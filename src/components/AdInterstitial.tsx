@@ -12,12 +12,12 @@ export default function AdInterstitial({ onClose, motivo = 'navegacao' }: AdInte
   const plano = buscar_plano();
   const [countdown, setCountdown] = useState(5);
 
-  // Premium e Gold: NUNCA renderizar anúncios
-  if (plano === 'premium' || plano === 'gold') {
-    return null;
-  }
-
   useEffect(() => {
+    // Premium e Gold: NUNCA renderizar anúncios
+    if (plano === 'premium' || plano === 'gold') {
+      return;
+    }
+    
     console.log(`🎬 Interstitial exibido - Plano: ${plano}, Motivo: ${motivo}`);
     
     // Carregar anúncio interstitial do AdMob
@@ -27,7 +27,7 @@ export default function AdInterstitial({ onClose, motivo = 'navegacao' }: AdInte
     } catch (err) {
       console.error('Erro ao carregar interstitial:', err);
     }
-  }, []);
+  }, [plano, motivo]);
 
   useEffect(() => {
     // Countdown para fechar
@@ -37,8 +37,8 @@ export default function AdInterstitial({ onClose, motivo = 'navegacao' }: AdInte
     }
   }, [countdown]);
 
-  // Premium: NUNCA renderizar
-  if (plano === 'Premium') {
+  // Premium e Gold: NUNCA renderizar anúncios
+  if (plano === 'premium' || plano === 'gold') {
     return null;
   }
 

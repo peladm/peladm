@@ -633,21 +633,15 @@ export default function SorteioPage() {
         console.log('🔍 Verificação imediata:', verificar);
         
         // ============================================
-        // CRIAR TABELAS DE ESTATÍSTICAS (todos os planos)
+        // PLANO FREE: NÃO CRIA TABELAS DE ESTATÍSTICAS
         // ============================================
-        // Tabela jogos (todos os planos)
-        localStorage.setItem(`jogos_${sessaoId}`, JSON.stringify([]));
-        console.log('📊 Tabela jogos criada');
+        console.log('🆓 Plano FREE: Modo prancheta único (sem estatísticas)');
+        console.log('⚠️ Tabelas jogos/gols NÃO serão criadas');
         
-        // Tabela gols (Premium apenas)
-        if (plano === 'Premium') {
-          localStorage.setItem(`gols_${sessaoId}`, JSON.stringify([]));
-          console.log('⚽ Tabela gols criada (Premium)');
-        }
-        
-        // Buscar TODOS os jogadores cadastrados do localStorage
+        // Buscar TODOS os jogadores cadastrados do localStorage (já existentes)
         const jogadoresLocalStorage = localStorage.getItem(`jogadores_${peladaId}`);
         const todosJogadores = jogadoresLocalStorage ? JSON.parse(jogadoresLocalStorage) : [];
+        console.log(`📊 FREE: Usando ${todosJogadores.length} jogadores já cadastrados localmente`);
         console.log(`📊 Total de jogadores cadastrados: ${todosJogadores.length}`);
         console.log('🔍 Primeiro jogador:', todosJogadores[0]);
         
@@ -727,8 +721,12 @@ export default function SorteioPage() {
       
       // Buscar regras do localStorage
       const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
-      const jogadoresPorTime = regrasLocal ? JSON.parse(regrasLocal).jogadores_por_time : 5;
+      const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+      const jogadoresPorTime = regrasConfig.jogadores_por_time || 5;
+      const tipoFila = regrasConfig.tipo_fila || 'modo_prancheta';
+      
       console.log('⚽ Jogadores por time:', jogadoresPorTime);
+      console.log('🎮 Modo:', tipoFila);
       
       // 1. VERIFICAR SE JÁ EXISTE SESSÃO LOCAL ATIVA HOJE
       let sessao;
@@ -771,26 +769,23 @@ export default function SorteioPage() {
         localStorage.setItem('sessao_ativa', JSON.stringify(sessao));
         
         // ============================================
-        // CRIAR TABELAS DE ESTATÍSTICAS (todos os planos)
+        // CRIAR TABELAS DE ESTATÍSTICAS (baseado no MODO, não no plano)
         // ============================================
-        // Tabela jogos (todos os planos)
-        localStorage.setItem(`jogos_${sessaoId}`, JSON.stringify([]));
-        console.log('📊 Tabela jogos criada');
+        const isModoPartida = tipoFila === 'modo_partida';
         
-        // Tabela gols (Premium apenas)
-        if (plano === 'Premium') {
+        if (isModoPartida) {
+          // MODO PARTIDA: Cria tabelas de estatísticas (independente do plano)
+          localStorage.setItem(`jogos_${sessaoId}`, JSON.stringify([]));
           localStorage.setItem(`gols_${sessaoId}`, JSON.stringify([]));
-          console.log('⚽ Tabela gols criada (Premium)');
-        }
-        
-        // Tabela fila_snapshot vazia (Gold/Premium)
-        if (plano === 'Gold' || plano === 'Premium') {
-          localStorage.setItem(`fila_snapshot_${peladaId}`, JSON.stringify([]));
-          console.log('📸 Tabela fila_snapshot criada');
+          console.log('✅ MODO PARTIDA: Tabelas jogos e gols criadas');
+        } else {
+          // MODO PRANCHETA: NÃO cria tabelas de estatísticas
+          console.log('📋 MODO PRANCHETA: Tabelas jogos/gols NÃO criadas');
         }
         
         // Baixar jogadores do Supabase (Gold/Premium)
-        console.log('☁️ Baixando jogadores do Supabase...');
+        // Motivo: Permitir adicionar novos jogadores no modo edição da fila
+        console.log('☁️ Baixando jogadores do Supabase (para modo edição)...');
         const clienteDb = await getClienteSupabase(peladaId);
         const { data: jogadoresSupabase, error: jogadoresError } = await clienteDb
           .from('jogadores')

@@ -105,7 +105,9 @@ function CadastrarClienteContent() {
     supabase_url: '',
     supabase_anon_key: '',
     email_supabase: '',
-    senha_supabase: ''
+    senha_supabase: '',
+    valor_plano: null as number | null,
+    data_vencimento: null as string | null
   });
 
   // Carregar dados do cliente para edição
@@ -141,7 +143,9 @@ function CadastrarClienteContent() {
           supabase_url: data.supabase_url || '',
           supabase_anon_key: data.supabase_anon_key || '',
           email_supabase: data.email_supabase || '',
-          senha_supabase: data.senha_supabase || ''
+          senha_supabase: data.senha_supabase || '',
+          valor_plano: data.valor_plano || null,
+          data_vencimento: data.data_vencimento || null
         });
       }
     } catch (error) {
@@ -419,7 +423,9 @@ function CadastrarClienteContent() {
         supabase_url: formData.supabase_url || null,
         supabase_anon_key: formData.supabase_anon_key || null,
         email_supabase: formData.email_supabase || null,
-        senha_supabase: formData.senha_supabase || null
+        senha_supabase: formData.senha_supabase || null,
+        valor_plano: formData.valor_plano || null,
+        data_vencimento: formData.data_vencimento || null
       };
 
       let result;
@@ -562,14 +568,25 @@ function CadastrarClienteContent() {
                 </label>
                 <select
                   value={formData.plano}
-                  onChange={(e) => setFormData({...formData, plano: e.target.value})}
+                  onChange={(e) => {
+                    const novoPlano = e.target.value;
+                    const updates: any = { plano: novoPlano };
+                    
+                    // Se Gold, auto-preencher credenciais do banco principal
+                    if (novoPlano === 'Gold') {
+                      updates.supabase_url = 'https://ewcswczqvelhlwpbraea.supabase.co';
+                      updates.supabase_anon_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks';
+                    }
+                    
+                    setFormData({...formData, ...updates});
+                  }}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   disabled={loading}
                   required
                 >
-                  <option value="Free">Free (R$ 0,00)</option>
-                  <option value="Gold">Gold (R$ 19,90)</option>
-                  <option value="Premium">Premium (R$ 39,90)</option>
+                  <option value="Free">Free</option>
+                  <option value="Gold">Gold</option>
+                  <option value="Premium">Premium</option>
                 </select>
               </div>
 
@@ -582,6 +599,39 @@ function CadastrarClienteContent() {
                 />
               </div>
             </div>
+
+            {/* Campos Valor e Vencimento para Gold/Premium */}
+            {(formData.plano === 'Gold' || formData.plano === 'Premium') && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-blue-50 rounded-xl">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Valor do Plano (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.valor_plano || ''}
+                    onChange={(e) => setFormData({...formData, valor_plano: e.target.value ? parseFloat(e.target.value) : null})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="19.90"
+                    disabled={loading}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data de Vencimento
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.data_vencimento || ''}
+                    onChange={(e) => setFormData({...formData, data_vencimento: e.target.value || null})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Configurações Supabase para Premium */}
             {formData.plano === 'Premium' && (
