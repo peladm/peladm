@@ -3281,8 +3281,6 @@ export default function FilaPage() {
         const gols = golsStr ? JSON.parse(golsStr) : [];
         
         console.log('⚽ DEBUG: Gols já salvos anteriormente:', gols.length);
-        console.log('⚽ DEBUG: timeACompleto:', timeACompleto.map(j => ({ id: j.id, nome: j.nome })));
-        console.log('⚽ DEBUG: timeBCompleto:', timeBCompleto.map(j => ({ id: j.id, nome: j.nome })));
         
         // Função para gerar UUID válido
         const gerarUUID = () => {
