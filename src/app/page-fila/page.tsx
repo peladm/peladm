@@ -3215,6 +3215,16 @@ export default function FilaPage() {
       // Variável para armazenar o jogo (será usada em modo partida)
       let novoJogo: any = null;
       
+      // Determinar vencedor para registro (usado em estatísticas)
+      let timeVencedorRegistro: 'A' | 'B' | null = null;
+      if (placarTimeA > placarTimeB) {
+        timeVencedorRegistro = 'A';
+      } else if (placarTimeB > placarTimeA) {
+        timeVencedorRegistro = 'B';
+      } else {
+        timeVencedorRegistro = null; // Empate = null
+      }
+      
       // ============================================
       // SALVAR JOGO NA TABELA JOGOS (todos os planos, EXCETO modo prancheta)
       // ============================================
@@ -3225,16 +3235,6 @@ export default function FilaPage() {
       
         // Calcular número do jogo baseado na quantidade de jogos existentes
         const numeroJogo = jogos.length + 1;
-      
-        // Determinar vencedor para registro
-        let timeVencedorRegistro: 'A' | 'B' | null = null;
-        if (placarTimeA > placarTimeB) {
-          timeVencedorRegistro = 'A';
-        } else if (placarTimeB > placarTimeA) {
-          timeVencedorRegistro = 'B';
-        } else {
-          timeVencedorRegistro = null; // Empate = null
-        }
       
         novoJogo = {
           id: gerarUUID(),
