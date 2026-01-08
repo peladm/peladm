@@ -3179,18 +3179,7 @@ export default function FilaPage() {
       // ⚠️ MODO PRANCHETA: Não salva NADA (apenas rotaciona a fila)
       console.log('🔍 Modo ativo:', modoPrancheta ? 'PRANCHETA (sem estatísticas)' : 'PARTIDA (com estatísticas)');
       
-      // ============================================
-      // SALVAR JOGO NA TABELA JOGOS (todos os planos, EXCETO modo prancheta)
-      // ============================================
-      if (!modoPrancheta) {
-        const jogosKey = `jogos_${sessaoId}`;
-        const jogosStr = localStorage.getItem(jogosKey);
-        const jogos = jogosStr ? JSON.parse(jogosStr) : [];
-      
-      // Calcular número do jogo baseado na quantidade de jogos existentes
-      const numeroJogo = jogos.length + 1;
-      
-      // Buscar jogadores do localStorage para pegar IDs reais
+      // Buscar jogadores do localStorage para pegar IDs reais (usado em todos os modos)
       const jogadoresKey = `jogadores_${peladaId}`;
       const jogadoresStr = localStorage.getItem(jogadoresKey);
       const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
@@ -3214,17 +3203,7 @@ export default function FilaPage() {
         };
       });
       
-      // Determinar vencedor para registro
-      let timeVencedorRegistro: 'A' | 'B' | null = null;
-      if (placarTimeA > placarTimeB) {
-        timeVencedorRegistro = 'A';
-      } else if (placarTimeB > placarTimeA) {
-        timeVencedorRegistro = 'B';
-      } else {
-        timeVencedorRegistro = null; // Empate = null
-      }
-      
-      // Gerar UUID válido para o jogo
+      // Gerar UUID válido
       const gerarUUID = () => {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
           const r = Math.random() * 16 | 0;
@@ -3233,24 +3212,48 @@ export default function FilaPage() {
         });
       };
       
-      const novoJogo = {
-        id: gerarUUID(),
-        sessao_id: sessaoId,
-        numero_jogo: numeroJogo,
-        time_a: timeACompleto,
-        time_b: timeBCompleto,
-        placar_a: placarTimeA,
-        placar_b: placarTimeB,
-        status: 'finalizado',
-        time_vencedor: timeVencedorRegistro,
-        tempo_decorrido: cronometro,
-        data_inicio: partidaAtiva?.data_inicio,
-        data_fim: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      };
+      // Variável para armazenar o jogo (será usada em modo partida)
+      let novoJogo: any = null;
       
-      jogos.push(novoJogo);
-      localStorage.setItem(jogosKey, JSON.stringify(jogos));
+      // ============================================
+      // SALVAR JOGO NA TABELA JOGOS (todos os planos, EXCETO modo prancheta)
+      // ============================================
+      if (!modoPrancheta) {
+        const jogosKey = `jogos_${sessaoId}`;
+        const jogosStr = localStorage.getItem(jogosKey);
+        const jogos = jogosStr ? JSON.parse(jogosStr) : [];
+      
+        // Calcular número do jogo baseado na quantidade de jogos existentes
+        const numeroJogo = jogos.length + 1;
+      
+        // Determinar vencedor para registro
+        let timeVencedorRegistro: 'A' | 'B' | null = null;
+        if (placarTimeA > placarTimeB) {
+          timeVencedorRegistro = 'A';
+        } else if (placarTimeB > placarTimeA) {
+          timeVencedorRegistro = 'B';
+        } else {
+          timeVencedorRegistro = null; // Empate = null
+        }
+      
+        novoJogo = {
+          id: gerarUUID(),
+          sessao_id: sessaoId,
+          numero_jogo: numeroJogo,
+          time_a: timeACompleto,
+          time_b: timeBCompleto,
+          placar_a: placarTimeA,
+          placar_b: placarTimeB,
+          status: 'finalizado',
+          time_vencedor: timeVencedorRegistro,
+          tempo_decorrido: cronometro,
+          data_inicio: partidaAtiva?.data_inicio,
+          data_fim: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        };
+      
+        jogos.push(novoJogo);
+        localStorage.setItem(jogosKey, JSON.stringify(jogos));
         console.log(`✅ Jogo ${numeroJogo} salvo na tabela jogos (id: ${novoJogo.id})`);
         console.log('📊 === TABELA JOGOS ATUALIZADA ===');
         console.log(`   Total de jogos: ${jogos.length}`);
