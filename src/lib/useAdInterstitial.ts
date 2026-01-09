@@ -42,17 +42,14 @@ export function useAdInterstitial(): AdInterstitialManager {
   }, [pathname, plano]);
 
   const incrementPageNavigation = () => {
-    console.log('🔄 incrementPageNavigation chamado manualmente');
     
     // Premium: NUNCA mostrar
     if (plano === 'Premium') {
-      console.log('⛔ Premium - sem anúncios');
       return;
     }
 
     // Gold: não conta navegações (só interstitial ao finalizar pelada)
     if (plano === 'Gold') {
-      console.log('⛔ Gold - sem contador de navegação');
       return;
     }
 

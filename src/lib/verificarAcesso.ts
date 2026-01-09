@@ -22,13 +22,16 @@ export const obterUsuario = (): Usuario | null => {
   // Tentar novo formato (credenciais)
   const credenciais = obterCredenciais();
   if (credenciais) {
+    // Verificar se é visitante pelo username
+    const tipoAcesso = credenciais.username === 'visitante' ? 'visitante' : 'completo';
+    
     return {
       id: credenciais.pelada_id,
       nome: credenciais.username,
       plano: credenciais.plano || 'free',
-      is_master: true,
+      is_master: tipoAcesso === 'completo',
       status: true,
-      tipo_acesso: 'completo'
+      tipo_acesso: tipoAcesso
     };
   }
   

@@ -291,11 +291,11 @@ export default function Estatisticas() {
 
   async function carregarEstatisticas() {
     try {
-      const clienteDb = await getClienteSupabase();
-      if (!clienteDb) return;
-
       const pelada_id = buscar_pelada_id();
       if (!pelada_id) return;
+
+      const clienteDb = await getClienteSupabase(pelada_id);
+      if (!clienteDb) return;
 
       // Buscar jogadores com suas estatísticas básicas
       const { data: jogadores, error } = await clienteDb
@@ -303,7 +303,7 @@ export default function Estatisticas() {
         .select('id, nome, gols, vitorias, jogos')
         .eq('pelada_id', pelada_id)
         .gt('jogos', 0);
-
+      
       if (error || !jogadores) {
         console.error('Erro ao buscar jogadores:', error);
         return;

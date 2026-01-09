@@ -23,8 +23,6 @@ export default function Login() {
     setError('');
     setLoading(true);
 
-    console.log('🔐 Tentando login...', { peladaId, usuario });
-
     if (!peladaId || !usuario || !senha) {
       setError('Preencha todos os campos');
       setLoading(false);
@@ -32,7 +30,6 @@ export default function Login() {
     }
 
     try {
-      console.log('📡 Buscando no Supabase...');
       
       const { data, error: dbError } = await supabase
         .from('clientes')
@@ -42,16 +39,12 @@ export default function Login() {
         .eq('senha', senha)
         .single();
       
-      console.log('📊 Resultado:', { data, dbError });
-      
       if (dbError || !data) {
         console.error('❌ Erro:', dbError);
         setError('Código, usuário ou senha inválidos');
         setLoading(false);
         return;
       }
-
-      console.log('✅ Cliente encontrado:', data.pelada_id);
 
       if (data.status === 'bloqueado') {
         setShowBlockedModal(true);
@@ -65,8 +58,6 @@ export default function Login() {
         setLoading(false);
         return;
       }
-
-      console.log('💾 Salvando credenciais...');
       
       salvarCredenciais({
         pelada_id: data.pelada_id,
@@ -76,8 +67,6 @@ export default function Login() {
         supabase_url: data.supabase_url,
         supabase_anon_key: data.supabase_anon_key
       });
-      
-      console.log('✅ Credenciais salvas! Redirecionando...');
       
       setLoading(false);
       window.location.href = '/';
@@ -89,7 +78,7 @@ export default function Login() {
     }
   };
 
-  // Acesso visitante
+  // Acesso visitante - REESCRITO DO ZERO
   const handleAcessoVisitante = async () => {
     setError('');
     setLoading(true);
@@ -101,45 +90,85 @@ export default function Login() {
     }
 
     try {
+      // Buscar cliente no banco
       const { data, error: dbError } = await supabase
         .from('clientes')
         .select('*')
         .eq('pelada_id', peladaId.toUpperCase())
-        .single();
+        .maybeSingle();
       
-      if (dbError || !data) {
-        setError('Código inválido');
+      // Se houve erro na busca
+      if (dbError) {
+        setError('❌ Erro ao conectar ao banco');
         setLoading(false);
+        setTimeout(() => router.push('/login'), 2000);
         return;
       }
 
+      // Se não encontrou o código
+      if (!data) {
+        setError('❌ Código inválido');
+        setLoading(false);
+        setTimeout(() => router.push('/login'), 2000);
+        return;
+      }
+
+      // Validar se é plano Premium
+      const planoCliente = String(data.plano || '').trim().toLowerCase();
+      if (planoCliente !== 'premium') {
+        setError('❌ Apenas plano Premium tem acesso às estatísticas');
+        setLoading(false);
+        setTimeout(() => router.push('/login'), 3000);
+        return;
+      }
+
+      // Validar status
       if (data.status === 'bloqueado') {
         setShowBlockedModal(true);
         setLoading(false);
+        setTimeout(() => router.push('/login'), 3000);
         return;
       }
 
       if (data.status === 'inativo') {
         setError('⏸️ Pelada inativa');
         setLoading(false);
+        setTimeout(() => router.push('/login'), 2000);
         return;
       }
 
-      localStorage.setItem('user', JSON.stringify({
+      // Criar sessão visitante COM credenciais do banco dedicado
+      const userSession = {
         id: data.pelada_id,
         nome: data.nome,
-        plano: (data.plano || 'free').toLowerCase(),
+        plano: planoCliente,
         tipo_acesso: 'visitante',
         status: true,
         is_master: false
-      }));
+      };
+
+      // Criar credenciais com dados do banco dedicado (necessário para acessar dados)
+      const credenciais = {
+        pelada_id: data.pelada_id,
+        username: 'visitante',
+        senha: '',
+        plano: planoCliente,
+        supabase_url: data.supabase_url || null,
+        supabase_anon_key: data.supabase_anon_key || null
+      };
+
+      localStorage.setItem('user', JSON.stringify(userSession));
+      localStorage.setItem('credenciais', JSON.stringify(credenciais));
       
+      // Redirecionar para estatísticas
       setLoading(false);
       router.push('/resultados');
       
     } catch (err) {
-      setError('Erro ao acessar');
+      console.error('Erro no login visitante:', err);
+      setError('❌ Erro ao processar login');
       setLoading(false);
+      setTimeout(() => router.push('/login'), 2000);
     }
   };
 

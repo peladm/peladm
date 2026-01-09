@@ -194,6 +194,12 @@ export default function Home() {
       alert('Por favor, preencha a data da pelada!');
       return;
     }
+    
+    // Validar se numLinhas está preenchido
+    if (!numLinhas || numLinhas < 1) {
+      alert('Por favor, preencha o número de linhas (mínimo 1)!');
+      return;
+    }
 
     // Gerar texto formatado
     let texto = '*Lista de Presença*\n';
@@ -519,7 +525,20 @@ export default function Home() {
               <input 
                 type="number"
                 value={numLinhas}
-                onChange={(e) => setNumLinhas(parseInt(e.target.value) || 10)}
+                onChange={(e) => {
+                  const valor = e.target.value;
+                  // Permite campo vazio (para poder apagar e digitar novo número)
+                  if (valor === '') {
+                    setNumLinhas('' as any);
+                  } else {
+                    const numero = parseInt(valor);
+                    // Limita entre 1 e 50
+                    if (numero >= 1 && numero <= 50) {
+                      setNumLinhas(numero);
+                    }
+                  }
+                }}
+                placeholder="1"
                 min="1"
                 max="50"
                 style={{
@@ -531,7 +550,13 @@ export default function Home() {
                   outline: 'none'
                 }}
                 onFocus={(e) => e.target.style.borderColor = '#059669'}
-                onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#e5e7eb';
+                  // Se estiver vazio ao sair do campo, volta para 1
+                  if (e.target.value === '') {
+                    setNumLinhas(1);
+                  }
+                }}
               />
             </div>
 

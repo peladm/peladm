@@ -90,8 +90,24 @@ export const buscar_plano = (): string => {
  * Função mestre: Buscar pelada_id das credenciais locais
  */
 export const buscar_pelada_id = (): string | null => {
+  // Tentar credenciais (admin/completo)
   const credenciais = obterCredenciais();
-  return credenciais?.pelada_id || null;
+  if (credenciais?.pelada_id) {
+    return credenciais.pelada_id;
+  }
+  
+  // Tentar user (visitante)
+  try {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      return user?.id || null;
+    }
+  } catch (error) {
+    console.error('Erro ao buscar pelada_id do user:', error);
+  }
+  
+  return null;
 };
 
 /**

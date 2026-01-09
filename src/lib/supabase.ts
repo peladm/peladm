@@ -262,8 +262,7 @@ export const jogadoresService = {
       .from('jogadores')
       .update({
         nome: nome.trim(),
-        nivel,
-        updated_at: new Date().toISOString()
+        nivel
       })
       .eq('id', id)
       .eq('pelada_id', peladaId)

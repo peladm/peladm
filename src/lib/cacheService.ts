@@ -23,7 +23,6 @@ export async function getJogadoresWithCache(
   if (!options.forceRefresh) {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
-      console.log('📦 Usando jogadores do cache');
       return JSON.parse(cached);
     }
   }
@@ -41,7 +40,6 @@ export async function getJogadoresWithCache(
     
     // Atualiza cache
     localStorage.setItem(cacheKey, JSON.stringify(data || []));
-    console.log('✅ Cache de jogadores atualizado');
     
     return data || [];
     
@@ -68,19 +66,15 @@ export async function getRegrasWithCache(
 ): Promise<{ success: boolean; data: any }> {
   const cacheKey = `regras_${peladaId}`;
   
-  console.log('🔍 [CACHE] Buscando regras para pelada_id:', peladaId);
-  
   if (!options.forceRefresh) {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       const cachedData = JSON.parse(cached);
-      console.log('📦 [CACHE] Usando regras do cache:', cachedData);
       return { success: true, data: cachedData };
     }
   }
   
   try {
-    console.log('🌐 [CACHE] Buscando regras do Supabase...');
     const { data, error } = await supabase
       .from('regras')
       .select('*')
@@ -88,10 +82,7 @@ export async function getRegrasWithCache(
       .single();
     
     if (error) throw error;
-    
-    console.log('✅ [CACHE] Regras encontradas no Supabase:', data);
     localStorage.setItem(cacheKey, JSON.stringify(data));
-    console.log('✅ [CACHE] Cache de regras atualizado');
     
     return { success: true, data };
     
@@ -115,7 +106,6 @@ export async function getRegrasWithCache(
 export function clearCache(peladaId: string): void {
   localStorage.removeItem(`jogadores_${peladaId}`);
   localStorage.removeItem(`regras_${peladaId}`);
-  console.log('🗑️ Cache limpo');
 }
 
 /**
@@ -130,7 +120,6 @@ export function clearAllCache(): void {
       localStorage.removeItem(key);
     }
   });
-  console.log('🗑️ Todo cache limpo');
 }
 
 /**

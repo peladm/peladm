@@ -453,9 +453,13 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             <div className="flex items-center justify-between py-3 sm:py-4">
               <div className="flex items-center space-x-3 sm:space-x-4">
                 <button
-                  onClick={toggleSidebar}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                  title="Menu"
+                  onClick={() => !ehVisitante() && toggleSidebar()}
+                  className={`p-2 rounded-lg transition-colors ${
+                    ehVisitante() ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-100'
+                  }`}
+                  title={ehVisitante() ? 'Menu indisponível para visitantes' : 'Menu'}
+                  disabled={ehVisitante()}
+                  style={{ pointerEvents: ehVisitante() ? 'none' : 'auto' }}
                 >
                   <div className="w-5 h-5 sm:w-6 sm:h-6 flex flex-col justify-center space-y-1">
                     <div className="w-full h-0.5 bg-gray-600"></div>
@@ -490,9 +494,12 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
               // Rodapé da HOME
               <>
                 <button
-                  onClick={() => navigateTo('')}
-                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-green-600 bg-green-50"
+                  onClick={() => !ehVisitante() && navigateTo('')}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    ehVisitante() ? 'text-gray-300 opacity-50 cursor-not-allowed' : 'text-green-600 bg-green-50'
+                  }`}
                   style={{ flex: 1 }}
+                  disabled={ehVisitante()}
                 >
                   <span className="text-2xl">🏠</span>
                   <span className="text-xs font-medium mt-1">Home</span>
@@ -526,9 +533,12 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
               // Rodapé do CADASTRO
               <>
                 <button
-                  onClick={() => navigateTo('')}
-                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors hover:bg-gray-100 text-gray-400"
+                  onClick={() => !ehVisitante() && navigateTo('')}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    ehVisitante() ? 'text-gray-300 opacity-50 cursor-not-allowed' : 'text-gray-400 hover:bg-gray-100'
+                  }`}
                   style={{ flex: 1 }}
+                  disabled={ehVisitante()}
                 >
                   <span className="text-2xl">🏠</span>
                   <span className="text-xs font-medium mt-1">Home</span>
@@ -562,9 +572,12 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
               // Rodapé do SORTEIO
               <>
                 <button
-                  onClick={() => navigateTo('')}
-                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
+                  onClick={() => !ehVisitante() && navigateTo('')}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    ehVisitante() ? 'text-gray-300 opacity-50 cursor-not-allowed' : 'text-gray-400 hover:bg-gray-100'
+                  }`}
                   style={{ flex: 1 }}
+                  disabled={ehVisitante()}
                 >
                   <span className="text-2xl">🏠</span>
                   <span className="text-xs font-medium mt-1">Home</span>
@@ -598,9 +611,12 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
               // Rodapé do REGRAS
               <>
                 <button
-                  onClick={() => navigateTo('')}
-                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
+                  onClick={() => !ehVisitante() && navigateTo('')}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    ehVisitante() ? 'text-gray-300 opacity-50 cursor-not-allowed' : 'text-gray-400 hover:bg-gray-100'
+                  }`}
                   style={{ flex: 1 }}
+                  disabled={ehVisitante()}
                 >
                   <span className="text-2xl">🏠</span>
                   <span className="text-xs font-medium mt-1">Home</span>
@@ -670,11 +686,13 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
               // Rodapé padrão (Estatísticas, Resultados, etc)
               <>
                 <button
-                  onClick={() => navigateTo('')}
+                  onClick={() => !ehVisitante() && navigateTo('')}
                   className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    ehVisitante() ? 'text-gray-300 opacity-30 cursor-not-allowed' :
                     title === 'Home' ? 'text-green-600 bg-green-50' : 'text-gray-400'
                   }`}
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, pointerEvents: ehVisitante() ? 'none' : 'auto' }}
+                  disabled={ehVisitante()}
                 >
                   <span className="text-2xl">🏠</span>
                   <span className="text-xs font-medium mt-1">Home</span>
@@ -697,15 +715,20 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                 </button>
                 <button
                   onClick={() => {
+                    if (ehVisitante()) return;
                     if (onAdminClick) {
                       onAdminClick();
                     } else {
                       alert('🔒 Área administrativa - Em desenvolvimento');
                     }
                   }}
-                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400 hover:text-red-600 hover:bg-red-50"
-                  style={{ flex: 1 }}
-                  title="Área administrativa"
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    ehVisitante() ? 'text-gray-300 opacity-30 cursor-not-allowed' :
+                    'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                  }`}
+                  style={{ flex: 1, pointerEvents: ehVisitante() ? 'none' : 'auto' }}
+                  title={ehVisitante() ? 'Admin indisponível para visitantes' : 'Área administrativa'}
+                  disabled={ehVisitante()}
                 >
                   <span className="text-2xl">🔒</span>
                   <span className="text-xs font-medium mt-1">Admin</span>

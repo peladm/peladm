@@ -165,13 +165,7 @@ function CadastrarClienteContent() {
 
     setLoadingUsage(true);
     try {
-      console.log('🔍 =================================');
-      console.log('🔍 BUSCANDO USO DO BANCO DE DADOS');
-      console.log('🔍 =================================');
-      console.log('📋 Plano do cliente:', formData.plano);
-      console.log('🌐 URL do banco:', formData.supabase_url);
       console.log('🔑 Anon Key (primeiros 20 caracteres):', formData.supabase_anon_key?.substring(0, 20) + '...');
-      console.log('🔍 =================================');
       
       const { createClient } = await import('@supabase/supabase-js');
       const clienteSupabase = createClient(formData.supabase_url, formData.supabase_anon_key);
@@ -182,13 +176,10 @@ function CadastrarClienteContent() {
         ? ['jogadores', 'sessoes', 'fila', 'jogos', 'gols', 'fila_snapshot']
         : ['jogadores', 'sessoes', 'fila', 'jogos', 'gols'];
       
-      console.log('📊 Tabelas a consultar:', tables);
-      
       const usageInfo = [];
 
       for (const tableName of tables) {
         try {
-          console.log(`🔎 Consultando tabela: ${tableName}...`);
           const { count, error } = await clienteSupabase
             .from(tableName)
             .select('*', { count: 'exact', head: true });
@@ -209,17 +200,13 @@ function CadastrarClienteContent() {
               size: `${count} registros (~${size})`,
               size_bytes: estimatedBytes
             });
-            
-            console.log(`✅ ${tableName}: ${count} registros`);
           }
         } catch (err) {
-          console.log(`⚠️ Tabela ${tableName} não existe ou não tem permissão`);
         }
       }
 
       if (usageInfo.length > 0) {
         setUsageData(usageInfo);
-        console.log('✅ Uso do banco carregado:', usageInfo);
       } else {
         alert('Nenhuma tabela encontrada. Verifique as permissões ou se o banco foi configurado.');
       }
@@ -254,7 +241,6 @@ function CadastrarClienteContent() {
     setLoadingSetup(true);
     
     try {
-      console.log('🔧 Iniciando configuração automática do banco...');
 
       // SQL completo para executar
       const sqlStatements = [
@@ -449,9 +435,6 @@ function CadastrarClienteContent() {
         const peladaId = await gerarPeladaIdUnico(formData.nome, formData.telefone);
         const username = gerarUsername(formData.nome);
         const senhaAdmin = gerarSenhaAdmin();
-        console.log('🆔 Gerando pelada_id:', peladaId);
-        console.log('👤 Gerando username:', username);
-        console.log('🔑 Gerando senha admin:', senhaAdmin);
         
         result = await supabase
           .from('clientes')
@@ -465,7 +448,6 @@ function CadastrarClienteContent() {
 
         // Se cliente criado com sucesso, salvar credenciais
         if (!result.error && result.data && result.data.length > 0) {
-          console.log('✅ Cliente criado com sucesso!');
           // Salvar credenciais para exibir no modal
           setCredenciaisGeradas({
             peladaId: peladaId,
