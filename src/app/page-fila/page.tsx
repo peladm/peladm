@@ -2186,11 +2186,7 @@ export default function FilaPage() {
             throw new Error(`Falha no sync da sessão: ${sessaoError.message}`);
           }
           
-          // ✅ Sucesso: marca como sincronizada para controlar sync de estatísticas
-          const sessaoSincronizadaKey = `sessao_sincronizada_${sessaoAtiva.id}`;
-          localStorage.setItem(sessaoSincronizadaKey, 'true');
           console.log('✅ Sessão sincronizada com Supabase');
-          
           console.log('✅ Sync Premium concluído com sucesso');
           
         } catch (syncError) {
@@ -2209,14 +2205,7 @@ export default function FilaPage() {
         console.log(`👥 ========== SYNC JOGADORES (${plano.toUpperCase()}) ==========`);
         console.log(`🎮 Modo: ${isModoPartida ? 'PARTIDA' : 'PRANCHETA'}`);
         
-        // Verificar se esta sessão já foi sincronizada (evitar soma duplicada)
-        const sessaoSincronizadaKey = `sessao_sincronizada_${sessaoAtiva.id}`;
-        const jaSincronizada = localStorage.getItem(sessaoSincronizadaKey);
-        
-        if (jaSincronizada) {
-          console.log('⚠️ ATENÇÃO: Sessão já foi sincronizada anteriormente!');
-          console.log('⚠️ Pulando sync de jogadores para evitar duplicação de estatísticas');
-        } else if (!isModoPartida) {
+        if (!isModoPartida) {
           // MODO PRANCHETA (Gold/Premium): Sync apenas jogadores novos
           console.log('📋 MODO PRANCHETA: Sincronizando apenas jogadores novos...');
           
@@ -2276,10 +2265,6 @@ export default function FilaPage() {
               } else {
                 console.log('✅ Nenhum jogador novo para sincronizar');
               }
-              
-              // Marcar sessão como sincronizada
-              localStorage.setItem(sessaoSincronizadaKey, 'true');
-              console.log('✅ Sessão marcada como sincronizada');
             }
           } catch (syncError) {
             console.error('❌ Erro no sync de jogadores:', syncError);
@@ -2378,10 +2363,6 @@ export default function FilaPage() {
             }
             
             console.log('✅ Jogadores sincronizados com Supabase');
-            
-            // Marcar sessão como sincronizada para evitar duplicação
-            localStorage.setItem(sessaoSincronizadaKey, 'true');
-            console.log('✅ Sessão marcada como sincronizada');
           } else {
             console.log('⚠️ Nenhum jogador encontrado no localStorage');
           }
@@ -6662,7 +6643,11 @@ export default function FilaPage() {
                         border: `1px solid ${corTimeA}20`
                       }}>
                         {historicoAcoes.filter(h => h.time === 'A').map((gol, idx) => {
-                          const jogador = time1.find(j => j.id === gol.jogadorId);
+                          // Buscar na lista completa de jogadores do localStorage
+                          const peladaId = buscar_pelada_id();
+                          const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
+                          const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+                          const jogador = todosJogadores.find((j: any) => j.id === gol.jogadorId);
                           return (
                             <div key={idx} style={{ fontSize: '0.75rem', color: '#333', marginBottom: '3px' }}>
                               ⚽ {jogador?.nome || 'Jogador'}
@@ -6692,7 +6677,11 @@ export default function FilaPage() {
                         border: `1px solid ${corTimeB}20`
                       }}>
                         {historicoAcoes.filter(h => h.time === 'B').map((gol, idx) => {
-                          const jogador = time2.find(j => j.id === gol.jogadorId);
+                          // Buscar na lista completa de jogadores do localStorage
+                          const peladaId = buscar_pelada_id();
+                          const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
+                          const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+                          const jogador = todosJogadores.find((j: any) => j.id === gol.jogadorId);
                           return (
                             <div key={idx} style={{ fontSize: '0.75rem', color: '#333', marginBottom: '3px' }}>
                               ⚽ {jogador?.nome || 'Jogador'}
@@ -7356,46 +7345,66 @@ export default function FilaPage() {
                 onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
               />
 
-              {/* Botões */}
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  onClick={() => {
-                    setShowConfirmarSenhaModal(false);
-                    setSenhaEncerramento('');
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '14px',
-                    fontSize: '1rem',
-                    fontWeight: '600',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '10px',
-                    background: '#fff',
-                    color: '#666',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={finalizarPelada}
-                  disabled={!senhaEncerramento || loadingEncerramento}
-                  style={{
-                    flex: 1,
-                    padding: '14px',
-                    fontSize: '1rem',
-                    fontWeight: '600',
-                    border: 'none',
-                    borderRadius: '10px',
-                    background: (senhaEncerramento && !loadingEncerramento) ? '#dc2626' : '#e5e7eb',
-                    color: (senhaEncerramento && !loadingEncerramento) ? '#fff' : '#999',
-                    cursor: (senhaEncerramento && !loadingEncerramento) ? 'pointer' : 'not-allowed',
-                    opacity: loadingEncerramento ? 0.7 : 1
-                  }}
-                >
-                  {loadingEncerramento ? '⏳ Encerrando...' : 'Confirmar'}
-                </button>
-              </div>
+              {/* Botões ou Mensagem de Loading */}
+              {loadingEncerramento ? (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '20px',
+                  color: '#16a34a',
+                  fontSize: '1rem',
+                  fontWeight: '600'
+                }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    border: '3px solid #e0e0e0',
+                    borderTop: '3px solid #16a34a',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    margin: '0 auto 16px'
+                  }}></div>
+                  Aguarde, sincronizando dados...
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => {
+                      setShowConfirmarSenhaModal(false);
+                      setSenhaEncerramento('');
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '14px',
+                      fontSize: '1rem',
+                      fontWeight: '600',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '10px',
+                      background: '#fff',
+                      color: '#666',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={finalizarPelada}
+                    disabled={!senhaEncerramento}
+                    style={{
+                      flex: 1,
+                      padding: '14px',
+                      fontSize: '1rem',
+                      fontWeight: '600',
+                      border: 'none',
+                      borderRadius: '10px',
+                      background: senhaEncerramento ? '#dc2626' : '#e5e7eb',
+                      color: senhaEncerramento ? '#fff' : '#999',
+                      cursor: senhaEncerramento ? 'pointer' : 'not-allowed'
+                    }}
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -33,7 +33,6 @@ export default function RegrasPage() {
     empate_conta_vitoria: false,
     tipo_fila: 'modo_prancheta'
   });
-  const [activeTab, setActiveTab] = useState<'4x4' | '5x5' | '6x6' | '7x7'>('5x5');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -260,117 +259,7 @@ export default function RegrasPage() {
     setRegras({ ...regras, jogadores_por_time: valor });
   };
 
-  const scrollToPadroes = () => {
-    const element = document.getElementById('padroes-sorteio');
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
 
-  const renderPatternTable = () => {
-    const patterns = {
-      '4x4': [
-        { pos: '1º', star2: 1, star3: 0, star4: 3, star5: 1, avg: 4.0 },
-        { pos: '2º', star2: 0, star3: 2, star4: 2, star5: 1, avg: 3.8 },
-        { pos: '3º', star2: 0, star3: 3, star4: 1, star5: 1, avg: 3.6 },
-        { pos: '4º', star2: 1, star3: 1, star4: 2, star5: 1, avg: 3.6 },
-        { pos: '5º', star2: 0, star3: 3, star4: 2, star5: 0, avg: 3.4 },
-        { pos: '6º', star2: 0, star3: 4, star4: 0, star5: 1, avg: 3.4 },
-        { pos: '7º', star2: 1, star3: 1, star4: 3, star5: 0, avg: 3.2 },
-        { pos: '8º', star2: 1, star3: 2, star4: 1, star5: 1, avg: 3.4 }
-      ],
-      '5x5': [
-        { pos: '1º', star2: 1, star3: 0, star4: 3, star5: 1, avg: 3.8 },
-        { pos: '2º', star2: 0, star3: 2, star4: 2, star5: 1, avg: 3.6 },
-        { pos: '3º', star2: 0, star3: 3, star4: 1, star5: 1, avg: 3.6 },
-        { pos: '4º', star2: 1, star3: 1, star4: 2, star5: 1, avg: 3.6 },
-        { pos: '5º', star2: 0, star3: 3, star4: 2, star5: 0, avg: 3.4 },
-        { pos: '6º', star2: 0, star3: 4, star4: 0, star5: 1, avg: 3.4 },
-        { pos: '7º', star2: 1, star3: 1, star4: 3, star5: 0, avg: 3.2 },
-        { pos: '8º', star2: 1, star3: 2, star4: 1, star5: 1, avg: 3.4 }
-      ],
-      '6x6': [
-        { pos: '1º', star2: 1, star3: 1, star4: 3, star5: 1, avg: 3.8 },
-        { pos: '2º', star2: 0, star3: 3, star4: 2, star5: 1, avg: 3.7 },
-        { pos: '3º', star2: 1, star3: 2, star4: 2, star5: 1, avg: 3.7 },
-        { pos: '4º', star2: 0, star3: 4, star4: 1, star5: 1, avg: 3.5 },
-        { pos: '5º', star2: 1, star3: 3, star4: 1, star5: 1, avg: 3.5 },
-        { pos: '6º', star2: 2, star3: 1, star4: 2, star5: 1, avg: 3.5 },
-        { pos: '7º', star2: 0, star3: 5, star4: 0, star5: 1, avg: 3.3 },
-        { pos: '8º', star2: 1, star3: 4, star4: 0, star5: 1, avg: 3.3 }
-      ],
-      '7x7': [
-        { pos: '1º', star2: 1, star3: 0, star4: 5, star5: 1, avg: 4.1 },
-        { pos: '2º', star2: 0, star3: 2, star4: 4, star5: 1, avg: 3.9 },
-        { pos: '3º', star2: 0, star3: 3, star4: 3, star5: 1, avg: 3.7 },
-        { pos: '4º', star2: 1, star3: 1, star4: 4, star5: 1, avg: 3.7 },
-        { pos: '5º', star2: 0, star3: 3, star4: 4, star5: 0, avg: 3.6 },
-        { pos: '6º', star2: 0, star3: 4, star4: 2, star5: 1, avg: 3.6 },
-        { pos: '7º', star2: 1, star3: 1, star4: 5, star5: 0, avg: 3.4 },
-        { pos: '8º', star2: 1, star3: 2, star4: 3, star5: 1, avg: 3.6 }
-      ]
-    };
-
-    const currentPatterns = patterns[activeTab];
-    
-    return (
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-1 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
-                
-              </th>
-              <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                ⭐2
-              </th>
-              <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                ⭐3
-              </th>
-              <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                ⭐4
-              </th>
-              <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                ⭐5
-              </th>
-              <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Média
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {currentPatterns.map((pattern, index) => (
-              <tr key={index} className="hover:bg-gray-50">
-                <td className="px-1 py-2 whitespace-nowrap text-sm font-medium text-gray-900 w-16">
-                  {pattern.pos}
-                </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">
-                  {pattern.star2}
-                </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">
-                  {pattern.star3}
-                </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">
-                  {pattern.star4}
-                </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">
-                  {pattern.star5}
-                </td>
-                <td className="px-2 py-2 whitespace-nowrap text-sm text-center font-medium">
-                  <span className={`${
-                    pattern.avg >= 3.8 ? 'text-green-600' : 
-                    pattern.avg >= 3.5 ? 'text-yellow-600' : 'text-orange-600'
-                  }`}>
-                    {pattern.avg.toFixed(1)}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
 
   return (
     <Layout title="Regras">
@@ -413,16 +302,8 @@ export default function RegrasPage() {
                   </div>
                 )}
 
-                <label className="block text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
-                  <span>🎲 Modelo de Sorteio</span>
-                  <button
-                    type="button"
-                    onClick={scrollToPadroes}
-                    className="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-full w-6 h-6 flex items-center justify-center transition-colors"
-                    title="Ver padrões de sorteio"
-                  >
-                    ❓
-                  </button>
+                <label className="block text-sm font-bold text-gray-800 mb-2">
+                  🎲 Modelo de Sorteio
                 </label>
                 {!possuiPermissao('sorteioEquilibrado') && (
                   <div className="mb-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2">
@@ -772,95 +653,6 @@ export default function RegrasPage() {
           </div>
         </section>
 
-        {/* Sistema de Sorteio Info */}
-        <section id="padroes-sorteio">
-          <div className="bg-gradient-to-b from-white to-gray-50 rounded-2xl p-6 border-2 border-gray-200 shadow-sm">
-            <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <span>🎲</span>
-              <span>Sistema de Sorteio Profissional</span>
-            </h3>
-            
-            <div className="space-y-4 text-gray-700">
-              <div>
-                <h4 className="font-semibold text-gray-900 mb-2">⚖️ Como Funciona</h4>
-                <p className="text-sm mb-2">O sistema usa <strong>algoritmos inteligentes</strong> para formar times equilibrados:</p>
-                <ul className="text-sm space-y-1 list-disc list-inside ml-4">
-                  <li><strong>Padrões por formação:</strong> 4x4 (8 padrões), 5x5 (8 padrões), 6x6 (13 padrões), 7x7 (8 padrões)</li>
-                  <li><strong>Ordem de prioridade:</strong> Testa padrões da maior para menor média de habilidade</li>
-                  <li><strong>Distribuição inteligente:</strong> Equilibra jogadores ⭐2, ⭐3, ⭐4 e ⭐5 automaticamente</li>
-                  <li><strong>Times incompletos:</strong> Mantém proporções quando sobram poucos jogadores</li>
-                  <li><strong>Aleatoriedade garantida:</strong> Embaralha jogadores antes de aplicar padrões</li>
-                  <li><strong>Fallback automático:</strong> Se não conseguir formar padrões, equilibra de forma aleatória</li>
-                </ul>
-              </div>
-
-              <div>
-                <h4 className="font-semibold text-gray-900 mb-4">🥇 Ordem de Prioridade dos Padrões</h4>
-                
-                {/* Tabs para alternar entre formações */}
-                <div className="mb-4">
-                  <div className="border-b border-gray-200">
-                    <nav className="-mb-px flex space-x-8">
-                      <button 
-                        onClick={() => setActiveTab('4x4')}
-                        className={`${
-                          activeTab === '4x4' 
-                            ? 'border-blue-500 text-blue-600' 
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm`}
-                      >
-                        4x4
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('5x5')}
-                        className={`${
-                          activeTab === '5x5' 
-                            ? 'border-blue-500 text-blue-600' 
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm`}
-                      >
-                        5x5
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('6x6')}
-                        className={`${
-                          activeTab === '6x6' 
-                            ? 'border-blue-500 text-blue-600' 
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm`}
-                      >
-                        6x6
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('7x7')}
-                        className={`${
-                          activeTab === '7x7' 
-                            ? 'border-blue-500 text-blue-600' 
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm`}
-                      >
-                        7x7
-                      </button>
-                    </nav>
-                  </div>
-                </div>
-
-                {/* Tabela de padrões */}
-                {renderPatternTable()}
-
-                <div className="mt-3 text-xs text-gray-600 bg-gray-50 p-3 rounded-lg">
-                  <p><strong>Como ler:</strong> Os números indicam quantos jogadores de cada nível de habilidade (2⭐, 3⭐, 4⭐, 5⭐) compõem cada time.</p>
-                  <p><strong>Exemplo:</strong> Padrão 1º = 1 jogador 2⭐ + 0 jogadores 3⭐ + 3 jogadores 4⭐ + 1 jogador 5⭐ = Média 3,8</p>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-semibold text-gray-900 mb-2">🎯 Resultado</h4>
-                <p className="text-sm">Sistema <strong>profissional</strong> que nunca quebra, sempre funciona e garante <strong>máxima variação</strong> entre sorteios, mantendo o equilíbrio competitivo.</p>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
       
       {/* Modal de Confirmação de Salvamento */}
