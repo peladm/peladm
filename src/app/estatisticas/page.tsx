@@ -292,9 +292,14 @@ export default function Estatisticas() {
   async function carregarEstatisticas() {
     try {
       const pelada_id = buscar_pelada_id();
-      if (!pelada_id) return;
+      console.log('🔍 [Estatísticas] pelada_id:', pelada_id);
+      if (!pelada_id) {
+        console.error('❌ [Estatísticas] pelada_id não encontrado!');
+        return;
+      }
 
       const clienteDb = await getClienteSupabase(pelada_id);
+      console.log('🔗 [Estatísticas] clienteDb obtido:', clienteDb ? 'SIM' : 'NÃO');
       if (!clienteDb) return;
 
       // Buscar jogadores com suas estatísticas básicas

@@ -180,7 +180,7 @@ export default function ResultadosPage() {
         return;
       }
       
-      const supabase = await getClienteSupabase();
+      const supabase = await getClienteSupabase(peladaId);
       
       // Buscar senha do cliente no Supabase
       const { data: cliente, error } = await supabase
@@ -211,7 +211,10 @@ export default function ResultadosPage() {
 
   const excluirPartida = async (jogoId: string) => {
     try {
-      const supabase = await getClienteSupabase();
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) return;
+      
+      const supabase = await getClienteSupabase(peladaId);
       
       // Excluir gols da partida
       await supabase
@@ -239,7 +242,10 @@ export default function ResultadosPage() {
 
   const excluirTodasPartidas = async () => {
     try {
-      const supabase = await getClienteSupabase();
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) return;
+      
+      const supabase = await getClienteSupabase(peladaId);
       const jogosIds = jogosFiltrados.map(j => j.id);
 
       // Excluir todos os gols das partidas filtradas
@@ -419,7 +425,7 @@ export default function ResultadosPage() {
       }
 
       // Obter cliente Supabase dedicado
-      const clienteDb = await getClienteSupabase();
+      const clienteDb = await getClienteSupabase(peladaId);
       if (!clienteDb) {
         console.error('❌ Erro ao obter cliente Supabase');
         return;

@@ -400,138 +400,157 @@ export default function SorteioPage() {
     }
   };
 
-  // Sorteio Equilibrado (usa padrões por nível)
+  // Sorteio Equilibrado - Greedy com Limite de Extremos
   const executarSorteioEquilibrado = (jogadores: Jogador[], times: Time[], jogadoresPorTime: number) => {
-    console.log('⚖️ EXECUTANDO SORTEIO EQUILIBRADO');
+    console.log('⚖️ EXECUTANDO SORTEIO EQUILIBRADO - GREEDY COM LIMITE DE EXTREMOS');
     
-    // Separar jogadores por nível
+    // 1. Separar jogadores por nível (já embaralha cada grupo)
     const jogadoresPorNivel = separarJogadoresPorNivel(jogadores);
     
-    // Obter padrões específicos do tamanho
-    const padroes = obterPadroesPorTamanho(jogadoresPorTime);
+    // 2. Calcular limites de cada time
+    const timesCompletos = Math.floor(jogadores.length / jogadoresPorTime);
+    const jogadoresNoTimeIncompleto = jogadores.length % jogadoresPorTime;
+    const temTimeIncompleto = jogadoresNoTimeIncompleto > 0;
     
-    // Aplicar padrões equilibrados
-    aplicarPadroesEquilibrados(jogadoresPorNivel, times, padroes, jogadoresPorTime);
-  };
-
-  const obterPadroesPorTamanho = (tamanho: number) => {
-    // Padrões baseados na interface de regras
-    const padroesPorTamanho: { [key: number]: Array<{ star2: number, star3: number, star4: number, star5: number, avg: number }> } = {
-      4: [
-        { star2: 1, star3: 0, star4: 3, star5: 1, avg: 4.0 },
-        { star2: 0, star3: 2, star4: 2, star5: 1, avg: 3.8 },
-        { star2: 0, star3: 3, star4: 1, star5: 1, avg: 3.6 },
-        { star2: 1, star3: 1, star4: 2, star5: 1, avg: 3.6 },
-        { star2: 0, star3: 3, star4: 2, star5: 0, avg: 3.4 },
-        { star2: 0, star3: 4, star4: 0, star5: 1, avg: 3.4 },
-        { star2: 1, star3: 1, star4: 3, star5: 0, avg: 3.2 },
-        { star2: 1, star3: 2, star4: 1, star5: 1, avg: 3.4 }
-      ],
-      5: [
-        { star2: 1, star3: 0, star4: 3, star5: 1, avg: 3.8 },
-        { star2: 0, star3: 2, star4: 2, star5: 1, avg: 3.6 },
-        { star2: 0, star3: 3, star4: 1, star5: 1, avg: 3.6 },
-        { star2: 1, star3: 1, star4: 2, star5: 1, avg: 3.6 },
-        { star2: 0, star3: 3, star4: 2, star5: 0, avg: 3.4 },
-        { star2: 0, star3: 4, star4: 0, star5: 1, avg: 3.4 },
-        { star2: 1, star3: 1, star4: 3, star5: 0, avg: 3.2 },
-        { star2: 1, star3: 2, star4: 1, star5: 1, avg: 3.4 }
-      ],
-      6: [
-        { star2: 1, star3: 1, star4: 3, star5: 1, avg: 3.8 }, // (2+3+12+5)/6 = 3.83
-        { star2: 0, star3: 3, star4: 2, star5: 1, avg: 3.7 }, // (0+9+8+5)/6 = 3.67
-        { star2: 1, star3: 2, star4: 2, star5: 1, avg: 3.7 }, // (2+6+8+5)/6 = 3.67
-        { star2: 0, star3: 4, star4: 1, star5: 1, avg: 3.5 }, // (0+12+4+5)/6 = 3.5
-        { star2: 1, star3: 3, star4: 1, star5: 1, avg: 3.5 }, // (2+9+4+5)/6 = 3.5
-        { star2: 2, star3: 1, star4: 2, star5: 1, avg: 3.5 }, // (4+3+8+5)/6 = 3.5
-        { star2: 0, star3: 5, star4: 0, star5: 1, avg: 3.3 }, // (0+15+0+5)/6 = 3.33
-        { star2: 1, star3: 4, star4: 0, star5: 1, avg: 3.3 }  // (2+12+0+5)/6 = 3.33
-      ],
-      7: [
-        { star2: 1, star3: 0, star4: 5, star5: 1, avg: 4.1 },
-        { star2: 0, star3: 2, star4: 4, star5: 1, avg: 3.9 },
-        { star2: 0, star3: 3, star4: 3, star5: 1, avg: 3.7 },
-        { star2: 1, star3: 1, star4: 4, star5: 1, avg: 3.7 },
-        { star2: 0, star3: 3, star4: 4, star5: 0, avg: 3.6 },
-        { star2: 0, star3: 4, star4: 2, star5: 1, avg: 3.6 },
-        { star2: 1, star3: 1, star4: 5, star5: 0, avg: 3.4 },
-        { star2: 1, star3: 2, star4: 3, star5: 1, avg: 3.6 }
-      ]
-    };
-
-    return padroesPorTamanho[tamanho] || [];
-  };
-
-  const aplicarPadroesEquilibrados = (jogadoresPorNivel: { [key: number]: Jogador[] }, times: Time[], padroes: any[], jogadoresPorTime: number) => {
-    if (padroes.length === 0) {
-      console.log('⚠️ Nenhum padrão disponível para este tamanho de time');
-      // Fallback para distribuição simples
-      const todosJogadores = Object.values(jogadoresPorNivel).flat();
-      const jogadoresEmbaralhados = embaralharArray(todosJogadores);
+    const limitesPorTime = times.map((_, i) => {
+      if (temTimeIncompleto && i === times.length - 1) {
+        return jogadoresNoTimeIncompleto;
+      }
+      return jogadoresPorTime;
+    });
+    
+    console.log(`📋 Times: ${times.length} (${timesCompletos} completos + ${temTimeIncompleto ? '1 incompleto' : '0'})`);
+    console.log(`🎯 Limites: ${limitesPorTime.join(', ')}`);
+    
+    // 3. Inicializar contadores
+    const somasTimes = times.map(() => 0);
+    const jogadores5PorTime = times.map(() => 0);
+    const jogadores2PorTime = times.map(() => 0);
+    
+    // === FASE 1: DISTRIBUIR EXTREMOS (limite 1 por time) ===
+    console.log('\n🔴 FASE 1: Distribuindo extremos (5⭐ e 2⭐)');
+    
+    // Distribuir 5⭐ (máximo 1 por time)
+    const jogadores5 = jogadoresPorNivel[5] || [];
+    const jogadores5Reserva = [];
+    for (const jogador of jogadores5) {
+      let timeEscolhido = -1;
+      let menorSoma = Infinity;
       
-      let jogadorIndex = 0;
-      for (let i = 0; i < times.length && jogadorIndex < jogadoresEmbaralhados.length; i++) {
-        for (let j = 0; j < jogadoresPorTime && jogadorIndex < jogadoresEmbaralhados.length; j++) {
-          times[i].jogadores.push(jogadoresEmbaralhados[jogadorIndex]);
-          jogadorIndex++;
+      for (let t = 0; t < times.length; t++) {
+        const temEspaco = times[t].jogadores.length < limitesPorTime[t];
+        const naoTemJogador5 = jogadores5PorTime[t] === 0;
+        
+        if (temEspaco && naoTemJogador5 && somasTimes[t] < menorSoma) {
+          menorSoma = somasTimes[t];
+          timeEscolhido = t;
         }
       }
-      return;
+      
+      if (timeEscolhido >= 0) {
+        times[timeEscolhido].jogadores.push(jogador);
+        somasTimes[timeEscolhido] += jogador.nivel;
+        jogadores5PorTime[timeEscolhido]++;
+        console.log(`  → ${jogador.nome} (5⭐) → Time ${timeEscolhido + 1}`);
+      } else {
+        jogadores5Reserva.push(jogador);
+        console.log(`  → ${jogador.nome} (5⭐) → RESERVA (todos os times já têm 1)`);
+      }
     }
-
-    // Embaralhar padrões para seleção aleatória
-    const padroesEmbaralhados = embaralharArray([...padroes]);
     
-    // Aplicar padrão para cada time
-    for (let i = 0; i < times.length; i++) {
-      const time = times[i];
-      const padrao = padroesEmbaralhados[i % padroesEmbaralhados.length];
+    // Distribuir 2⭐ (máximo 1 por time)
+    const jogadores2 = jogadoresPorNivel[2] || [];
+    const jogadores2Reserva = [];
+    for (const jogador of jogadores2) {
+      let timeEscolhido = -1;
+      let menorSoma = Infinity;
       
-      console.log(`📋 Time ${time.nome} - Padrão: 2⭐(${padrao.star2}) 3⭐(${padrao.star3}) 4⭐(${padrao.star4}) 5⭐(${padrao.star5})`);
+      for (let t = 0; t < times.length; t++) {
+        const temEspaco = times[t].jogadores.length < limitesPorTime[t];
+        const naoTemJogador2 = jogadores2PorTime[t] === 0;
+        
+        if (temEspaco && naoTemJogador2 && somasTimes[t] < menorSoma) {
+          menorSoma = somasTimes[t];
+          timeEscolhido = t;
+        }
+      }
       
-      // Atribuir a média do padrão ao time (média teórica)
-      time.nivelMedio = padrao.avg || 3.5;
-      
-      // Tentar preencher time com o padrão especificado
-      preencherTimePorPadrao(time, jogadoresPorNivel, padrao);
-      
-      // Se ainda faltam jogadores, completar com disponíveis
-      completarTimeComDisponiveis(time, jogadoresPorNivel, jogadoresPorTime);
+      if (timeEscolhido >= 0) {
+        times[timeEscolhido].jogadores.push(jogador);
+        somasTimes[timeEscolhido] += jogador.nivel;
+        jogadores2PorTime[timeEscolhido]++;
+        console.log(`  → ${jogador.nome} (2⭐) → Time ${timeEscolhido + 1}`);
+      } else {
+        jogadores2Reserva.push(jogador);
+        console.log(`  → ${jogador.nome} (2⭐) → RESERVA (todos os times já têm 1)`);
+      }
     }
-  };
-
-  const preencherTimePorPadrao = (time: Time, jogadoresPorNivel: { [key: number]: Jogador[] }, padrao: any) => {
-    // Adicionar jogadores de cada nível conforme o padrão
-    const niveis = [2, 3, 4, 5];
-    for (const nivel of niveis) {
-      const quantidade = padrao[`star${nivel}`] || 0;
+    
+    // === FASE 2: DISTRIBUIR INTERMEDIÁRIOS (4⭐, 3⭐, 1⭐) ===
+    console.log('\n🟡 FASE 2: Distribuindo intermediários (4⭐, 3⭐, 1⭐)');
+    
+    [4, 3, 1].forEach(nivel => {
       const jogadoresNivel = jogadoresPorNivel[nivel] || [];
+      for (const jogador of jogadoresNivel) {
+        let timeEscolhido = -1;
+        let menorSoma = Infinity;
+        
+        for (let t = 0; t < times.length; t++) {
+          const temEspaco = times[t].jogadores.length < limitesPorTime[t];
+          
+          if (temEspaco && somasTimes[t] < menorSoma) {
+            menorSoma = somasTimes[t];
+            timeEscolhido = t;
+          }
+        }
+        
+        if (timeEscolhido >= 0) {
+          times[timeEscolhido].jogadores.push(jogador);
+          somasTimes[timeEscolhido] += jogador.nivel;
+          console.log(`  → ${jogador.nome} (${nivel}⭐) → Time ${timeEscolhido + 1} (soma: ${somasTimes[timeEscolhido]})`);
+        }
+      }
+    });
+    
+    // === FASE 3: DISTRIBUIR EXTREMOS RESERVA (se houver espaço) ===
+    if (jogadores5Reserva.length > 0 || jogadores2Reserva.length > 0) {
+      console.log('\n🔵 FASE 3: Distribuindo extremos da reserva');
       
-      for (let i = 0; i < quantidade && jogadoresNivel.length > 0; i++) {
-        const jogadorIndex = Math.floor(Math.random() * jogadoresNivel.length);
-        const jogador = jogadoresNivel.splice(jogadorIndex, 1)[0];
-        time.jogadores.push(jogador);
+      const todosReserva = [...jogadores5Reserva, ...jogadores2Reserva];
+      for (const jogador of todosReserva) {
+        let timeEscolhido = -1;
+        let menorSoma = Infinity;
+        
+        for (let t = 0; t < times.length; t++) {
+          const temEspaco = times[t].jogadores.length < limitesPorTime[t];
+          
+          if (temEspaco && somasTimes[t] < menorSoma) {
+            menorSoma = somasTimes[t];
+            timeEscolhido = t;
+          }
+        }
+        
+        if (timeEscolhido >= 0) {
+          times[timeEscolhido].jogadores.push(jogador);
+          somasTimes[timeEscolhido] += jogador.nivel;
+          console.log(`  → ${jogador.nome} (${jogador.nivel}⭐) → Time ${timeEscolhido + 1} (RESERVA)`);
+        }
       }
     }
-  };
-
-  const completarTimeComDisponiveis = (time: Time, jogadoresPorNivel: { [key: number]: Jogador[] }, jogadoresPorTime: number) => {
-    // Se o time ainda não está completo, adicionar jogadores disponíveis
-    while (time.jogadores.length < jogadoresPorTime) {
-      const jogadoresDisponiveis = Object.values(jogadoresPorNivel).flat();
-      if (jogadoresDisponiveis.length === 0) break;
-      
-      const jogadorAleatorio = jogadoresDisponiveis[Math.floor(Math.random() * jogadoresDisponiveis.length)];
-      
-      // Remover o jogador da lista do seu nível
-      const nivel = jogadorAleatorio.nivel;
-      const indexNoNivel = jogadoresPorNivel[nivel].findIndex(j => j.id === jogadorAleatorio.id);
-      if (indexNoNivel >= 0) {
-        jogadoresPorNivel[nivel].splice(indexNoNivel, 1);
+    
+    // 4. Calcular médias finais
+    console.log('\n📊 RESULTADO FINAL:');
+    times.forEach((time, i) => {
+      if (time.jogadores.length > 0) {
+        time.nivelMedio = somasTimes[i] / time.jogadores.length;
+        const status = time.jogadores.length < jogadoresPorTime ? ' (INCOMPLETO)' : '';
+        console.log(`${time.nome}: ${time.jogadores.length} jogadores | Soma: ${somasTimes[i]} | Média: ${time.nivelMedio.toFixed(2)}${status}`);
+        console.log(`  5⭐: ${jogadores5PorTime[i]} | 2⭐: ${jogadores2PorTime[i]}`);
+        console.log(`  Jogadores: ${time.jogadores.map(j => `${j.nome}(${j.nivel}⭐)`).join(', ')}`);
       }
-      
-      time.jogadores.push(jogadorAleatorio);
-    }
+    });
+    
+    console.log('\n✅ Distribuição com limite de extremos concluída');
   };
 
 
