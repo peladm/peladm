@@ -47,7 +47,7 @@ export default function ResultadosPage() {
   const [jogos, setJogos] = useState<Jogo[]>([]);
   const [jogosFiltrados, setJogosFiltrados] = useState<Jogo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filtro, setFiltro] = useState<'hoje' | 'data'>('hoje');
+  const [filtro, setFiltro] = useState<'atual' | 'mes' | 'trimestre' | 'semestre' | 'ano' | 'sessao'>('atual');
   const [dataSelecionada, setDataSelecionada] = useState('');
   const [datasDisponiveis, setDatasDisponiveis] = useState<string[]>([]);
   const [totalPartidas, setTotalPartidas] = useState(0);
@@ -523,14 +523,31 @@ export default function ResultadosPage() {
       });
     };
 
-    if (filtro === 'hoje') {
-      const hoje = new Date().toLocaleDateString('pt-BR', { 
-        day: '2-digit', 
-        month: '2-digit',
-        year: 'numeric'
-      });
-      filtered = jogos.filter(jogo => formatarData(jogo.created_at) === hoje);
-    } else if (filtro === 'data' && dataSelecionada) {
+    if (filtro === 'atual') {
+      // Buscar apenas a sessão mais recente
+      if (jogos.length > 0) {
+        const jogoMaisRecente = jogos.reduce((prev, current) => {
+          return new Date(current.created_at) > new Date(prev.created_at) ? current : prev;
+        });
+        filtered = [jogoMaisRecente];
+      }
+    } else if (filtro === 'mes') {
+      const hoje = new Date();
+      const umMesAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
+      filtered = jogos.filter(jogo => new Date(jogo.created_at) >= umMesAtras);
+    } else if (filtro === 'trimestre') {
+      const hoje = new Date();
+      const trimAtras = new Date(hoje.getTime() - 90 * 24 * 60 * 60 * 1000);
+      filtered = jogos.filter(jogo => new Date(jogo.created_at) >= trimAtras);
+    } else if (filtro === 'semestre') {
+      const hoje = new Date();
+      const semAtras = new Date(hoje.getTime() - 180 * 24 * 60 * 60 * 1000);
+      filtered = jogos.filter(jogo => new Date(jogo.created_at) >= semAtras);
+    } else if (filtro === 'ano') {
+      const hoje = new Date();
+      const anoAtras = new Date(hoje.getTime() - 365 * 24 * 60 * 60 * 1000);
+      filtered = jogos.filter(jogo => new Date(jogo.created_at) >= anoAtras);
+    } else if (filtro === 'sessao' && dataSelecionada) {
       filtered = jogos.filter(jogo => formatarData(jogo.created_at) === dataSelecionada);
     }
 
@@ -566,29 +583,92 @@ export default function ResultadosPage() {
         <section className="bg-white rounded-xl shadow-md p-4 mb-4 border border-gray-300">
           <h2 className="text-xl font-bold text-gray-800 mb-3 text-center">🏆 Histórico de Resultados</h2>
           
-          <div className="flex gap-2">
+          {/* Bloco 1: Pelada Atual */}
+          <div className="mb-3">
             <button
               onClick={() => {
-                setFiltro('hoje');
+                setFiltro('atual');
                 setDataSelecionada('');
               }}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${
-                filtro === 'hoje'
+              className={`w-full py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${
+                filtro === 'atual'
                   ? 'bg-green-600 text-white'
                   : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
               }`}
             >
-              Hoje
+              ⚡ Atual (Pelada mais recente)
             </button>
+          </div>
+
+          {/* Bloco 2: Períodos */}
+          <div className="mb-3">
+            <div className="grid grid-cols-4 gap-2">
+              <button
+                onClick={() => {
+                  setFiltro('mes');
+                  setDataSelecionada('');
+                }}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
+                  filtro === 'mes'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+              >
+                Mês
+              </button>
+              <button
+                onClick={() => {
+                  setFiltro('trimestre');
+                  setDataSelecionada('');
+                }}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
+                  filtro === 'trimestre'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+              >
+                Trimestre
+              </button>
+              <button
+                onClick={() => {
+                  setFiltro('semestre');
+                  setDataSelecionada('');
+                }}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
+                  filtro === 'semestre'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+              >
+                Semestre
+              </button>
+              <button
+                onClick={() => {
+                  setFiltro('ano');
+                  setDataSelecionada('');
+                }}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
+                  filtro === 'ano'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+              >
+                Ano
+              </button>
+            </div>
+          </div>
+
+          {/* Bloco 3: Pelada Específica */}
+          <div>
             <select
               value={dataSelecionada}
               onChange={(e) => {
                 setDataSelecionada(e.target.value);
-                setFiltro('data');
+                setFiltro('sessao');
               }}
-              className="flex-1 py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
             >
-              <option value="">Selecione uma data</option>
+              <option value="">🔍 Selecionar pelada específica</option>
               {datasDisponiveis.map(data => (
                 <option key={data} value={data}>{data}</option>
               ))}
