@@ -8,6 +8,7 @@ import AdInterstitial from '../../components/AdInterstitial';
 import { getRegrasWithCache, isOnline, onConnectionChange } from '../../lib/cacheService';
 import { addToSyncQueue, syncQueue, getSyncQueueCount, syncQueueTransacional } from '../../lib/syncService';
 import { buscar_pelada_id, buscar_plano } from '../../lib/credenciais';
+import { soundService } from '../../lib/soundService';
 import { 
   fila_remover, 
   fila_adicionar, 
@@ -154,6 +155,8 @@ export default function FilaPage() {
 
   // State para modal de sucesso ao encerrar pelada
   const [showModalSucessoEncerrar, setShowModalSucessoEncerrar] = useState(false);
+  const [showModalSincronizando, setShowModalSincronizando] = useState(false);
+  const [mensagemSync, setMensagemSync] = useState('');
 
   // State para modal de limite FREE atingido
   const [showModalLimiteFree, setShowModalLimiteFree] = useState(false);
@@ -597,6 +600,8 @@ export default function FilaPage() {
         setCronometro(prev => {
           if (prev <= 1) {
             setCronometroAtivo(false);
+            // 🔊 Tocar som de apito quando acabar o tempo
+            soundService.playWhistleSound();
             return 0;
           }
           return prev - 1;
@@ -687,12 +692,16 @@ export default function FilaPage() {
         setPlacarTimeA(prev => {
           const novoPlacar = prev + 1;
           atualizarPlacarNoLocalStorage('A', novoPlacar);
+          // 🔊 Tocar som de gol
+          soundService.playGoalSound();
           return novoPlacar;
         });
       } else {
         setPlacarTimeB(prev => {
           const novoPlacar = prev + 1;
           atualizarPlacarNoLocalStorage('B', novoPlacar);
+          // 🔊 Tocar som de gol
+          soundService.playGoalSound();
           return novoPlacar;
         });
       }
@@ -730,6 +739,8 @@ export default function FilaPage() {
         const novoPlacar = prev + 1;
         // Atualizar localStorage da partida
         atualizarPlacarNoLocalStorage('A', novoPlacar);
+        // 🔊 Tocar som de gol
+        soundService.playGoalSound();
         return novoPlacar;
       });
     } else {
@@ -737,6 +748,8 @@ export default function FilaPage() {
         const novoPlacar = prev + 1;
         // Atualizar localStorage da partida
         atualizarPlacarNoLocalStorage('B', novoPlacar);
+        // 🔊 Tocar som de gol
+        soundService.playGoalSound();
         return novoPlacar;
       });
     }
@@ -2061,6 +2074,11 @@ export default function FilaPage() {
       console.log(`☁️ ========== PLANO ${plano.toUpperCase()} ==========`);
       console.log('☁️ Iniciando conexão com Supabase...');
       
+      // Mostrar modal de sincronização
+      setShowConfirmarSenhaModal(false);
+      setShowModalSincronizando(true);
+      setMensagemSync('Conectando com o servidor...');
+      
       const clienteDb = await getClienteSupabase(peladaId);
       console.log('✅ Conexão estabelecida');
       
@@ -2085,6 +2103,7 @@ export default function FilaPage() {
         try {
           // 1. Sync tabela JOGOS (INSERT - adiciona sem sobrescrever)
           console.log('📊 --- Sincronizando JOGOS ---');
+          setMensagemSync('Sincronizando partidas...');
           const jogosKey = `jogos_${sessaoAtiva.id}`;
           const jogosStr = localStorage.getItem(jogosKey);
           
@@ -2130,6 +2149,7 @@ export default function FilaPage() {
           
           // 2. Sync tabela GOLS (INSERT - adiciona sem sobrescrever)
           console.log('⚽ --- Sincronizando GOLS ---');
+          setMensagemSync('Sincronizando gols...');
           const golsKey = `gols_${sessaoAtiva.id}`;
           const golsStr = localStorage.getItem(golsKey);
           
@@ -2168,6 +2188,7 @@ export default function FilaPage() {
           
           // 3. Sync SESSÃO (INSERT - adiciona registro de sessão finalizada)
           console.log('📋 --- Sincronizando SESSÃO ---');
+          setMensagemSync('Finalizando sessão...');
           console.log(`  ⚙️ Inserindo sessão ${sessaoAtiva.id}...`);
           const { error: sessaoError } = await clienteDb
             .from('sessoes')
@@ -2208,6 +2229,7 @@ export default function FilaPage() {
         if (!isModoPartida) {
           // MODO PRANCHETA (Gold/Premium): Sync apenas jogadores novos
           console.log('📋 MODO PRANCHETA: Sincronizando apenas jogadores novos...');
+          setMensagemSync('Sincronizando jogadores...');
           
           try {
             const jogadoresKey = `jogadores_${peladaId}`;
@@ -2275,6 +2297,7 @@ export default function FilaPage() {
         } else {
           // MODO PARTIDA (Premium only): Sync completo (soma estatísticas)
           console.log(`☁️ MODO PARTIDA: Sincronizando jogadores (somando estatísticas)...`);
+          setMensagemSync('Atualizando estatísticas dos jogadores...');
         
           try {
             const jogadoresKey = `jogadores_${peladaId}`;
@@ -2382,6 +2405,7 @@ export default function FilaPage() {
       // ============================================
       console.log('🗑️ ========== LIMPEZA LOCALSTORAGE ==========');
       console.log('🗑️ Limpando todas as tabelas do localStorage...');
+      setMensagemSync('Limpando dados locais...');
       
       localStorage.removeItem(`jogos_${sessaoAtiva.id}`);
       console.log(`  ✓ Removido: jogos_${sessaoAtiva.id}`);
@@ -2408,6 +2432,8 @@ export default function FilaPage() {
       // FINALIZAÇÃO
       // ============================================
       console.log('🎉 ========== FINALIZAÇÃO ==========');
+      setMensagemSync('Sincronização concluída! ✅');
+      setShowModalSincronizando(false);
       setShowConfirmarSenhaModal(false);
       setSenhaEncerramento('');
       setShowModalSucessoEncerrar(true);
@@ -2426,6 +2452,7 @@ export default function FilaPage() {
       console.error('❌ ========== ERRO CRÍTICO NO ENCERRAMENTO ==========');
       console.error('Erro:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
+      setShowModalSincronizando(false); // Fechar modal de sincronização
       alert(`❌ Erro ao encerrar pelada:\n${errorMessage}\n\nO encerramento foi abortado. Verifique os logs no console.`);
       setLoadingEncerramento(false); // Re-habilitar botão em caso de erro
     }
@@ -7405,6 +7432,93 @@ export default function FilaPage() {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Sincronização */}
+        {showModalSincronizando && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 3500,
+            padding: '20px'
+          }}>
+            <div style={{
+              backgroundColor: '#fff',
+              borderRadius: '24px',
+              maxWidth: '400px',
+              width: '100%',
+              padding: '32px',
+              textAlign: 'center',
+              animation: 'slideUpModal 0.4s ease-out'
+            }}>
+              {/* Ícone de carregamento animado */}
+              <div style={{
+                width: '80px',
+                height: '80px',
+                margin: '0 auto 24px',
+                border: '6px solid #f3f4f6',
+                borderTop: '6px solid #10b981',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }}></div>
+              
+              <style dangerouslySetInnerHTML={{__html: `
+                @keyframes spin {
+                  0% { transform: rotate(0deg); }
+                  100% { transform: rotate(360deg); }
+                }
+              `}} />
+              
+              <h2 style={{
+                fontSize: '24px',
+                fontWeight: 'bold',
+                color: '#1f2937',
+                marginBottom: '12px'
+              }}>
+                Sincronizando...
+              </h2>
+              
+              <p style={{
+                fontSize: '16px',
+                color: '#6b7280',
+                marginBottom: '24px'
+              }}>
+                {mensagemSync}
+              </p>
+              
+              {/* Aviso importante */}
+              <div style={{
+                backgroundColor: '#fef3c7',
+                border: '2px solid #f59e0b',
+                borderRadius: '12px',
+                padding: '16px',
+                marginTop: '20px'
+              }}>
+                <p style={{
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  color: '#92400e',
+                  marginBottom: '8px'
+                }}>
+                  ⚠️ Importante
+                </p>
+                <p style={{
+                  fontSize: '13px',
+                  color: '#78350f',
+                  lineHeight: '1.5'
+                }}>
+                  Não feche nem atualize esta página até que a sincronização seja concluída!
+                </p>
+              </div>
             </div>
           </div>
         )}

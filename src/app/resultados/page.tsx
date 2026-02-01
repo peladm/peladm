@@ -524,12 +524,13 @@ export default function ResultadosPage() {
     };
 
     if (filtro === 'atual') {
-      // Buscar apenas a sessão mais recente
+      // Buscar todos os jogos da sessão mais recente
       if (jogos.length > 0) {
         const jogoMaisRecente = jogos.reduce((prev, current) => {
           return new Date(current.created_at) > new Date(prev.created_at) ? current : prev;
         });
-        filtered = [jogoMaisRecente];
+        // Filtrar todos os jogos da mesma sessão
+        filtered = jogos.filter(jogo => jogo.sessao_id === jogoMaisRecente.sessao_id);
       }
     } else if (filtro === 'mes') {
       const hoje = new Date();
