@@ -50,12 +50,18 @@ export default function ResultadosPage() {
   const [filtro, setFiltro] = useState<'atual' | 'mes' | 'trimestre' | 'semestre' | 'ano' | 'sessao'>('atual');
   const [dataSelecionada, setDataSelecionada] = useState('');
   const [datasDisponiveis, setDatasDisponiveis] = useState<string[]>([]);
+  const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
+  const [trimestresDisponiveis, setTrimestresDisponiveis] = useState<string[]>([]);
+  const [semestresDisponiveis, setSemestresDisponiveis] = useState<string[]>([]);
+  const [anosDisponiveis, setAnosDisponiveis] = useState<string[]>([]);
+  const [periodoSelecionado, setPeriodoSelecionado] = useState('');
   const [totalPartidas, setTotalPartidas] = useState(0);
   const [totalGols, setTotalGols] = useState(0);
   const [totalJogadores, setTotalJogadores] = useState(0);
   const [jogadores, setJogadores] = useState<{ [id: string]: Jogador }>({});
   const [mostrarModalGols, setMostrarModalGols] = useState(false);
   const [mostrarModalJogadores, setMostrarModalJogadores] = useState(false);
+  const [ordenarPor, setOrdenarPor] = useState<'pontos' | 'vitorias' | 'jogos' | 'gols' | 'derrotas' | 'empates'>('pontos');
   const [modoAdmin, setModoAdmin] = useState(false);
   const [mostrarModalSenha, setMostrarModalSenha] = useState(false);
   const [senhaAdmin, setSenhaAdmin] = useState('');
@@ -95,7 +101,7 @@ export default function ResultadosPage() {
 
   useEffect(() => {
     aplicarFiltro();
-  }, [filtro, dataSelecionada, jogos]);
+  }, [filtro, dataSelecionada, periodoSelecionado, jogos]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -500,9 +506,46 @@ export default function ResultadosPage() {
         });
       }))];
       
+      // Extrair meses únicos (MM/YYYY)
+      const meses = [...new Set((jogosData || []).map(jogo => {
+        const data = new Date(jogo.created_at);
+        const mes = String(data.getMonth() + 1).padStart(2, '0');
+        const ano = data.getFullYear();
+        return `${mes}/${ano}`;
+      }))].sort().reverse();
+      
+      // Extrair trimestres únicos (QX/YYYY)
+      const trimestres = [...new Set((jogosData || []).map(jogo => {
+        const data = new Date(jogo.created_at);
+        const mes = data.getMonth();
+        const trimestre = Math.floor(mes / 3) + 1;
+        return `Q${trimestre}/${data.getFullYear()}`;
+      }))].sort().reverse();
+      
+      // Extrair semestres únicos (SX/YYYY)
+      const semestres = [...new Set((jogosData || []).map(jogo => {
+        const data = new Date(jogo.created_at);
+        const semestre = data.getMonth() < 6 ? 1 : 2;
+        return `S${semestre}/${data.getFullYear()}`;
+      }))].sort().reverse();
+      
+      // Extrair anos únicos
+      const anos = [...new Set((jogosData || []).map(jogo => {
+        const data = new Date(jogo.created_at);
+        return data.getFullYear().toString();
+      }))].sort().reverse();
+      
       console.log('📅 Datas disponíveis:', datas);
+      console.log('📅 Meses disponíveis:', meses);
+      console.log('📅 Trimestres disponíveis:', trimestres);
+      console.log('📅 Semestres disponíveis:', semestres);
+      console.log('📅 Anos disponíveis:', anos);
       console.log('📊 Total de jogos:', jogosData?.length);
       setDatasDisponiveis(datas);
+      setMesesDisponiveis(meses);
+      setTrimestresDisponiveis(trimestres);
+      setSemestresDisponiveis(semestres);
+      setAnosDisponiveis(anos);
 
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
@@ -524,32 +567,75 @@ export default function ResultadosPage() {
     };
 
     if (filtro === 'atual') {
-      // Buscar todos os jogos da sessão mais recente
-      if (jogos.length > 0) {
+      // Pelada específica se selecionada, senão sessão mais recente
+      if (dataSelecionada) {
+        filtered = jogos.filter(jogo => formatarData(jogo.created_at) === dataSelecionada);
+      } else if (jogos.length > 0) {
         const jogoMaisRecente = jogos.reduce((prev, current) => {
           return new Date(current.created_at) > new Date(prev.created_at) ? current : prev;
         });
-        // Filtrar todos os jogos da mesma sessão
         filtered = jogos.filter(jogo => jogo.sessao_id === jogoMaisRecente.sessao_id);
       }
     } else if (filtro === 'mes') {
-      const hoje = new Date();
-      const umMesAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
-      filtered = jogos.filter(jogo => new Date(jogo.created_at) >= umMesAtras);
+      if (periodoSelecionado) {
+        // Filtrar por mês específico (MM/YYYY)
+        filtered = jogos.filter(jogo => {
+          const data = new Date(jogo.created_at);
+          const mes = String(data.getMonth() + 1).padStart(2, '0');
+          const ano = data.getFullYear();
+          const mesAno = `${mes}/${ano}`;
+          return mesAno === periodoSelecionado;
+        });
+      } else {
+        // Último mês (30 dias)
+        const hoje = new Date();
+        const umMesAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
+        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= umMesAtras);
+      }
     } else if (filtro === 'trimestre') {
-      const hoje = new Date();
-      const trimAtras = new Date(hoje.getTime() - 90 * 24 * 60 * 60 * 1000);
-      filtered = jogos.filter(jogo => new Date(jogo.created_at) >= trimAtras);
+      if (periodoSelecionado) {
+        // Filtrar por trimestre específico (QX/YYYY)
+        filtered = jogos.filter(jogo => {
+          const data = new Date(jogo.created_at);
+          const mes = data.getMonth();
+          const trimestre = Math.floor(mes / 3) + 1;
+          const trimestreStr = `Q${trimestre}/${data.getFullYear()}`;
+          return trimestreStr === periodoSelecionado;
+        });
+      } else {
+        // Último trimestre (90 dias)
+        const hoje = new Date();
+        const trimAtras = new Date(hoje.getTime() - 90 * 24 * 60 * 60 * 1000);
+        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= trimAtras);
+      }
     } else if (filtro === 'semestre') {
-      const hoje = new Date();
-      const semAtras = new Date(hoje.getTime() - 180 * 24 * 60 * 60 * 1000);
-      filtered = jogos.filter(jogo => new Date(jogo.created_at) >= semAtras);
+      if (periodoSelecionado) {
+        // Filtrar por semestre específico (SX/YYYY)
+        filtered = jogos.filter(jogo => {
+          const data = new Date(jogo.created_at);
+          const semestre = data.getMonth() < 6 ? 1 : 2;
+          const semestreStr = `S${semestre}/${data.getFullYear()}`;
+          return semestreStr === periodoSelecionado;
+        });
+      } else {
+        // Último semestre (180 dias)
+        const hoje = new Date();
+        const semAtras = new Date(hoje.getTime() - 180 * 24 * 60 * 60 * 1000);
+        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= semAtras);
+      }
     } else if (filtro === 'ano') {
-      const hoje = new Date();
-      const anoAtras = new Date(hoje.getTime() - 365 * 24 * 60 * 60 * 1000);
-      filtered = jogos.filter(jogo => new Date(jogo.created_at) >= anoAtras);
-    } else if (filtro === 'sessao' && dataSelecionada) {
-      filtered = jogos.filter(jogo => formatarData(jogo.created_at) === dataSelecionada);
+      if (periodoSelecionado) {
+        // Filtrar por ano específico
+        filtered = jogos.filter(jogo => {
+          const data = new Date(jogo.created_at);
+          return data.getFullYear().toString() === periodoSelecionado;
+        });
+      } else {
+        // Último ano (365 dias)
+        const hoje = new Date();
+        const anoAtras = new Date(hoje.getTime() - 365 * 24 * 60 * 60 * 1000);
+        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= anoAtras);
+      }
     }
 
     setJogosFiltrados(filtered);
@@ -590,6 +676,7 @@ export default function ResultadosPage() {
               onClick={() => {
                 setFiltro('atual');
                 setDataSelecionada('');
+                setPeriodoSelecionado('');
               }}
               className={`w-full py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${
                 filtro === 'atual'
@@ -608,6 +695,7 @@ export default function ResultadosPage() {
                 onClick={() => {
                   setFiltro('mes');
                   setDataSelecionada('');
+                  setPeriodoSelecionado('');
                 }}
                 className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
                   filtro === 'mes'
@@ -621,6 +709,7 @@ export default function ResultadosPage() {
                 onClick={() => {
                   setFiltro('trimestre');
                   setDataSelecionada('');
+                  setPeriodoSelecionado('');
                 }}
                 className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
                   filtro === 'trimestre'
@@ -634,6 +723,7 @@ export default function ResultadosPage() {
                 onClick={() => {
                   setFiltro('semestre');
                   setDataSelecionada('');
+                  setPeriodoSelecionado('');
                 }}
                 className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
                   filtro === 'semestre'
@@ -647,6 +737,7 @@ export default function ResultadosPage() {
                 onClick={() => {
                   setFiltro('ano');
                   setDataSelecionada('');
+                  setPeriodoSelecionado('');
                 }}
                 className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
                   filtro === 'ano'
@@ -659,21 +750,72 @@ export default function ResultadosPage() {
             </div>
           </div>
 
-          {/* Bloco 3: Pelada Específica */}
+          {/* Bloco 3: Select dinâmico baseado no filtro */}
           <div>
-            <select
-              value={dataSelecionada}
-              onChange={(e) => {
-                setDataSelecionada(e.target.value);
-                setFiltro('sessao');
-              }}
-              className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-            >
-              <option value="">🔍 Selecionar pelada específica</option>
-              {datasDisponiveis.map(data => (
-                <option key={data} value={data}>{data}</option>
-              ))}
-            </select>
+            {filtro === 'atual' && (
+              <select
+                value={dataSelecionada}
+                onChange={(e) => setDataSelecionada(e.target.value)}
+                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              >
+                <option value="">🔍 Selecionar pelada específica</option>
+                {datasDisponiveis.map(data => (
+                  <option key={data} value={data}>{data}</option>
+                ))}
+              </select>
+            )}
+            
+            {filtro === 'mes' && (
+              <select
+                value={periodoSelecionado}
+                onChange={(e) => setPeriodoSelecionado(e.target.value)}
+                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">📅 Selecionar mês específico</option>
+                {mesesDisponiveis.map(mes => (
+                  <option key={mes} value={mes}>{mes}</option>
+                ))}
+              </select>
+            )}
+            
+            {filtro === 'trimestre' && (
+              <select
+                value={periodoSelecionado}
+                onChange={(e) => setPeriodoSelecionado(e.target.value)}
+                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">📅 Selecionar trimestre específico</option>
+                {trimestresDisponiveis.map(trim => (
+                  <option key={trim} value={trim}>{trim}</option>
+                ))}
+              </select>
+            )}
+            
+            {filtro === 'semestre' && (
+              <select
+                value={periodoSelecionado}
+                onChange={(e) => setPeriodoSelecionado(e.target.value)}
+                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">📅 Selecionar semestre específico</option>
+                {semestresDisponiveis.map(sem => (
+                  <option key={sem} value={sem}>{sem}</option>
+                ))}
+              </select>
+            )}
+            
+            {filtro === 'ano' && (
+              <select
+                value={periodoSelecionado}
+                onChange={(e) => setPeriodoSelecionado(e.target.value)}
+                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">📅 Selecionar ano específico</option>
+                {anosDisponiveis.map(ano => (
+                  <option key={ano} value={ano}>{ano}</option>
+                ))}
+              </select>
+            )}
           </div>
         </section>
 
@@ -1009,50 +1151,237 @@ export default function ResultadosPage() {
         {/* Modal Jogadores */}
         {mostrarModalJogadores && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setMostrarModalJogadores(false)}>
-            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
               <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-white">👥 Estatísticas dos Jogadores</h3>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  👥 Estatísticas dos Jogadores
+                </h3>
                 <button onClick={() => setMostrarModalJogadores(false)} className="text-white text-2xl hover:text-gray-200">✕</button>
               </div>
-              <div className="p-4 overflow-y-auto max-h-[60vh]">
+              <div className="p-4 overflow-y-auto max-h-[70vh]">
                 {(() => {
-                  const estatisticasPorJogador: { [nome: string]: { jogos: number; gols: number; vitorias: number } } = {};
+                  const estatisticasPorJogador: { [nome: string]: { jogos: number; gols: number; vitorias: number; derrotas: number; empates: number; jogadorId: string } } = {};
                   
                   jogosFiltrados.forEach(jogo => {
                     [...jogo.time_a, ...jogo.time_b].forEach(jogadorId => {
                       const nome = buscarJogador(jogadorId);
                       if (!estatisticasPorJogador[nome]) {
-                        estatisticasPorJogador[nome] = { jogos: 0, gols: 0, vitorias: 0 };
+                        estatisticasPorJogador[nome] = { jogos: 0, gols: 0, vitorias: 0, derrotas: 0, empates: 0, jogadorId: jogadorId };
                       }
                       estatisticasPorJogador[nome].jogos++;
                       
-                      // Contar gols
-                      const golsJogador = (jogo.gols || []).filter(g => g.jogador_id === jogadorId).length;
-                      estatisticasPorJogador[nome].gols += golsJogador;
-                      
-                      // Contar vitórias
+                      // Contar vitórias/derrotas/empates
                       const noTimeA = jogo.time_a.includes(jogadorId);
-                      if ((noTimeA && jogo.placar_a > jogo.placar_b) || (!noTimeA && jogo.placar_b > jogo.placar_a)) {
+                      if (jogo.placar_a === jogo.placar_b) {
+                        estatisticasPorJogador[nome].empates++;
+                      } else if ((noTimeA && jogo.placar_a > jogo.placar_b) || (!noTimeA && jogo.placar_b > jogo.placar_a)) {
                         estatisticasPorJogador[nome].vitorias++;
+                      } else {
+                        estatisticasPorJogador[nome].derrotas++;
                       }
                     });
                   });
 
-                  // Ordenar por jogos
-                  const jogadoresOrdenados = Object.entries(estatisticasPorJogador).sort((a, b) => b[1].jogos - a[1].jogos);
+                  // Contar gols por jogador usando o UUID correto
+                  jogosFiltrados.forEach(jogo => {
+                    (jogo.gols || []).forEach(gol => {
+                      const nomeJogador = buscarJogador(gol.jogador_id);
+                      if (estatisticasPorJogador[nomeJogador]) {
+                        estatisticasPorJogador[nomeJogador].gols++;
+                      }
+                    });
+                  });
+
+                  // Calcular pontos
+                  const jogadoresComPontos = Object.entries(estatisticasPorJogador).map(([nome, stats]) => ({
+                    nome,
+                    ...stats,
+                    pontos: stats.vitorias + stats.gols + (stats.empates * 0.5) - (stats.derrotas * 0.5)
+                  }));
+
+                  // Ordenar
+                  const jogadoresOrdenados = [...jogadoresComPontos].sort((a, b) => {
+                    if (ordenarPor === 'pontos') return b.pontos - a.pontos;
+                    if (ordenarPor === 'vitorias') return b.vitorias - a.vitorias;
+                    if (ordenarPor === 'jogos') return b.jogos - a.jogos;
+                    if (ordenarPor === 'gols') return b.gols - a.gols;
+                    if (ordenarPor === 'derrotas') return b.derrotas - a.derrotas;
+                    if (ordenarPor === 'empates') return b.empates - a.empates;
+                    return 0;
+                  });
 
                   return jogadoresOrdenados.length > 0 ? (
-                    <div className="space-y-2">
-                      {jogadoresOrdenados.map(([nome, stats], index) => (
-                        <div key={index} className="p-3 bg-gray-50 rounded-lg">
-                          <div className="font-medium text-gray-800 mb-2">{nome}</div>
-                          <div className="flex gap-4 text-xs text-gray-600">
-                            <span>🎮 {stats.jogos} jogos</span>
-                            <span>⚽ {stats.gols} gols</span>
-                            <span>🏆 {stats.vitorias} vitórias</span>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-gray-100 border-b-2 border-gray-300">
+                            <th className="p-3 text-left font-bold text-gray-700">Pos</th>
+                            <th className="p-3 text-left font-bold text-gray-700">Jogador</th>
+                            <th 
+                              className="p-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                              onClick={() => setOrdenarPor('pontos')}
+                            >
+                              <span className={ordenarPor === 'pontos' ? 'text-xl' : 'text-sm'}>💎</span>
+                            </th>
+                            <th 
+                              className="p-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                              onClick={() => setOrdenarPor('gols')}
+                            >
+                              <span className={ordenarPor === 'gols' ? 'text-xl' : 'text-sm'}>⚽</span>
+                            </th>
+                            <th 
+                              className="p-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                              onClick={() => setOrdenarPor('vitorias')}
+                            >
+                              <span className={ordenarPor === 'vitorias' ? 'text-xl' : 'text-sm'}>🏆</span>
+                            </th>
+                            <th 
+                              className="p-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                              onClick={() => setOrdenarPor('empates')}
+                            >
+                              <span className={ordenarPor === 'empates' ? 'text-xl' : 'text-sm'}>🤝</span>
+                            </th>
+                            <th 
+                              className="p-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                              onClick={() => setOrdenarPor('derrotas')}
+                            >
+                              <span className={ordenarPor === 'derrotas' ? 'text-xl' : 'text-sm'}>❌</span>
+                            </th>
+                            <th 
+                              className="p-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                              onClick={() => setOrdenarPor('jogos')}
+                            >
+                              <span className={ordenarPor === 'jogos' ? 'text-xl' : 'text-sm'}>🎮</span>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {jogadoresOrdenados.map((jogador, index) => {
+                            const isTop3 = index < 3;
+                            const medalha = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                            const bgGradient = index === 0 
+                              ? 'bg-gradient-to-r from-yellow-100 to-yellow-200' 
+                              : index === 1 
+                              ? 'bg-gradient-to-r from-gray-100 to-gray-200'
+                              : index === 2
+                              ? 'bg-gradient-to-r from-orange-100 to-orange-200'
+                              : 'bg-white hover:bg-gray-50';
+                            
+                            return (
+                              <tr key={index} className={`border-b border-gray-200 ${bgGradient} transition-colors`}>
+                                <td className="p-3 text-center font-bold text-gray-700">
+                                  {isTop3 ? medalha : `${index + 1}º`}
+                                </td>
+                                <td className="p-3 font-medium text-gray-800">{jogador.nome}</td>
+                                <td className={`p-3 text-center font-bold ${jogador.pontos >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                                  {jogador.pontos.toFixed(1)}
+                                </td>
+                                <td className="p-3 text-center font-bold text-green-600">{jogador.gols}</td>
+                                <td className="p-3 text-center font-bold text-green-600">{jogador.vitorias}</td>
+                                <td className="p-3 text-center font-bold text-amber-600">{jogador.empates}</td>
+                                <td className="p-3 text-center font-bold text-red-600">{jogador.derrotas}</td>
+                                <td className="p-3 text-center text-gray-700">{jogador.jogos}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      
+                      {/* Botão WhatsApp */}
+                      <div className="mt-6">
+                        <button
+                          onClick={async () => {
+                            // Criar canvas para gerar imagem
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 800;
+                            canvas.height = Math.min(1200, 200 + jogadoresOrdenados.length * 40);
+                            const ctx = canvas.getContext('2d')!;
+
+                            // Fundo branco
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                            // Título
+                            ctx.fillStyle = '#1e40af';
+                            ctx.font = 'bold 32px Arial';
+                            ctx.fillText('👥 Estatísticas dos Jogadores', 50, 50);
+
+                            // Cabeçalho da tabela
+                            ctx.fillStyle = '#f3f4f6';
+                            ctx.fillRect(50, 80, 700, 40);
+                            ctx.fillStyle = '#374151';
+                            ctx.font = 'bold 16px Arial';
+                            ctx.fillText('Pos', 60, 105);
+                            ctx.fillText('Jogador', 120, 105);
+                            ctx.fillText('💎', 350, 105);
+                            ctx.fillText('⚽', 420, 105);
+                            ctx.fillText('🏆', 490, 105);
+                            ctx.fillText('🤝', 560, 105);
+                            ctx.fillText('❌', 630, 105);
+                            ctx.fillText('🎮', 700, 105);
+
+                            // Dados
+                            jogadoresOrdenados.forEach((jogador, index) => {
+                              const y = 140 + index * 35;
+                              const medalha = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}º`;
+                              
+                              if (index < 3) {
+                                const gradient = ctx.createLinearGradient(50, y - 25, 750, y - 25);
+                                if (index === 0) {
+                                  gradient.addColorStop(0, '#fef3c7');
+                                  gradient.addColorStop(1, '#fde68a');
+                                } else if (index === 1) {
+                                  gradient.addColorStop(0, '#f3f4f6');
+                                  gradient.addColorStop(1, '#e5e7eb');
+                                } else {
+                                  gradient.addColorStop(0, '#fed7aa');
+                                  gradient.addColorStop(1, '#fdba74');
+                                }
+                                ctx.fillStyle = gradient;
+                                ctx.fillRect(50, y - 25, 700, 35);
+                              }
+
+                              ctx.fillStyle = '#374151';
+                              ctx.font = '16px Arial';
+                              ctx.fillText(medalha, 60, y);
+                              ctx.fillText(jogador.nome, 120, y);
+                              ctx.fillStyle = jogador.pontos >= 0 ? '#2563eb' : '#dc2626';
+                              ctx.fillText(jogador.pontos.toFixed(1), 350, y);
+                              ctx.fillStyle = '#16a34a';
+                              ctx.fillText(jogador.gols.toString(), 420, y);
+                              ctx.fillText(jogador.vitorias.toString(), 490, y);
+                              ctx.fillStyle = '#d97706';
+                              ctx.fillText(jogador.empates.toString(), 560, y);
+                              ctx.fillStyle = '#dc2626';
+                              ctx.fillText(jogador.derrotas.toString(), 630, y);
+                              ctx.fillStyle = '#374151';
+                              ctx.fillText(jogador.jogos.toString(), 700, y);
+                            });
+
+                            // Converter canvas para blob
+                            canvas.toBlob((blob) => {
+                              if (blob) {
+                                const url = URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = 'estatisticas-jogadores.png';
+                                link.click();
+                                URL.revokeObjectURL(url);
+
+                                // Abrir WhatsApp
+                                const texto = encodeURIComponent('📊 Estatísticas dos Jogadores - PelADM');
+                                window.open(`https://wa.me/?text=${texto}`, '_blank');
+                              }
+                            });
+                          }}
+                          className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                          </svg>
+                          <span>Compartilhar no WhatsApp</span>
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-500">
