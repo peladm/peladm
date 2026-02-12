@@ -26,6 +26,12 @@ interface Gol {
   time: 'A' | 'B';
 }
 
+interface Assistencia {
+  jogo_id: string;
+  jogador_id: string;
+  time: 'A' | 'B';
+}
+
 interface Jogo {
   id: string;
   sessao_id: string;
@@ -39,6 +45,7 @@ interface Jogo {
   data_fim?: string;
   substituicoes?: Substituicao[];
   gols?: Gol[];
+  assistencias?: Assistencia[];
 }
 
 export default function ResultadosPage() {
@@ -47,14 +54,13 @@ export default function ResultadosPage() {
   const [jogos, setJogos] = useState<Jogo[]>([]);
   const [jogosFiltrados, setJogosFiltrados] = useState<Jogo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filtro, setFiltro] = useState<'atual' | 'mes' | 'trimestre' | 'semestre' | 'ano' | 'sessao'>('atual');
+  const [filtro, setFiltro] = useState<'atual' | 'mes' | 'ultimas' | 'ano' | 'historia'>('atual');
   const [dataSelecionada, setDataSelecionada] = useState('');
   const [datasDisponiveis, setDatasDisponiveis] = useState<string[]>([]);
   const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
-  const [trimestresDisponiveis, setTrimestresDisponiveis] = useState<string[]>([]);
-  const [semestresDisponiveis, setSemestresDisponiveis] = useState<string[]>([]);
   const [anosDisponiveis, setAnosDisponiveis] = useState<string[]>([]);
   const [periodoSelecionado, setPeriodoSelecionado] = useState('');
+  const [quantidadePeladas, setQuantidadePeladas] = useState('');
   const [totalPartidas, setTotalPartidas] = useState(0);
   const [totalGols, setTotalGols] = useState(0);
   const [totalJogadores, setTotalJogadores] = useState(0);
@@ -225,9 +231,14 @@ export default function ResultadosPage() {
       
       const supabase = await getClienteSupabase(peladaId);
       
-      // Excluir gols da partida
+      // Excluir gols e assistências da partida
       await supabase
         .from('gols')
+        .delete()
+        .eq('jogo_id', jogoId);
+      
+      await supabase
+        .from('assistencias')
         .delete()
         .eq('jogo_id', jogoId);
 
@@ -257,9 +268,14 @@ export default function ResultadosPage() {
       const supabase = await getClienteSupabase(peladaId);
       const jogosIds = jogosFiltrados.map(j => j.id);
 
-      // Excluir todos os gols das partidas filtradas
+      // Excluir todos os gols e assistências das partidas filtradas
       await supabase
         .from('gols')
+        .delete()
+        .in('jogo_id', jogosIds);
+      
+      await supabase
+        .from('assistencias')
         .delete()
         .in('jogo_id', jogosIds);
 
@@ -475,26 +491,32 @@ export default function ResultadosPage() {
         return;
       }
 
-      // Buscar gols de todos os jogos
+      // Buscar gols e assistências de todos os jogos
       if (jogosData && jogosData.length > 0) {
         const jogosIds = jogosData.map(j => j.id);
         const { data: golsData } = await clienteDb
           .from('gols')
           .select('*')
           .in('jogo_id', jogosIds);
+        
+        const { data: assistenciasData } = await clienteDb
+          .from('assistencias')
+          .select('*')
+          .in('jogo_id', jogosIds);
 
-        // Associar gols e substituições aos jogos
-        const jogosComGols = jogosData.map(jogo => {
+        // Associar gols, assistências e substituições aos jogos
+        const jogosCompletos = jogosData.map(jogo => {
           const subs = Array.isArray(jogo.substituicoes) ? jogo.substituicoes : [];
           console.log('🔍 Jogo:', jogo.id, 'Substituições:', subs, 'Tipo:', typeof jogo.substituicoes);
           return {
             ...jogo,
             gols: (golsData || []).filter(g => g.jogo_id === jogo.id),
+            assistencias: (assistenciasData || []).filter(a => a.jogo_id === jogo.id),
             substituicoes: subs
           };
         });
 
-        setJogos(jogosComGols);
+        setJogos(jogosCompletos);
       } else {
         setJogos([]);
       }
@@ -517,21 +539,6 @@ export default function ResultadosPage() {
         return `${mes}/${ano}`;
       }))].sort().reverse();
       
-      // Extrair trimestres únicos (QX/YYYY)
-      const trimestres = [...new Set((jogosData || []).map(jogo => {
-        const data = new Date(jogo.created_at);
-        const mes = data.getMonth();
-        const trimestre = Math.floor(mes / 3) + 1;
-        return `Q${trimestre}/${data.getFullYear()}`;
-      }))].sort().reverse();
-      
-      // Extrair semestres únicos (SX/YYYY)
-      const semestres = [...new Set((jogosData || []).map(jogo => {
-        const data = new Date(jogo.created_at);
-        const semestre = data.getMonth() < 6 ? 1 : 2;
-        return `S${semestre}/${data.getFullYear()}`;
-      }))].sort().reverse();
-      
       // Extrair anos únicos
       const anos = [...new Set((jogosData || []).map(jogo => {
         const data = new Date(jogo.created_at);
@@ -540,14 +547,10 @@ export default function ResultadosPage() {
       
       console.log('📅 Datas disponíveis:', datas);
       console.log('📅 Meses disponíveis:', meses);
-      console.log('📅 Trimestres disponíveis:', trimestres);
-      console.log('📅 Semestres disponíveis:', semestres);
       console.log('📅 Anos disponíveis:', anos);
       console.log('📊 Total de jogos:', jogosData?.length);
       setDatasDisponiveis(datas);
       setMesesDisponiveis(meses);
-      setTrimestresDisponiveis(trimestres);
-      setSemestresDisponiveis(semestres);
       setAnosDisponiveis(anos);
 
     } catch (error) {
@@ -595,37 +598,25 @@ export default function ResultadosPage() {
         const umMesAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
         filtered = jogos.filter(jogo => new Date(jogo.created_at) >= umMesAtras);
       }
-    } else if (filtro === 'trimestre') {
-      if (periodoSelecionado) {
-        // Filtrar por trimestre específico (QX/YYYY)
-        filtered = jogos.filter(jogo => {
-          const data = new Date(jogo.created_at);
-          const mes = data.getMonth();
-          const trimestre = Math.floor(mes / 3) + 1;
-          const trimestreStr = `Q${trimestre}/${data.getFullYear()}`;
-          return trimestreStr === periodoSelecionado;
-        });
-      } else {
-        // Último trimestre (90 dias)
-        const hoje = new Date();
-        const trimAtras = new Date(hoje.getTime() - 90 * 24 * 60 * 60 * 1000);
-        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= trimAtras);
-      }
-    } else if (filtro === 'semestre') {
-      if (periodoSelecionado) {
-        // Filtrar por semestre específico (SX/YYYY)
-        filtered = jogos.filter(jogo => {
-          const data = new Date(jogo.created_at);
-          const semestre = data.getMonth() < 6 ? 1 : 2;
-          const semestreStr = `S${semestre}/${data.getFullYear()}`;
-          return semestreStr === periodoSelecionado;
-        });
-      } else {
-        // Último semestre (180 dias)
-        const hoje = new Date();
-        const semAtras = new Date(hoje.getTime() - 180 * 24 * 60 * 60 * 1000);
-        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= semAtras);
-      }
+    } else if (filtro === 'ultimas') {
+      // Pegar as últimas N sessões únicas
+      const sessoesUnicas = [...new Set(jogos.map(j => j.sessao_id))];
+      const sessoesOrdenadas = sessoesUnicas
+        .map(sessaoId => {
+          const jogosDaSessao = jogos.filter(j => j.sessao_id === sessaoId);
+          const dataRecente = jogosDaSessao.reduce((prev, curr) => 
+            new Date(curr.created_at) > new Date(prev.created_at) ? curr : prev
+          );
+          return { sessaoId, data: new Date(dataRecente.created_at) };
+        })
+        .sort((a, b) => b.data.getTime() - a.data.getTime());
+      
+      const quantidadeNum = parseInt(quantidadePeladas);
+      const sessoesParaFiltrar = sessoesOrdenadas.slice(0, quantidadeNum).map(s => s.sessaoId);
+      filtered = jogos.filter(jogo => sessoesParaFiltrar.includes(jogo.sessao_id));
+    } else if (filtro === 'historia') {
+      // Retornar todos os jogos (sem filtro)
+      filtered = [...jogos];
     } else if (filtro === 'ano') {
       if (periodoSelecionado) {
         // Filtrar por ano específico
@@ -646,6 +637,7 @@ export default function ResultadosPage() {
     // Calcular estatísticas
     const partidas = filtered.length;
     const gols = filtered.reduce((sum, jogo) => sum + jogo.placar_a + jogo.placar_b, 0);
+    const assistencias = filtered.reduce((sum, jogo) => sum + (jogo.assistencias?.length || 0), 0);
     
     // Contar jogadores únicos
     const jogadoresUnicos = new Set<string>();
@@ -656,6 +648,7 @@ export default function ResultadosPage() {
 
     setTotalPartidas(partidas);
     setTotalGols(gols);
+    setTotalAssistencias(assistencias);
     setTotalJogadores(jogadoresUnicos.size);
   };
 
@@ -708,31 +701,18 @@ export default function ResultadosPage() {
               </button>
               <button
                 onClick={() => {
-                  setFiltro('trimestre');
+                  setFiltro('ultimas');
                   setDataSelecionada('');
                   setPeriodoSelecionado('');
+                  setQuantidadePeladas('10');
                 }}
                 className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'trimestre'
+                  filtro === 'ultimas'
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
                 }`}
               >
-                Trimestre
-              </button>
-              <button
-                onClick={() => {
-                  setFiltro('semestre');
-                  setDataSelecionada('');
-                  setPeriodoSelecionado('');
-                }}
-                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'semestre'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                }`}
-              >
-                Semestre
+                Últimas
               </button>
               <button
                 onClick={() => {
@@ -747,6 +727,20 @@ export default function ResultadosPage() {
                 }`}
               >
                 Ano
+              </button>
+              <button
+                onClick={() => {
+                  setFiltro('historia');
+                  setDataSelecionada('');
+                  setPeriodoSelecionado('');
+                }}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
+                  filtro === 'historia'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+              >
+                História
               </button>
             </div>
           </div>
@@ -779,29 +773,16 @@ export default function ResultadosPage() {
               </select>
             )}
             
-            {filtro === 'trimestre' && (
+            {filtro === 'ultimas' && (
               <select
-                value={periodoSelecionado}
-                onChange={(e) => setPeriodoSelecionado(e.target.value)}
+                value={quantidadePeladas}
+                onChange={(e) => setQuantidadePeladas(e.target.value)}
                 className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="">📅 Selecionar trimestre específico</option>
-                {trimestresDisponiveis.map(trim => (
-                  <option key={trim} value={trim}>{trim}</option>
-                ))}
-              </select>
-            )}
-            
-            {filtro === 'semestre' && (
-              <select
-                value={periodoSelecionado}
-                onChange={(e) => setPeriodoSelecionado(e.target.value)}
-                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">📅 Selecionar semestre específico</option>
-                {semestresDisponiveis.map(sem => (
-                  <option key={sem} value={sem}>{sem}</option>
-                ))}
+                <option value="5">📊 Últimas 5 peladas</option>
+                <option value="10">📊 Últimas 10 peladas</option>
+                <option value="15">📊 Últimas 15 peladas</option>
+                <option value="20">📊 Últimas 20 peladas</option>
               </select>
             )}
             
@@ -956,6 +937,10 @@ export default function ResultadosPage() {
                         const nomeGol = buscarJogador(g.jogador_id);
                         return (g.jogador_id === jogadorId || nomeGol === nomeJogador) && g.time === 'A';
                       }).length;
+                      const assistenciasJogador = (jogo.assistencias || []).filter(a => {
+                        const nomeAssist = buscarJogador(a.jogador_id);
+                        return (a.jogador_id === jogadorId || nomeAssist === nomeJogador) && a.time === 'A';
+                      }).length;
                       const substituicaoEntrada = (jogo.substituicoes || []).find(s => s.jogador_entrou_id === jogadorId && s.time === 'A');
                       
                       return (
@@ -969,17 +954,23 @@ export default function ResultadosPage() {
                                     const nomeGol = buscarJogador(g.jogador_id);
                                     return (g.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeGol === nomeSaiu) && g.time === 'A';
                                   }).length;
-                                  return golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '';
+                                  const assistsSaiu = (jogo.assistencias || []).filter(a => {
+                                    const nomeAssist = buscarJogador(a.jogador_id);
+                                    return (a.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeAssist === nomeSaiu) && a.time === 'A';
+                                  }).length;
+                                  return (golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '') + (assistsSaiu > 0 ? ' ' + '👟'.repeat(assistsSaiu) : '');
                                 })()}
                               </div>
                               <div className="text-green-600 font-bold text-xs">↑ {buscarJogador(jogadorId)}
                                 {golsJogador > 0 && ' ' + '⚽'.repeat(golsJogador)}
+                                {assistenciasJogador > 0 && ' ' + '👟'.repeat(assistenciasJogador)}
                               </div>
                             </div>
                           ) : (
                             <div>
                               {buscarJogador(jogadorId)}
                               {golsJogador > 0 && ' ' + '⚽'.repeat(golsJogador)}
+                              {assistenciasJogador > 0 && ' ' + '👟'.repeat(assistenciasJogador)}
                             </div>
                           )}
                         </div>
@@ -995,6 +986,10 @@ export default function ResultadosPage() {
                         const nomeGol = buscarJogador(g.jogador_id);
                         return (g.jogador_id === jogadorId || nomeGol === nomeJogador) && g.time === 'B';
                       }).length;
+                      const assistenciasJogador = (jogo.assistencias || []).filter(a => {
+                        const nomeAssist = buscarJogador(a.jogador_id);
+                        return (a.jogador_id === jogadorId || nomeAssist === nomeJogador) && a.time === 'B';
+                      }).length;
                       const substituicaoEntrada = (jogo.substituicoes || []).find(s => s.jogador_entrou_id === jogadorId && s.time === 'B');
                       
                       return (
@@ -1008,17 +1003,23 @@ export default function ResultadosPage() {
                                     const nomeGol = buscarJogador(g.jogador_id);
                                     return (g.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeGol === nomeSaiu) && g.time === 'B';
                                   }).length;
-                                  return golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '';
+                                  const assistsSaiu = (jogo.assistencias || []).filter(a => {
+                                    const nomeAssist = buscarJogador(a.jogador_id);
+                                    return (a.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeAssist === nomeSaiu) && a.time === 'B';
+                                  }).length;
+                                  return (golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '') + (assistsSaiu > 0 ? ' ' + '👟'.repeat(assistsSaiu) : '');
                                 })()}
                               </div>
                               <div className="text-green-600 font-bold text-xs">↑ {buscarJogador(jogadorId)}
                                 {golsJogador > 0 && ' ' + '⚽'.repeat(golsJogador)}
+                                {assistenciasJogador > 0 && ' ' + '👟'.repeat(assistenciasJogador)}
                               </div>
                             </div>
                           ) : (
                             <div>
                               {buscarJogador(jogadorId)}
                               {golsJogador > 0 && ' ' + '⚽'.repeat(golsJogador)}
+                              {assistenciasJogador > 0 && ' ' + '👟'.repeat(assistenciasJogador)}
                             </div>
                           )}
                         </div>
@@ -1250,16 +1251,64 @@ export default function ResultadosPage() {
         {mostrarModalAssistencias && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setMostrarModalAssistencias(false)}>
             <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-              <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-4 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-white">👟 Assistências</h3>
+              <div className="bg-gradient-to-r from-green-500 to-green-600 p-4 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white">👟 Assistências do Dia</h3>
                 <button onClick={() => setMostrarModalAssistencias(false)} className="text-white text-2xl hover:text-gray-200">✕</button>
               </div>
               <div className="p-4 overflow-y-auto max-h-[60vh]">
-                <div className="text-center py-12 text-gray-500">
-                  <div className="text-5xl mb-4">👟</div>
-                  <h4 className="text-lg font-semibold text-gray-700 mb-2">Em Breve!</h4>
-                  <p className="text-sm">Sistema de assistências será implementado em breve.</p>
-                </div>
+                {(() => {
+                  const assistenciasPorJogador: { [nome: string]: number } = {};
+                  const todosJogadoresSet = new Set<string>();
+                  
+                  // Coletar todos os jogadores que participaram
+                  jogosFiltrados.forEach(jogo => {
+                    [...jogo.time_a, ...jogo.time_b].forEach(jogadorId => {
+                      const nome = buscarJogador(jogadorId);
+                      todosJogadoresSet.add(nome);
+                      if (!assistenciasPorJogador[nome]) {
+                        assistenciasPorJogador[nome] = 0;
+                      }
+                    });
+                    
+                    // Contar assistências
+                    (jogo.assistencias || []).forEach(assist => {
+                      const nome = buscarJogador(assist.jogador_id);
+                      assistenciasPorJogador[nome] = (assistenciasPorJogador[nome] || 0) + 1;
+                    });
+                  });
+
+                  // Separar quem deu assistência de quem não deu
+                  const comAssistencias = Object.entries(assistenciasPorJogador).filter(([_, assists]) => assists > 0).sort((a, b) => b[1] - a[1]);
+                  const semAssistencias = Object.entries(assistenciasPorJogador).filter(([_, assists]) => assists === 0).map(([nome]) => nome);
+
+                  return (
+                    <>
+                      {comAssistencias.length > 0 ? (
+                        <div className="space-y-2 mb-4">
+                          {comAssistencias.map(([nome, assists], index) => (
+                            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <span className="font-medium text-gray-800">{nome}</span>
+                              <span className="text-green-600 font-bold text-lg">{assists} 👟</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-gray-500 mb-4">
+                          <div className="text-4xl mb-2">👟</div>
+                          <p>Nenhuma assistência no período</p>
+                        </div>
+                      )}
+                      
+                      {semAssistencias.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <p className="text-sm text-gray-600 text-center">
+                            {semAssistencias.join(', ')} não {semAssistencias.length === 1 ? 'deu' : 'deram'} assistências
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>

@@ -51,6 +51,7 @@ export default function FilaPage() {
   const [regras, setRegras] = useState<Regras>({ jogadores_por_time: 5 });
   const [totalPartidas, setTotalPartidas] = useState(0);
   const [totalGols, setTotalGols] = useState(0);
+  const [totalAssistencias, setTotalAssistencias] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [showManagementModal, setShowManagementModal] = useState(false);
   const [localJogadoresJogando, setLocalJogadoresJogando] = useState<JogadorFila[]>([]);
@@ -123,8 +124,11 @@ export default function FilaPage() {
   const [corTimeA, setCorTimeA] = useState('#dc3545'); // Vermelho
   const [corTimeB, setCorTimeB] = useState('#000000'); // Preto
   const [selecionandoGolPara, setSelecionandoGolPara] = useState<'A' | 'B' | null>(null);
+  const [selecionandoAssistenciaPara, setSelecionandoAssistenciaPara] = useState<'A' | 'B' | null>(null);
+  const [ultimoGolInfo, setUltimoGolInfo] = useState<{jogadorId: string, time: 'A' | 'B'} | null>(null);
   const [golsJogadores, setGolsJogadores] = useState<Record<string, number>>({});
-  const [historicoAcoes, setHistoricoAcoes] = useState<Array<{tipo: 'gol', time: 'A' | 'B', jogadorId: string}>>([]);
+  const [assistenciasJogadores, setAssistenciasJogadores] = useState<Record<string, number>>({});
+  const [historicoAcoes, setHistoricoAcoes] = useState<Array<{tipo: 'gol' | 'assistencia', time: 'A' | 'B', jogadorId: string, golJogadorId?: string}>>([]);
   const [showModalVAR, setShowModalVAR] = useState(false);
   const [showModalFinalizacao, setShowModalFinalizacao] = useState(false);
   const [limiteVitorias, setLimiteVitorias] = useState<number | null>(null);
@@ -161,12 +165,15 @@ export default function FilaPage() {
   // State para modal de limite FREE atingido
   const [showModalLimiteFree, setShowModalLimiteFree] = useState(false);
 
-  // States para modais informativos de partidas e gols
+  // States para modais informativos de partidas, gols e assistências
   const [showModalInfoPartidas, setShowModalInfoPartidas] = useState(false);
   const [showModalInfoGols, setShowModalInfoGols] = useState(false);
+  const [showModalInfoAssistencias, setShowModalInfoAssistencias] = useState(false);
   const [partidasDoDia, setPartidasDoDia] = useState<any[]>([]);
   const [artilheirosDoDia, setArtilheirosDoDia] = useState<{nome: string; gols: number}[]>([]);
   const [semGolsDoDia, setSemGolsDoDia] = useState<string[]>([]);
+  const [garconsDoDia, setGarconsDoDia] = useState<{nome: string; assistencias: number}[]>([]);
+  const [semAssistenciasDoDia, setSemAssistenciasDoDia] = useState<string[]>([]);
 
   // Alternar cores dos times
   const alternarCorTimeA = () => {
@@ -692,16 +699,12 @@ export default function FilaPage() {
         setPlacarTimeA(prev => {
           const novoPlacar = prev + 1;
           atualizarPlacarNoLocalStorage('A', novoPlacar);
-          // 🔊 Tocar som de gol
-          soundService.playGoalSound();
           return novoPlacar;
         });
       } else {
         setPlacarTimeB(prev => {
           const novoPlacar = prev + 1;
           atualizarPlacarNoLocalStorage('B', novoPlacar);
-          // 🔊 Tocar som de gol
-          soundService.playGoalSound();
           return novoPlacar;
         });
       }
@@ -739,8 +742,6 @@ export default function FilaPage() {
         const novoPlacar = prev + 1;
         // Atualizar localStorage da partida
         atualizarPlacarNoLocalStorage('A', novoPlacar);
-        // 🔊 Tocar som de gol
-        soundService.playGoalSound();
         return novoPlacar;
       });
     } else {
@@ -748,8 +749,6 @@ export default function FilaPage() {
         const novoPlacar = prev + 1;
         // Atualizar localStorage da partida
         atualizarPlacarNoLocalStorage('B', novoPlacar);
-        // 🔊 Tocar som de gol
-        soundService.playGoalSound();
         return novoPlacar;
       });
     }
@@ -763,10 +762,62 @@ export default function FilaPage() {
     // Adicionar ao histórico usando ID REAL
     setHistoricoAcoes(prev => [...prev, { tipo: 'gol', time, jogadorId: jogadorIdReal }]);
     
-    // Desativar modo seleção
+    // Guardar info do último gol para a assistência
+    setUltimoGolInfo({ jogadorId: jogadorIdReal, time });
+    
+    // Desativar modo seleção de gol
     setSelecionandoGolPara(null);
     
+    // Ativar modo seleção de assistência
+    setSelecionandoAssistenciaPara(time);
+    
     console.log(`⚽ Gol registrado: Jogador ${nomeJogador} (ID real: ${jogadorIdReal}) do Time ${time}`);
+    console.log(`👟 Aguardando seleção de assistência para o Time ${time}`);
+  };
+
+  // Função para registrar assistência
+  const registrarAssistencia = (jogadorIdFila: string, time: 'A' | 'B') => {
+    // Se for "sem assistência", apenas fechar o modo
+    if (jogadorIdFila === 'sem_assistencia') {
+      setSelecionandoAssistenciaPara(null);
+      setUltimoGolInfo(null);
+      console.log(`👟 Gol sem assistência registrado`);
+      return;
+    }
+    
+    // Buscar ID real do jogador
+    const peladaId = buscar_pelada_id();
+    const jogadoresKey = `jogadores_${peladaId}`;
+    const jogadoresStr = localStorage.getItem(jogadoresKey);
+    const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+    
+    const jogadorFila = [...time1, ...time2].find(j => j.id === jogadorIdFila);
+    const nomeJogador = jogadorFila?.nome;
+    
+    const jogadorReal = todosJogadores.find((j: any) => j.nome === nomeJogador);
+    const jogadorIdReal = jogadorReal?.id || jogadorIdFila;
+    
+    console.log(`👟 DEBUG registrarAssistencia: ID fila=${jogadorIdFila}, nome=${nomeJogador}, ID real=${jogadorIdReal}`);
+    
+    // Registrar assistência do jogador usando ID REAL
+    setAssistenciasJogadores(prev => ({
+      ...prev,
+      [jogadorIdReal]: (prev[jogadorIdReal] || 0) + 1
+    }));
+    
+    // Adicionar ao histórico com info do gol
+    setHistoricoAcoes(prev => [...prev, { 
+      tipo: 'assistencia', 
+      time, 
+      jogadorId: jogadorIdReal,
+      golJogadorId: ultimoGolInfo?.jogadorId
+    }]);
+    
+    // Desativar modo seleção de assistência
+    setSelecionandoAssistenciaPara(null);
+    setUltimoGolInfo(null);
+    
+    console.log(`👟 Assistência registrada: Jogador ${nomeJogador} (ID real: ${jogadorIdReal}) do Time ${time}`);
   };
 
   // Função auxiliar para atualizar placar no localStorage
@@ -790,7 +841,56 @@ export default function FilaPage() {
     
     const ultimaAcao = historicoAcoes[historicoAcoes.length - 1];
     
-    if (ultimaAcao.tipo === 'gol') {
+    // Se a última ação for ASSISTÊNCIA, anular ela E o gol relacionado
+    if (ultimaAcao.tipo === 'assistencia') {
+      // Remover assistência do jogador
+      setAssistenciasJogadores(prev => ({
+        ...prev,
+        [ultimaAcao.jogadorId]: Math.max(0, (prev[ultimaAcao.jogadorId] || 0) - 1)
+      }));
+      
+      console.log(`🎬 VAR: Assistência anulada - Jogador ${ultimaAcao.jogadorId} do Time ${ultimaAcao.time}`);
+      
+      // Verificar se a penúltima ação foi o gol relacionado
+      if (historicoAcoes.length >= 2) {
+        const penultimaAcao = historicoAcoes[historicoAcoes.length - 2];
+        
+        // Se for gol e do mesmo time, anular também
+        if (penultimaAcao.tipo === 'gol' && penultimaAcao.time === ultimaAcao.time) {
+          // Decrementar placar
+          if (penultimaAcao.time === 'A') {
+            setPlacarTimeA(prev => {
+              const novoPlacar = Math.max(0, prev - 1);
+              atualizarPlacarNoLocalStorage('A', novoPlacar);
+              return novoPlacar;
+            });
+          } else {
+            setPlacarTimeB(prev => {
+              const novoPlacar = Math.max(0, prev - 1);
+              atualizarPlacarNoLocalStorage('B', novoPlacar);
+              return novoPlacar;
+            });
+          }
+          
+          // Remover gol do jogador
+          setGolsJogadores(prev => ({
+            ...prev,
+            [penultimaAcao.jogadorId]: Math.max(0, (prev[penultimaAcao.jogadorId] || 0) - 1)
+          }));
+          
+          console.log(`🎬 VAR: Gol anulado JUNTO - Jogador ${penultimaAcao.jogadorId} do Time ${penultimaAcao.time}`);
+          
+          // Remover AMBAS ações do histórico (assistência + gol)
+          setHistoricoAcoes(prev => prev.slice(0, -2));
+          return;
+        }
+      }
+      
+      // Se não encontrou gol relacionado, remove só a assistência
+      setHistoricoAcoes(prev => prev.slice(0, -1));
+      
+    } else if (ultimaAcao.tipo === 'gol') {
+      // Se a última ação for GOL (sem assistência ainda), anular só o gol
       // Decrementar placar
       if (ultimaAcao.time === 'A') {
         setPlacarTimeA(prev => {
@@ -833,7 +933,10 @@ export default function FilaPage() {
         setCorTimeA(estado.corTimeA || '#dc3545');
         setCorTimeB(estado.corTimeB || '#000000');
         setSelecionandoGolPara(estado.selecionandoGolPara || null);
+        setSelecionandoAssistenciaPara(estado.selecionandoAssistenciaPara || null);
+        setUltimoGolInfo(estado.ultimoGolInfo || null);
         setGolsJogadores(estado.golsJogadores || {});
+        setAssistenciasJogadores(estado.assistenciasJogadores || {});
         setHistoricoAcoes(estado.historicoAcoes || []);
         console.log('✅ Estado do modo partida restaurado:', estado);
       } catch (error) {
@@ -853,13 +956,16 @@ export default function FilaPage() {
         corTimeA,
         corTimeB,
         selecionandoGolPara,
+        selecionandoAssistenciaPara,
+        ultimoGolInfo,
         golsJogadores,
+        assistenciasJogadores,
         historicoAcoes,
         timestamp: Date.now()
       };
       localStorage.setItem('modo_partida_estado', JSON.stringify(estado));
     }
-  }, [modoPartida, cronometro, cronometroAtivo, placarTimeA, placarTimeB, corTimeA, corTimeB]);
+  }, [modoPartida, cronometro, cronometroAtivo, placarTimeA, placarTimeB, corTimeA, corTimeB, selecionandoGolPara, selecionandoAssistenciaPara, ultimoGolInfo, golsJogadores, assistenciasJogadores, historicoAcoes]);
 
   // Salvar estado do modo prancheta sempre que placar mudar
   useEffect(() => {
@@ -1349,12 +1455,13 @@ export default function FilaPage() {
       );
       setJogadoresReserva(jogadoresReserva);
       
-      // 7. CARREGAR CONTADOR DE PARTIDAS E GOLS DO LOCALSTORAGE
+      // 7. CARREGAR CONTADOR DE PARTIDAS, GOLS E ASSISTÊNCIAS DO LOCALSTORAGE
       const jogosKey = `jogos_${sessao.id}`;
       const jogosStr = localStorage.getItem(jogosKey);
       
       let partidasReais = 0;
       let golsReais = 0;
+      let assistenciasReais = 0;
       
       if (jogosStr) {
         const jogos = JSON.parse(jogosStr);
@@ -1366,13 +1473,15 @@ export default function FilaPage() {
         if (jogadoresStr) {
           const jogadores = JSON.parse(jogadoresStr);
           golsReais = jogadores.reduce((total: number, j: any) => total + (j.gols || 0), 0);
+          assistenciasReais = jogadores.reduce((total: number, j: any) => total + (j.assistencias || 0), 0);
         }
       }
       
       setTotalPartidas(partidasReais);
       setTotalGols(golsReais);
+      setTotalAssistencias(assistenciasReais);
       
-      console.log(`✅ Estatísticas carregadas: ${partidasReais} partidas, ${golsReais} gols`);
+      console.log(`✅ Estatísticas carregadas: ${partidasReais} partidas, ${golsReais} gols, ${assistenciasReais} assistências`);
       
       console.log(`✅ Fila carregada: ${jogadoresJogando.length} jogando, ${jogadoresFila.length} na fila, ${jogadoresReserva.length} reservas`);
       
@@ -1619,23 +1728,33 @@ export default function FilaPage() {
       
       let partidas = 0;
       let gols = 0;
+      let assistencias = 0;
       
       if (jogosStr) {
         const jogos = JSON.parse(jogosStr);
         partidas = jogos.length;
         
-        // Calcular total de gols da tabela jogadores (igual ao carregarDados)
-        const jogadoresKey = `jogadores_${peladaId}`;
-        const jogadoresStr = localStorage.getItem(jogadoresKey);
-        if (jogadoresStr) {
-          const jogadores = JSON.parse(jogadoresStr);
-          gols = jogadores.reduce((total: number, j: any) => total + (j.gols || 0), 0);
+        // Buscar gols da tabela gols
+        const golsKey = `gols_${sessao.id}`;
+        const golsStr = localStorage.getItem(golsKey);
+        if (golsStr) {
+          const todosGols = JSON.parse(golsStr);
+          gols = todosGols.length;
+        }
+        
+        // Buscar assistências da tabela assistencias
+        const assistenciasKey = `assistencias_${sessao.id}`;
+        const assistenciasStr = localStorage.getItem(assistenciasKey);
+        if (assistenciasStr) {
+          const todasAssistencias = JSON.parse(assistenciasStr);
+          assistencias = todasAssistencias.length;
         }
       }
 
-      console.log(`📈 Estatísticas: ${partidas} partidas, ${gols} gols`);
+      console.log(`📈 Estatísticas: ${partidas} partidas, ${gols} gols, ${assistencias} assistências`);
       setTotalPartidas(partidas);
       setTotalGols(gols);
+      setTotalAssistencias(assistencias);
       setShowEncerrarModal(true);
       
     } catch (error) {
@@ -1672,9 +1791,7 @@ export default function FilaPage() {
       const sessao = JSON.parse(sessaoStr);
       console.log('📋 Sessão:', sessao.id);
 
-      // ============================================
-      // BUSCAR DA TABELA JOGOS
-      // ============================================
+      // Buscar tabela de jogos
       const jogosKey = `jogos_${sessao.id}`;
       const jogosStr = localStorage.getItem(jogosKey);
       
@@ -1686,20 +1803,40 @@ export default function FilaPage() {
       }
 
       const jogos = JSON.parse(jogosStr);
-      console.log('✅ Jogos encontrados:', jogos.length);
       
-      // Formatar para o formato do modal
-      const partidasFormatadas = jogos.map((jogo: any) => ({
-        numero_jogo: jogo.numero_jogo,
-        time_a: jogo.time_a.map((j: any) => j.nome),
-        time_b: jogo.time_b.map((j: any) => j.nome),
-        placar_a: jogo.placar_a,
-        placar_b: jogo.placar_b,
-        time_vencedor: jogo.time_vencedor,
-        data_fim: jogo.data_fim,
-      }));
+      // Buscar gols
+      const golsKey = `gols_${sessao.id}`;
+      const golsStr = localStorage.getItem(golsKey);
+      const todosGols = golsStr ? JSON.parse(golsStr) : [];
       
-      setPartidasDoDia(partidasFormatadas);
+      // Buscar assistências
+      const assistenciasKey = `assistencias_${sessao.id}`;
+      const assistenciasStr = localStorage.getItem(assistenciasKey);
+      const todasAssistencias = assistenciasStr ? JSON.parse(assistenciasStr) : [];
+      
+      // Buscar jogadores para pegar nomes
+      const jogadoresKey = `jogadores_${peladaId}`;
+      const jogadoresStr = localStorage.getItem(jogadoresKey);
+      const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+      
+      // Formatar jogos com gols e assistências
+      const partidasComEstatisticas = jogos.map((jogo: any) => {
+        // Filtrar gols deste jogo
+        const golsDoJogo = todosGols.filter((g: any) => g.jogo_id === jogo.id);
+        
+        // Filtrar assistências deste jogo
+        const assistenciasDoJogo = todasAssistencias.filter((a: any) => a.jogo_id === jogo.id);
+        
+        return {
+          ...jogo,
+          gols: golsDoJogo,
+          assistencias: assistenciasDoJogo,
+          jogadores: todosJogadores
+        };
+      });
+      
+      console.log('✅ Jogos encontrados:', partidasComEstatisticas.length);
+      setPartidasDoDia(partidasComEstatisticas);
       setShowModalInfoPartidas(true);
       
     } catch (error) {
@@ -1715,10 +1852,6 @@ export default function FilaPage() {
       console.log('⚽ Carregando informações de gols...');
       
       const peladaId = buscar_pelada_id();
-      const plano = buscar_plano();
-      
-      console.log('🔍 Debug - peladaId:', peladaId);
-      console.log('🔍 Debug - plano:', plano);
       
       if (!peladaId) {
         console.warn('⚠️ PeladaId não encontrado');
@@ -1738,51 +1871,64 @@ export default function FilaPage() {
       const sessao = JSON.parse(sessaoStr);
       console.log('📋 Sessão:', sessao.id);
 
-      // ============================================
-      // BUSCAR DA TABELA JOGOS
-      // ============================================
-      const jogosKey = `jogos_${sessao.id}`;
-      const jogosStr = localStorage.getItem(jogosKey);
+      // Buscar da tabela GOLS
+      const golsKey = `gols_${sessao.id}`;
+      const golsStr = localStorage.getItem(golsKey);
       
-      if (!jogosStr) {
-        console.log('🎮 Nenhuma partida finalizada ainda');
+      if (!golsStr) {
+        console.log('🎮 Nenhum gol registrado ainda');
         setArtilheirosDoDia([]);
         setSemGolsDoDia([]);
+        setTotalGols(0);
         setShowModalInfoGols(true);
         return;
       }
 
-      const jogos = JSON.parse(jogosStr);
-      console.log('✅ Jogos encontrados:', jogos.length);
+      const gols = JSON.parse(golsStr);
+      console.log('✅ Gols encontrados:', gols.length);
 
-      // ============================================
-      // BUSCAR DA TABELA JOGADORES (contém os gols acumulados)
-      // ============================================
+      // Buscar jogadores para pegar nomes
       const jogadoresKey = `jogadores_${peladaId}`;
       const jogadoresStr = localStorage.getItem(jogadoresKey);
-      const jogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
-      console.log('👥 Jogadores encontrados:', jogadores.length);
+      const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+      
+      // Buscar jogos para saber quem jogou
+      const jogosKey = `jogos_${sessao.id}`;
+      const jogosStr = localStorage.getItem(jogosKey);
+      const jogos = jogosStr ? JSON.parse(jogosStr) : [];
 
       // Criar set de jogadores que jogaram hoje
       const jogadoresQueJogaram = new Set<string>();
       jogos.forEach((jogo: any) => {
-        jogo.time_a.forEach((j: any) => jogadoresQueJogaram.add(j.nome));
-        jogo.time_b.forEach((j: any) => jogadoresQueJogaram.add(j.nome));
+        jogo.time_a.forEach((j: any) => jogadoresQueJogaram.add(j.id));
+        jogo.time_b.forEach((j: any) => jogadoresQueJogaram.add(j.id));
       });
 
-      // Filtrar apenas jogadores que jogaram hoje e separar artilheiros vs sem gols
-      const artilheiros = jogadores
-        .filter((j: any) => jogadoresQueJogaram.has(j.nome) && (j.gols || 0) > 0)
-        .map((j: any) => ({ nome: j.nome, gols: j.gols || 0 }))
+      // Agrupar gols por jogador
+      const golsPorJogador: Record<string, number> = {};
+      gols.forEach((gol: any) => {
+        golsPorJogador[gol.jogador_id] = (golsPorJogador[gol.jogador_id] || 0) + 1;
+      });
+
+      // Criar lista de artilheiros
+      const artilheiros = Object.entries(golsPorJogador)
+        .map(([jogadorId, quantidade]) => {
+          const jogador = todosJogadores.find((j: any) => j.id === jogadorId);
+          return {
+            nome: jogador?.nome || 'Jogador',
+            gols: quantidade
+          };
+        })
         .sort((a: any, b: any) => b.gols - a.gols);
 
-      const semGols = jogadores
-        .filter((j: any) => jogadoresQueJogaram.has(j.nome) && (!j.gols || j.gols === 0))
+      // Criar lista de jogadores sem gols
+      const idsComGols = new Set(Object.keys(golsPorJogador));
+      const semGols = todosJogadores
+        .filter((j: any) => jogadoresQueJogaram.has(j.id) && !idsComGols.has(j.id))
         .map((j: any) => j.nome)
         .sort();
 
-      // Calcular total de gols
-      const totalGolsCalculado = artilheiros.reduce((total: number, artilheiro: any) => total + artilheiro.gols, 0);
+      const totalGolsCalculado = gols.length;
       
       console.log('🏆 Artilheiros:', artilheiros);
       console.log('🙈 Sem gols:', semGols);
@@ -1798,6 +1944,106 @@ export default function FilaPage() {
       setArtilheirosDoDia([]);
       setSemGolsDoDia([]);
       setShowModalInfoGols(true);
+    }
+  };
+
+  const carregarInfoAssistencias = async () => {
+    try {
+      console.log('👟 Carregando informações de assistências...');
+      
+      const peladaId = buscar_pelada_id();
+      
+      if (!peladaId) {
+        console.warn('⚠️ PeladaId não encontrado');
+        return;
+      }
+
+      // Buscar sessão ativa do localStorage
+      const sessaoStr = localStorage.getItem('sessao_ativa');
+      if (!sessaoStr) {
+        console.warn('⚠️ Sessão ativa não encontrada no localStorage');
+        setGarconsDoDia([]);
+        setSemAssistenciasDoDia([]);
+        setShowModalInfoAssistencias(true);
+        return;
+      }
+
+      const sessao = JSON.parse(sessaoStr);
+      console.log('📋 Sessão:', sessao.id);
+
+      // Buscar da tabela ASSISTÊNCIAS
+      const assistenciasKey = `assistencias_${sessao.id}`;
+      const assistenciasStr = localStorage.getItem(assistenciasKey);
+      
+      if (!assistenciasStr) {
+        console.log('🎮 Nenhuma assistência registrada ainda');
+        setGarconsDoDia([]);
+        setSemAssistenciasDoDia([]);
+        setTotalAssistencias(0);
+        setShowModalInfoAssistencias(true);
+        return;
+      }
+
+      const assistencias = JSON.parse(assistenciasStr);
+      console.log('✅ Assistências encontradas:', assistencias.length);
+
+      // Buscar jogadores para pegar nomes
+      const jogadoresKey = `jogadores_${peladaId}`;
+      const jogadoresStr = localStorage.getItem(jogadoresKey);
+      const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+      
+      // Buscar jogos para saber quem jogou
+      const jogosKey = `jogos_${sessao.id}`;
+      const jogosStr = localStorage.getItem(jogosKey);
+      const jogos = jogosStr ? JSON.parse(jogosStr) : [];
+
+      // Criar set de jogadores que jogaram hoje
+      const jogadoresQueJogaram = new Set<string>();
+      jogos.forEach((jogo: any) => {
+        jogo.time_a.forEach((j: any) => jogadoresQueJogaram.add(j.id));
+        jogo.time_b.forEach((j: any) => jogadoresQueJogaram.add(j.id));
+      });
+
+      // Agrupar assistências por jogador
+      const assistenciasPorJogador: Record<string, number> = {};
+      assistencias.forEach((assist: any) => {
+        assistenciasPorJogador[assist.jogador_id] = (assistenciasPorJogador[assist.jogador_id] || 0) + 1;
+      });
+
+      // Criar lista de garçons
+      const garcons = Object.entries(assistenciasPorJogador)
+        .map(([jogadorId, quantidade]) => {
+          const jogador = todosJogadores.find((j: any) => j.id === jogadorId);
+          return {
+            nome: jogador?.nome || 'Jogador',
+            assistencias: quantidade
+          };
+        })
+        .sort((a: any, b: any) => b.assistencias - a.assistencias);
+
+      // Criar lista de jogadores sem assistências
+      const idsComAssistencias = new Set(Object.keys(assistenciasPorJogador));
+      const semAssistencias = todosJogadores
+        .filter((j: any) => jogadoresQueJogaram.has(j.id) && !idsComAssistencias.has(j.id))
+        .map((j: any) => j.nome)
+        .sort();
+
+      const totalAssistenciasCalculado = assistencias.length;
+      
+      console.log('🏆 Garçons:', garcons);
+      console.log('🙈 Sem assistências:', semAssistencias);
+      console.log('👟 Total de assistências:', totalAssistenciasCalculado);
+
+      setGarconsDoDia(garcons);
+      setSemAssistenciasDoDia(semAssistencias);
+      setTotalAssistencias(totalAssistenciasCalculado);
+      setShowModalInfoAssistencias(true);
+      
+    } catch (error) {
+      console.error('❌ Erro ao carregar assistências:', error);
+      setGarconsDoDia([]);
+      setSemAssistenciasDoDia([]);
+      setShowModalInfoAssistencias(true);
     }
   };
 
@@ -2186,6 +2432,45 @@ export default function FilaPage() {
             console.log('⚠️ Nenhum gol encontrado no localStorage');
           }
           
+          // 2.5. Sync tabela ASSISTÊNCIAS (INSERT - adiciona sem sobrescrever)
+          console.log('👟 --- Sincronizando ASSISTÊNCIAS ---');
+          setMensagemSync('Sincronizando assistências...');
+          const assistenciasKey = `assistencias_${sessaoAtiva.id}`;
+          const assistenciasStr = localStorage.getItem(assistenciasKey);
+          
+          if (assistenciasStr) {
+            let assistencias = JSON.parse(assistenciasStr);
+            console.log(`👟 ${assistencias.length} assistências encontradas no localStorage`);
+            
+            for (let i = assistencias.length - 1; i >= 0; i--) {
+              const assist = assistencias[i];
+              console.log(`  ⚙️ Sincronizando assistência ${assist.id.substring(0, 10)}...`);
+              const { error } = await clienteDb
+                .from('assistencias')
+                .upsert({
+                  id: assist.id,
+                  jogo_id: assist.jogo_id,
+                  jogador_id: assist.jogador_id,
+                  time: assist.time,
+                  created_at: assist.created_at,
+                }, { onConflict: 'id' });
+              
+              if (error) {
+                console.error(`❌ ERRO ao sincronizar assistência:`, error);
+                throw new Error(`Falha no sync da assistência: ${error.message}`);
+              }
+              
+              // ✅ Sucesso: REMOVE do array local (cut)
+              assistencias.splice(i, 1);
+              localStorage.setItem(assistenciasKey, JSON.stringify(assistencias));
+              console.log(`  ✓ Assistência sincronizada e removida do localStorage`);
+            }
+            
+            console.log('✅ Todas as assistências sincronizadas com Supabase');
+          } else {
+            console.log('⚠️ Nenhuma assistência encontrada no localStorage');
+          }
+          
           // 3. Sync SESSÃO (INSERT - adiciona registro de sessão finalizada)
           console.log('📋 --- Sincronizando SESSÃO ---');
           setMensagemSync('Finalizando sessão...');
@@ -2411,6 +2696,8 @@ export default function FilaPage() {
       console.log(`  ✓ Removido: jogos_${sessaoAtiva.id}`);
       localStorage.removeItem(`gols_${sessaoAtiva.id}`);
       console.log(`  ✓ Removido: gols_${sessaoAtiva.id}`);
+      localStorage.removeItem(`assistencias_${sessaoAtiva.id}`);
+      console.log(`  ✓ Removido: assistencias_${sessaoAtiva.id}`);
       localStorage.removeItem('sessao_ativa');
       console.log('  ✓ Removido: sessao_ativa');
       localStorage.removeItem('fila_ativa');
@@ -3357,6 +3644,85 @@ export default function FilaPage() {
       }
       
       // ============================================
+      // SALVAR ASSISTÊNCIAS NA TABELA ASSISTENCIAS (Premium apenas, EXCETO modo prancheta)
+      // ============================================
+      console.log('👟 DEBUG ASSISTÊNCIAS: Plano:', plano);
+      console.log('👟 DEBUG ASSISTÊNCIAS: assistenciasJogadores:', assistenciasJogadores);
+      console.log('👟 DEBUG ASSISTÊNCIAS: Quantidade de keys:', Object.keys(assistenciasJogadores).length);
+      console.log('👟 DEBUG ASSISTÊNCIAS: modoPrancheta:', modoPrancheta);
+      
+      if (!modoPrancheta && planoUpper2 === 'PREMIUM' && Object.keys(assistenciasJogadores).length > 0) {
+        console.log('👟 Entrando no bloco de salvar assistências...');
+        const assistenciasKey = `assistencias_${sessaoId}`;
+        const assistenciasStr = localStorage.getItem(assistenciasKey);
+        const assistencias = assistenciasStr ? JSON.parse(assistenciasStr) : [];
+        
+        console.log('👟 DEBUG: Assistências já salvas anteriormente:', assistencias.length);
+        
+        // Função para gerar UUID válido
+        const gerarUUID = () => {
+          return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+        };
+        
+        // Salvar assistências - procurar por ID ou NOME
+        console.log('👟 DEBUG: Iniciando processamento de assistenciasJogadores:', assistenciasJogadores);
+        Object.entries(assistenciasJogadores).forEach(([jogadorIdOuNome, quantidade]) => {
+          console.log(`👟 Processando: ${jogadorIdOuNome} = ${quantidade} assistências`);
+          
+          // Tentar encontrar por ID primeiro, depois por nome
+          const jogadorTimeA = timeACompleto.find(j => j.id === jogadorIdOuNome || j.nome === jogadorIdOuNome);
+          if (jogadorTimeA) {
+            console.log(`   ✅ Encontrado no Time A: ${jogadorTimeA.nome} (ID: ${jogadorTimeA.id})`);
+            for (let i = 0; i < quantidade; i++) {
+              const novaAssistencia = {
+                id: gerarUUID(),
+                jogo_id: novoJogo.id,
+                jogador_id: jogadorTimeA.id,
+                time: 'A',
+                created_at: new Date().toISOString(),
+              };
+              assistencias.push(novaAssistencia);
+              console.log(`   📝 Assistência registrada:`, novaAssistencia);
+            }
+          } else {
+            console.log(`   ❌ NÃO encontrado no Time A`);
+          }
+          
+          // Verificar se é do Time B
+          const jogadorTimeB = timeBCompleto.find(j => j.id === jogadorIdOuNome || j.nome === jogadorIdOuNome);
+          if (jogadorTimeB) {
+            console.log(`   ✅ Encontrado no Time B: ${jogadorTimeB.nome} (ID: ${jogadorTimeB.id})`);
+            for (let i = 0; i < quantidade; i++) {
+              const novaAssistencia = {
+                id: gerarUUID(),
+                jogo_id: novoJogo.id,
+                jogador_id: jogadorTimeB.id,
+                time: 'B',
+                created_at: new Date().toISOString(),
+              };
+              assistencias.push(novaAssistencia);
+              console.log(`   📝 Assistência registrada:`, novaAssistencia);
+            }
+          } else {
+            console.log(`   ❌ NÃO encontrado no Time B`);
+          }
+        });
+        
+        localStorage.setItem(assistenciasKey, JSON.stringify(assistencias));
+        console.log(`👟 ${assistencias.length} assistências TOTAL salvas na tabela assistencias (Premium)`);
+        console.log('👟 === TABELA ASSISTÊNCIAS ATUALIZADA ===');
+        console.log(`   Assistências desta partida:`, assistenciasJogadores);
+      } else {
+        console.log('👟 NÃO entrou no bloco de assistências. Motivo:');
+        console.log('   Plano é Premium?', planoUpper2 === 'PREMIUM');
+        console.log('   Tem assistências marcadas?', Object.keys(assistenciasJogadores).length > 0);
+      }
+      
+      // ============================================
       // ATUALIZAR ESTATÍSTICAS DOS JOGADORES (Gold/Premium, EXCETO modo prancheta)
       // ============================================
       const planoUpper = plano?.toUpperCase() || '';
@@ -3400,6 +3766,13 @@ export default function FilaPage() {
                 console.log(`   ⚽ Gols adicionados: ${quantidade}`);
               }
               
+              // Adicionar assistências (Premium) - buscar por ID ou nome
+              if (planoUpper === 'PREMIUM' && (assistenciasJogadores[jogador.id] || assistenciasJogadores[jogador.nome])) {
+                const quantidade = assistenciasJogadores[jogador.id] || assistenciasJogadores[jogador.nome];
+                jogadorData.assistencias = (jogadorData.assistencias || 0) + quantidade;
+                console.log(`   👟 Assistências adicionadas: ${quantidade}`);
+              }
+              
               console.log(`   Atualizado: ${jogadorData.jogos} jogos, ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E`);
             }
           });
@@ -3428,6 +3801,13 @@ export default function FilaPage() {
                 console.log(`   ⚽ Gols adicionados: ${quantidade}`);
               }
               
+              // Adicionar assistências (Premium) - buscar por ID ou nome
+              if (planoUpper === 'PREMIUM' && (assistenciasJogadores[jogador.id] || assistenciasJogadores[jogador.nome])) {
+                const quantidade = assistenciasJogadores[jogador.id] || assistenciasJogadores[jogador.nome];
+                jogadorData.assistencias = (jogadorData.assistencias || 0) + quantidade;
+                console.log(`   👟 Assistências adicionadas: ${quantidade}`);
+              }
+              
               console.log(`   Atualizado: ${jogadorData.jogos} jogos, ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E`);
             }
           });
@@ -3441,7 +3821,7 @@ export default function FilaPage() {
           timeACompleto.forEach(jogador => {
             const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
             if (jogadorData) {
-              console.log(`      ${jogadorData.nome}: ${jogadorData.jogos} jogos | ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E | ${jogadorData.gols || 0} gols`);
+              console.log(`      ${jogadorData.nome}: ${jogadorData.jogos} jogos | ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E | ${jogadorData.gols || 0} gols | ${jogadorData.assistencias || 0} assists`);
             }
           });
           
@@ -3450,7 +3830,7 @@ export default function FilaPage() {
           timeBCompleto.forEach(jogador => {
             const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
             if (jogadorData) {
-              console.log(`      ${jogadorData.nome}: ${jogadorData.jogos} jogos | ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E | ${jogadorData.gols || 0} gols`);
+              console.log(`      ${jogadorData.nome}: ${jogadorData.jogos} jogos | ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E | ${jogadorData.gols || 0} gols | ${jogadorData.assistencias || 0} assists`);
             }
           });
         }
@@ -3489,7 +3869,10 @@ export default function FilaPage() {
       setPlacarTimeA(0);
       setPlacarTimeB(0);
       setSelecionandoGolPara(null);
+      setSelecionandoAssistenciaPara(null);
+      setUltimoGolInfo(null);
       setGolsJogadores({});
+      setAssistenciasJogadores({});
       setHistoricoAcoes([]);
       setVencedorDesempate(null); // Resetar vencedor do desempate
       setTimeEscolhidoDesempate(null); // Resetar escolha do time no empate
@@ -4041,6 +4424,66 @@ export default function FilaPage() {
             )}
           </section>
 
+          {/* Overlay para cancelar seleção de gol/assistência ao clicar fora */}
+          {modoPartida && (selecionandoGolPara || selecionandoAssistenciaPara) && (
+            <div
+              onClick={(e) => {
+                // Apenas cancelar se clicar diretamente no overlay (não em elementos filhos)
+                if (e.target === e.currentTarget) {
+                  // Se estiver selecionando assistência, desfazer o gol também
+                  if (selecionandoAssistenciaPara) {
+                    // Encontrar o último gol no histórico
+                    if (historicoAcoes.length > 0) {
+                      const ultimaAcao = historicoAcoes[historicoAcoes.length - 1];
+                      if (ultimaAcao.tipo === 'gol') {
+                        // Decrementar placar
+                        if (ultimaAcao.time === 'A') {
+                          setPlacarTimeA(prev => {
+                            const novoPlacar = Math.max(0, prev - 1);
+                            atualizarPlacarNoLocalStorage('A', novoPlacar);
+                            return novoPlacar;
+                          });
+                        } else {
+                          setPlacarTimeB(prev => {
+                            const novoPlacar = Math.max(0, prev - 1);
+                            atualizarPlacarNoLocalStorage('B', novoPlacar);
+                            return novoPlacar;
+                          });
+                        }
+                        
+                        // Remover gol do jogador
+                        setGolsJogadores(prev => ({
+                          ...prev,
+                          [ultimaAcao.jogadorId]: Math.max(0, (prev[ultimaAcao.jogadorId] || 0) - 1)
+                        }));
+                        
+                        // Remover do histórico
+                        setHistoricoAcoes(prev => prev.slice(0, -1));
+                        
+                        console.log('❌ Ação cancelada: Gol removido');
+                      }
+                    }
+                    setSelecionandoAssistenciaPara(null);
+                    setUltimoGolInfo(null);
+                  } else {
+                    // Apenas cancelar seleção de gol
+                    setSelecionandoGolPara(null);
+                  }
+                  console.log('❌ Seleção cancelada');
+                }
+              }}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 500,
+                cursor: 'pointer'
+              }}
+            />
+          )}
+
           {/* Cronômetro e Placar no modo partida */}
           {modoPartida && (
             <div style={{
@@ -4426,7 +4869,11 @@ export default function FilaPage() {
           )}
 
           {/* Times */}
-          <section className="teams-cards" style={{ marginTop: (modoPartida || modoPrancheta) ? '2px' : '8px' }}>
+          <section className="teams-cards" style={{ 
+            marginTop: (modoPartida || modoPrancheta) ? '2px' : '8px',
+            position: 'relative',
+            zIndex: 1000
+          }}>
             <div className="team-card">
               <div className="team-header" style={modoPartida ? {
                 background: corTimeA,
@@ -4441,6 +4888,7 @@ export default function FilaPage() {
                     {time1.map((jogador, index) => {
                       const estaSelecionado = jogadorSelecionadoTroca?.id === jogador.id;
                       const estaEsperandoGol = selecionandoGolPara === 'A';
+                      const estaEsperandoAssistencia = selecionandoAssistenciaPara === 'A';
                       
                       // Buscar ID real do jogador pelo nome
                       const peladaId = buscar_pelada_id();
@@ -4451,19 +4899,22 @@ export default function FilaPage() {
                       const jogadorIdReal = jogadorReal?.id || jogador.id;
                       
                       const golsDoJogador = golsJogadores[jogadorIdReal] || 0;
+                      const assistenciasDoJogador = assistenciasJogadores[jogadorIdReal] || 0;
                       return (
                         <tr 
                           key={jogador.id}
                           style={{
-                            background: estaSelecionado ? '#3b82f6' : (estaEsperandoGol ? '#fef3c7' : 'transparent'),
+                            background: estaSelecionado ? '#3b82f6' : (estaEsperandoGol ? '#fef3c7' : (estaEsperandoAssistencia ? '#d1fae5' : 'transparent')),
                             color: estaSelecionado ? 'white' : 'inherit',
-                            cursor: (modoEdicao || estaEsperandoGol) ? 'pointer' : 'default',
+                            cursor: (modoEdicao || estaEsperandoGol || estaEsperandoAssistencia) ? 'pointer' : 'default',
                             height: '45px',
-                            border: estaEsperandoGol ? '2px solid #f59e0b' : 'none'
+                            border: estaEsperandoGol ? '2px solid #f59e0b' : (estaEsperandoAssistencia ? '2px solid #10b981' : 'none')
                           }}
                           onClick={() => {
                             if (estaEsperandoGol) {
                               registrarGol(jogador.id, 'A');
+                            } else if (estaEsperandoAssistencia) {
+                              registrarAssistencia(jogador.id, 'A');
                             } else if (modoEdicao) {
                               if (!jogadorSelecionadoTroca) {
                                 // Primeiro clique: selecionar jogador
@@ -4483,7 +4934,8 @@ export default function FilaPage() {
                           <td style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: modoEdicao ? 'flex-start' : 'center', height: '45px', padding: '8px 12px' }}>
                             <span style={{ flex: 1, textAlign: modoEdicao ? 'left' : 'center' }}>
                               {jogador.nome}
-                              {golsDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{' ⚽'.repeat(golsDoJogador)}</span>}
+                              {golsDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{'⚽'.repeat(golsDoJogador)}</span>}
+                              {assistenciasDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{'👟'.repeat(assistenciasDoJogador)}</span>}
                             </span>
                             {modoEdicao && (
                               <button
@@ -4533,6 +4985,26 @@ export default function FilaPage() {
                         </td>
                       </tr>
                     )}
+                    {/* Botão Sem Assistência */}
+                    {selecionandoAssistenciaPara === 'A' && (
+                      <tr 
+                        style={{ 
+                          background: '#6b7280',
+                          cursor: 'pointer',
+                          height: '45px'
+                        }}
+                        onClick={() => registrarAssistencia('sem_assistencia', 'A')}
+                      >
+                        <td style={{ 
+                          padding: '8px 12px',
+                          color: '#fff',
+                          fontWeight: '600',
+                          textAlign: 'center'
+                        }}>
+                          SEM ASSISTÊNCIA
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -4552,6 +5024,7 @@ export default function FilaPage() {
                     {time2.map((jogador, index) => {
                       const estaSelecionado = jogadorSelecionadoTroca?.id === jogador.id;
                       const estaEsperandoGol = selecionandoGolPara === 'B';
+                      const estaEsperandoAssistencia = selecionandoAssistenciaPara === 'B';
                       
                       // Buscar ID real do jogador pelo nome
                       const peladaId = buscar_pelada_id();
@@ -4562,19 +5035,22 @@ export default function FilaPage() {
                       const jogadorIdReal = jogadorReal?.id || jogador.id;
                       
                       const golsDoJogador = golsJogadores[jogadorIdReal] || 0;
+                      const assistenciasDoJogador = assistenciasJogadores[jogadorIdReal] || 0;
                       return (
                         <tr 
                           key={jogador.id}
                           style={{
-                            background: estaSelecionado ? '#3b82f6' : (estaEsperandoGol ? '#fef3c7' : 'transparent'),
+                            background: estaSelecionado ? '#3b82f6' : (estaEsperandoGol ? '#fef3c7' : (estaEsperandoAssistencia ? '#d1fae5' : 'transparent')),
                             color: estaSelecionado ? 'white' : 'inherit',
-                            cursor: (modoEdicao || estaEsperandoGol) ? 'pointer' : 'default',
+                            cursor: (modoEdicao || estaEsperandoGol || estaEsperandoAssistencia) ? 'pointer' : 'default',
                             height: '45px',
-                            border: estaEsperandoGol ? '2px solid #f59e0b' : 'none'
+                            border: estaEsperandoGol ? '2px solid #f59e0b' : (estaEsperandoAssistencia ? '2px solid #10b981' : 'none')
                           }}
                           onClick={() => {
                             if (estaEsperandoGol) {
                               registrarGol(jogador.id, 'B');
+                            } else if (estaEsperandoAssistencia) {
+                              registrarAssistencia(jogador.id, 'B');
                             } else if (modoEdicao) {
                               if (!jogadorSelecionadoTroca) {
                                 // Primeiro clique: selecionar jogador
@@ -4594,7 +5070,8 @@ export default function FilaPage() {
                           <td style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: modoEdicao ? 'flex-start' : 'center', height: '45px', padding: '8px 12px' }}>
                             <span style={{ flex: 1, textAlign: modoEdicao ? 'left' : 'center' }}>
                               {jogador.nome}
-                              {golsDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{' ⚽'.repeat(golsDoJogador)}</span>}
+                              {golsDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{'⚽'.repeat(golsDoJogador)}</span>}
+                              {assistenciasDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{'👟'.repeat(assistenciasDoJogador)}</span>}
                             </span>
                             {modoEdicao && (
                               <button
@@ -4641,6 +5118,26 @@ export default function FilaPage() {
                           textAlign: 'center'
                         }}>
                           GOL CONTRA
+                        </td>
+                      </tr>
+                    )}
+                    {/* Botão Sem Assistência */}
+                    {selecionandoAssistenciaPara === 'B' && (
+                      <tr 
+                        style={{ 
+                          background: '#6b7280',
+                          cursor: 'pointer',
+                          height: '45px'
+                        }}
+                        onClick={() => registrarAssistencia('sem_assistencia', 'B')}
+                      >
+                        <td style={{ 
+                          padding: '8px 12px',
+                          color: '#fff',
+                          fontWeight: '600',
+                          textAlign: 'center'
+                        }}>
+                          SEM ASSISTÊNCIA
                         </td>
                       </tr>
                     )}
@@ -4808,7 +5305,10 @@ export default function FilaPage() {
                       setPlacarTimeA(0);
                       setPlacarTimeB(0);
                       setSelecionandoGolPara(null);
+                      setSelecionandoAssistenciaPara(null);
+                      setUltimoGolInfo(null);
                       setGolsJogadores({});
+                      setAssistenciasJogadores({});
                       setHistoricoAcoes([]);
                       localStorage.removeItem('modo_partida_estado');
                       console.log('✅ Partida cancelada e estado limpo');
@@ -5138,12 +5638,12 @@ export default function FilaPage() {
           )}
         </div>
 
-        {/* Cards Informativos - Partidas e Gols do Dia */}
+        {/* Cards Informativos - Partidas, Gols e Assistências do Dia */}
         {!semSessaoAtiva && (
           <div style={{
             padding: '16px 16px 100px',
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
+            gridTemplateColumns: '1fr 1fr 1fr',
             gap: '9px',
             maxWidth: '600px',
             margin: '0 auto'
@@ -5271,6 +5771,69 @@ export default function FilaPage() {
               </div>
               <div style={{ fontSize: '0.64rem', color: '#64748b', fontWeight: '500' }}>
                 Gol{totalGols !== 1 ? 's' : ''}
+              </div>
+            </button>
+
+            {/* Card Assistências */}
+            <button
+              onClick={() => {
+                if (!possuiPermissao('verEstatisticas')) {
+                  alert('👑 Estatísticas detalhadas exclusivas do plano Premium!\n\nFaça upgrade para acessar ranking de garçons.');
+                  return;
+                }
+                carregarInfoAssistencias();
+              }}
+              style={{
+                background: !possuiPermissao('verEstatisticas') ? 'rgba(209, 250, 229, 0.5)' : '#d1fae5',
+                border: '2px solid #10b981',
+                borderRadius: '12px',
+                padding: '15px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                position: 'relative',
+                opacity: !possuiPermissao('verEstatisticas') ? 0.7 : 1
+              }}
+              onMouseDown={(e) => {
+                const btn = e.currentTarget as HTMLElement;
+                btn.style.transform = 'scale(0.95)';
+              }}
+              onMouseUp={(e) => {
+                const btn = e.currentTarget as HTMLElement;
+                btn.style.transform = 'scale(1)';
+              }}
+              onMouseLeave={(e) => {
+                const btn = e.currentTarget as HTMLElement;
+                btn.style.transform = 'scale(1)';
+              }}
+            >
+              {!possuiPermissao('verEstatisticas') && (
+                <div style={{
+                  position: 'absolute',
+                  top: '5px',
+                  right: '5px',
+                  background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                  color: '#fff',
+                  padding: '4px 8px',
+                  borderRadius: '12px',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  boxShadow: '0 2px 8px rgba(168, 85, 247, 0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  zIndex: 10
+                }}>
+                  <span style={{ fontSize: '8px' }}>👑</span>
+                  <span>Premium</span>
+                </div>
+              )}
+              <div style={{ fontSize: '1.875rem', marginBottom: '6px' }}>👟</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#059669', marginBottom: '3px' }}>
+                {totalAssistencias}
+              </div>
+              <div style={{ fontSize: '0.64rem', color: '#64748b', fontWeight: '500' }}>
+                Assist{totalAssistencias !== 1 ? 's' : ''}
               </div>
             </button>
           </div>
@@ -6348,15 +6911,15 @@ export default function FilaPage() {
               borderRadius: '16px',
               maxWidth: '500px',
               width: '100%',
-              maxHeight: '95vh',
+              maxHeight: '90vh',
               display: 'flex',
               flexDirection: 'column',
               boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
             }}>
               <h2 style={{ 
-                marginBottom: '24px',
-                padding: '32px 32px 0 32px', 
-                fontSize: '24px',
+                marginBottom: '20px',
+                padding: '20px 20px 0 20px', 
+                fontSize: '22px',
                 color: '#1f2937',
                 fontWeight: '700',
                 textAlign: 'center'
@@ -6367,14 +6930,14 @@ export default function FilaPage() {
               {/* Lista de jogadores na reserva */}
               {jogadoresReserva.length > 0 ? (
                 <div style={{ 
-                  padding: '0 32px',
+                  padding: '0 20px',
                   overflow: 'auto',
                   flex: 1
                 }}>
                   <h3 style={{ 
-                    fontSize: '16px', 
+                    fontSize: '15px', 
                     color: '#6b7280', 
-                    marginBottom: '12px',
+                    marginBottom: '10px',
                     fontWeight: '600'
                   }}>
                     Jogadores na Reserva
@@ -6383,9 +6946,9 @@ export default function FilaPage() {
                     display: 'grid',
                     gridTemplateColumns: '1fr 1fr',
                     gap: '10px',
-                    marginBottom: '20px'
+                    marginBottom: '16px'
                   }}>
-                    {jogadoresReserva.map((jogador) => (
+                    {[...jogadoresReserva].sort((a, b) => a.nome.localeCompare(b.nome)).map((jogador) => (
                       <button
                         key={jogador.id}
                         onClick={() => {
@@ -6422,14 +6985,14 @@ export default function FilaPage() {
                 </div>
               ) : (
                 <div style={{ 
-                  padding: '0 32px',
+                  padding: '0 20px',
                   overflow: 'auto',
                   flex: 1
                 }}>
                   <p style={{ 
                     textAlign: 'center', 
                     color: '#6b7280', 
-                    marginBottom: '20px',
+                    marginBottom: '16px',
                     fontSize: '14px'
                   }}>
                     Nenhum jogador na reserva
@@ -6439,7 +7002,7 @@ export default function FilaPage() {
 
               <div style={{
                 borderTop: '2px solid #e9ecef',
-                padding: '20px 32px 32px 32px'
+                padding: '16px 20px 20px 20px'
               }}>
                 <button
                   onClick={() => {
@@ -6662,27 +7225,45 @@ export default function FilaPage() {
                       {placarTimeA}
                     </div>
                     {/* Gols Time A */}
-                    {historicoAcoes.filter(h => h.time === 'A').length > 0 && (
-                      <div style={{ 
-                        background: '#f9fafb', 
-                        borderRadius: '8px', 
-                        padding: '10px 8px',
-                        border: `1px solid ${corTimeA}20`
-                      }}>
-                        {historicoAcoes.filter(h => h.time === 'A').map((gol, idx) => {
-                          // Buscar na lista completa de jogadores do localStorage
-                          const peladaId = buscar_pelada_id();
-                          const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
-                          const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
-                          const jogador = todosJogadores.find((j: any) => j.id === gol.jogadorId);
-                          return (
+                    {historicoAcoes.filter(h => h.time === 'A').length > 0 && (() => {
+                      // Buscar todos os jogadores
+                      const peladaId = buscar_pelada_id();
+                      const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
+                      const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+                      
+                      // Agrupar ações por jogador
+                      const acoesPorJogador: Record<string, { nome: string; gols: number; assistencias: number }> = {};
+                      historicoAcoes.filter(h => h.time === 'A').forEach((acao) => {
+                        if (!acoesPorJogador[acao.jogadorId]) {
+                          const jogador = todosJogadores.find((j: any) => j.id === acao.jogadorId);
+                          acoesPorJogador[acao.jogadorId] = {
+                            nome: jogador?.nome || 'Jogador',
+                            gols: 0,
+                            assistencias: 0
+                          };
+                        }
+                        if (acao.tipo === 'gol') {
+                          acoesPorJogador[acao.jogadorId].gols++;
+                        } else if (acao.tipo === 'assistencia') {
+                          acoesPorJogador[acao.jogadorId].assistencias++;
+                        }
+                      });
+                      
+                      return (
+                        <div style={{ 
+                          background: '#f9fafb', 
+                          borderRadius: '8px', 
+                          padding: '10px 8px',
+                          border: `1px solid ${corTimeA}20`
+                        }}>
+                          {Object.values(acoesPorJogador).map((jogadorInfo, idx) => (
                             <div key={idx} style={{ fontSize: '0.75rem', color: '#333', marginBottom: '3px' }}>
-                              ⚽ {jogador?.nome || 'Jogador'}
+                              {'⚽'.repeat(jogadorInfo.gols)}{'👟'.repeat(jogadorInfo.assistencias)} {jogadorInfo.nome}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <span style={{ fontSize: '2rem', color: '#9ca3af', fontWeight: 'bold', marginTop: '40px' }}>×</span>
@@ -6696,27 +7277,45 @@ export default function FilaPage() {
                       {placarTimeB}
                     </div>
                     {/* Gols Time B */}
-                    {historicoAcoes.filter(h => h.time === 'B').length > 0 && (
-                      <div style={{ 
-                        background: '#f9fafb', 
-                        borderRadius: '8px', 
-                        padding: '10px 8px',
-                        border: `1px solid ${corTimeB}20`
-                      }}>
-                        {historicoAcoes.filter(h => h.time === 'B').map((gol, idx) => {
-                          // Buscar na lista completa de jogadores do localStorage
-                          const peladaId = buscar_pelada_id();
-                          const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
-                          const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
-                          const jogador = todosJogadores.find((j: any) => j.id === gol.jogadorId);
-                          return (
+                    {historicoAcoes.filter(h => h.time === 'B').length > 0 && (() => {
+                      // Buscar todos os jogadores
+                      const peladaId = buscar_pelada_id();
+                      const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
+                      const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+                      
+                      // Agrupar ações por jogador
+                      const acoesPorJogador: Record<string, { nome: string; gols: number; assistencias: number }> = {};
+                      historicoAcoes.filter(h => h.time === 'B').forEach((acao) => {
+                        if (!acoesPorJogador[acao.jogadorId]) {
+                          const jogador = todosJogadores.find((j: any) => j.id === acao.jogadorId);
+                          acoesPorJogador[acao.jogadorId] = {
+                            nome: jogador?.nome || 'Jogador',
+                            gols: 0,
+                            assistencias: 0
+                          };
+                        }
+                        if (acao.tipo === 'gol') {
+                          acoesPorJogador[acao.jogadorId].gols++;
+                        } else if (acao.tipo === 'assistencia') {
+                          acoesPorJogador[acao.jogadorId].assistencias++;
+                        }
+                      });
+                      
+                      return (
+                        <div style={{ 
+                          background: '#f9fafb', 
+                          borderRadius: '8px', 
+                          padding: '10px 8px',
+                          border: `1px solid ${corTimeB}20`
+                        }}>
+                          {Object.values(acoesPorJogador).map((jogadorInfo, idx) => (
                             <div key={idx} style={{ fontSize: '0.75rem', color: '#333', marginBottom: '3px' }}>
-                              ⚽ {jogador?.nome || 'Jogador'}
+                              {'⚽'.repeat(jogadorInfo.gols)}{'👟'.repeat(jogadorInfo.assistencias)} {jogadorInfo.nome}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
                 
@@ -7057,6 +7656,31 @@ export default function FilaPage() {
                     const ultimaAcao = historicoAcoes[historicoAcoes.length - 1];
                     const nomeTime = ultimaAcao.time === 'A' ? obterNomeCor(corTimeA) : obterNomeCor(corTimeB);
                     
+                    // Verificar se é assistência (significa que vai anular gol + assistência)
+                    if (ultimaAcao.tipo === 'assistencia') {
+                      const jogadorAssist = time1.concat(time2).find(j => j.id === ultimaAcao.jogadorId)?.nome || 'Jogador';
+                      
+                      // Buscar o gol relacionado (penúltima ação)
+                      if (historicoAcoes.length >= 2) {
+                        const penultimaAcao = historicoAcoes[historicoAcoes.length - 2];
+                        if (penultimaAcao.tipo === 'gol' && penultimaAcao.time === ultimaAcao.time) {
+                          const jogadorGol = time1.concat(time2).find(j => j.id === penultimaAcao.jogadorId)?.nome || 'Jogador';
+                          return (
+                            <>
+                              Desfazer o ⚽ <strong>gol</strong> de <strong>{jogadorGol}</strong> E a 👟 <strong>assistência</strong> de <strong>{jogadorAssist}</strong> do <strong>{nomeTime}</strong>?
+                            </>
+                          );
+                        }
+                      }
+                      
+                      // Se não encontrou gol relacionado, mensagem genérica
+                      return (
+                        <>
+                          Desfazer a 👟 <strong>assistência</strong> de <strong>{jogadorAssist}</strong> do <strong>{nomeTime}</strong>?
+                        </>
+                      );
+                    }
+                    
                     // Verificar se é gol contra
                     if (ultimaAcao.jogadorId === 'gol_contra') {
                       return (
@@ -7070,7 +7694,7 @@ export default function FilaPage() {
                     const jogadorNome = time1.concat(time2).find(j => j.id === ultimaAcao.jogadorId)?.nome || 'Jogador';
                     return (
                       <>
-                        Desfazer o gol de <strong>{jogadorNome}</strong> marcado pelo <strong>{nomeTime}</strong>?
+                        Desfazer o ⚽ <strong>gol</strong> de <strong>{jogadorNome}</strong> marcado pelo <strong>{nomeTime}</strong>?
                       </>
                     );
                   })()
@@ -7230,22 +7854,22 @@ export default function FilaPage() {
               {/* Resumo da pelada */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '12px',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: '10px',
                 marginBottom: '24px'
               }}>
                 <div style={{
                   background: '#f0f9ff',
                   border: '2px solid #3b82f6',
                   borderRadius: '12px',
-                  padding: '20px',
+                  padding: '16px',
                   textAlign: 'center'
                 }}>
-                  <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>🥅</div>
-                  <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#1e40af', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '2rem', marginBottom: '6px' }}>🥅</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold', color: '#1e40af', marginBottom: '4px' }}>
                     {totalPartidas}
                   </div>
-                  <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '500' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '500' }}>
                     Partida{totalPartidas !== 1 ? 's' : ''}
                   </div>
                 </div>
@@ -7254,15 +7878,31 @@ export default function FilaPage() {
                   background: '#fef3c7',
                   border: '2px solid #f59e0b',
                   borderRadius: '12px',
-                  padding: '20px',
+                  padding: '16px',
                   textAlign: 'center'
                 }}>
-                  <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>⚽</div>
-                  <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#d97706', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '2rem', marginBottom: '6px' }}>⚽</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold', color: '#d97706', marginBottom: '4px' }}>
                     {totalGols}
                   </div>
-                  <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '500' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '500' }}>
                     Gol{totalGols !== 1 ? 's' : ''}
+                  </div>
+                </div>
+
+                <div style={{
+                  background: '#d1fae5',
+                  border: '2px solid #10b981',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '2rem', marginBottom: '6px' }}>👟</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold', color: '#059669', marginBottom: '4px' }}>
+                    {totalAssistencias}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '500' }}>
+                    Assist{totalAssistencias !== 1 ? 's' : ''}
                   </div>
                 </div>
               </div>
@@ -8423,50 +9063,99 @@ export default function FilaPage() {
                     <p style={{ fontSize: '1rem' }}>Nenhuma partida realizada ainda</p>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {partidasDoDia.map((partida, idx) => {
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {partidasDoDia.map((jogo, idx) => {
+                      const buscarJogador = (jogadorId: any): string => {
+                        if (typeof jogadorId === 'object' && jogadorId?.nome) {
+                          return jogadorId.nome;
+                        }
+                        const jogador = jogo.jogadores?.find((j: any) => j.id === jogadorId);
+                        return jogador?.nome || 'Jogador';
+                      };
+
                       return (
                         <div 
                           key={idx}
                           style={{
-                            background: '#f9fafb',
+                            background: '#fff',
                             border: '2px solid #e5e7eb',
                             borderRadius: '12px',
-                            padding: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between'
+                            overflow: 'hidden'
                           }}
                         >
-                          <div style={{ flex: 1, textAlign: 'center' }}>
-                            <div style={{ 
-                              fontSize: '0.75rem', 
-                              fontWeight: '600', 
-                              color: '#16a34a',
-                              marginBottom: '4px'
-                            }}>
-                              TIME 1
-                            </div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#16a34a' }}>
-                              {partida.placar_a}
+                          {/* Header da Partida */}
+                          <div style={{
+                            background: '#f3f4f6',
+                            padding: '12px 16px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            borderBottom: '2px solid #e5e7eb'
+                          }}>
+                            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#6b7280' }}>
+                              Partida #{jogo.numero_jogo}
+                            </span>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#16a34a' }}>
+                                {jogo.placar_a}
+                              </span>
+                              <span style={{ fontSize: '1.25rem', color: '#9ca3af' }}>×</span>
+                              <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#374151' }}>
+                                {jogo.placar_b}
+                              </span>
                             </div>
                           </div>
 
-                          <span style={{ fontSize: '1.2rem', color: '#9ca3af', fontWeight: 'bold', padding: '0 12px' }}>
-                            ×
-                          </span>
+                          {/* Times */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px', background: '#e5e7eb' }}>
+                            {/* Time A */}
+                            <div style={{ background: '#f0fdf4', padding: '12px' }}>
+                              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#16a34a', marginBottom: '8px', textAlign: 'center' }}>
+                                TIME 1
+                              </div>
+                              {jogo.time_a.map((jogadorData: any, i: number) => {
+                                const jogadorId = jogadorData.id || jogadorData;
+                                const nomeJogador = buscarJogador(jogadorId);
+                                const golsJogador = (jogo.gols || []).filter((g: any) => 
+                                  g.jogador_id === jogadorId && g.time === 'A'
+                                ).length;
+                                const assistenciasJogador = (jogo.assistencias || []).filter((a: any) => 
+                                  a.jogador_id === jogadorId && a.time === 'A'
+                                ).length;
 
-                          <div style={{ flex: 1, textAlign: 'center' }}>
-                            <div style={{ 
-                              fontSize: '0.75rem', 
-                              fontWeight: '600', 
-                              color: '#374151',
-                              marginBottom: '4px'
-                            }}>
-                              TIME 2
+                                return (
+                                  <div key={i} style={{ fontSize: '0.8rem', color: '#374151', padding: '2px 0', textAlign: 'center' }}>
+                                    {nomeJogador}
+                                    {golsJogador > 0 && <span style={{ marginLeft: '4px' }}>{'⚽'.repeat(golsJogador)}</span>}
+                                    {assistenciasJogador > 0 && <span style={{ marginLeft: '4px' }}>{'👟'.repeat(assistenciasJogador)}</span>}
+                                  </div>
+                                );
+                              })}
                             </div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#374151' }}>
-                              {partida.placar_b}
+
+                            {/* Time B */}
+                            <div style={{ background: '#f9fafb', padding: '12px' }}>
+                              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#374151', marginBottom: '8px', textAlign: 'center' }}>
+                                TIME 2
+                              </div>
+                              {jogo.time_b.map((jogadorData: any, i: number) => {
+                                const jogadorId = jogadorData.id || jogadorData;
+                                const nomeJogador = buscarJogador(jogadorId);
+                                const golsJogador = (jogo.gols || []).filter((g: any) => 
+                                  g.jogador_id === jogadorId && g.time === 'B'
+                                ).length;
+                                const assistenciasJogador = (jogo.assistencias || []).filter((a: any) => 
+                                  a.jogador_id === jogadorId && a.time === 'B'
+                                ).length;
+
+                                return (
+                                  <div key={i} style={{ fontSize: '0.8rem', color: '#374151', padding: '2px 0', textAlign: 'center' }}>
+                                    {nomeJogador}
+                                    {golsJogador > 0 && <span style={{ marginLeft: '4px' }}>{'⚽'.repeat(golsJogador)}</span>}
+                                    {assistenciasJogador > 0 && <span style={{ marginLeft: '4px' }}>{'👟'.repeat(assistenciasJogador)}</span>}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -8681,6 +9370,199 @@ export default function FilaPage() {
                     border: 'none',
                     borderRadius: '10px',
                     background: '#f59e0b',
+                    color: '#fff',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Informativo - Assistências do Dia */}
+        {showModalInfoAssistencias && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2100,
+            padding: '20px'
+          }}>
+            <div style={{
+              backgroundColor: '#fff',
+              borderRadius: '20px',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '80vh',
+              display: 'flex',
+              flexDirection: 'column',
+              position: 'relative'
+            }}>
+              {/* Tarja Gold */}
+              {!possuiPermissao('verResultados') && (
+                <div style={{
+                  position: 'absolute',
+                  top: '20px',
+                  right: '20px',
+                  background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+                  color: '#fff',
+                  padding: '10px 16px',
+                  borderRadius: '25px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  boxShadow: '0 4px 15px rgba(251, 191, 36, 0.6)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  zIndex: 20,
+                  border: '2px solid rgba(255, 255, 255, 0.5)'
+                }}>
+                  <span>⭐</span>
+                  <span>Gold</span>
+                </div>
+              )}
+              {/* Header */}
+              <div style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                padding: '24px',
+                borderTopLeftRadius: '20px',
+                borderTopRightRadius: '20px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '3rem', marginBottom: '8px' }}>👟</div>
+                <h2 style={{ 
+                  fontSize: '1.5rem', 
+                  fontWeight: 'bold', 
+                  color: '#fff',
+                  margin: 0
+                }}>
+                  Assistências do Dia
+                </h2>
+                <p style={{ 
+                  fontSize: '0.9rem', 
+                  color: '#d1fae5',
+                  marginTop: '8px',
+                  marginBottom: 0
+                }}>
+                  {totalAssistencias} assist{totalAssistencias !== 1 ? 's' : ''} realizada{totalAssistencias !== 1 ? 's' : ''}
+                </p>
+              </div>
+
+              {/* Conteúdo */}
+              <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '20px'
+              }}>
+                {garconsDoDia.length === 0 && semAssistenciasDoDia.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px 20px', color: '#9ca3af' }}>
+                    <div style={{ fontSize: '3rem', marginBottom: '12px' }}>🤷</div>
+                    <p style={{ fontSize: '1rem' }}>Nenhuma partida realizada ainda</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Garçons */}
+                    {garconsDoDia.length > 0 && (
+                      <div style={{ marginBottom: '24px' }}>
+                        <h3 style={{ 
+                          fontSize: '1.1rem', 
+                          fontWeight: 'bold', 
+                          color: '#1f2937',
+                          marginBottom: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}>
+                          <span>👑</span> Garçons
+                        </h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {garconsDoDia.map((jogador, idx) => (
+                            <div 
+                              key={idx}
+                              style={{
+                                background: '#d1fae5',
+                                border: '2px solid #10b981',
+                                borderRadius: '10px',
+                                padding: '12px 16px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <span style={{ fontSize: '0.95rem', fontWeight: '600', color: '#064e3b' }}>
+                                {jogador.nome}
+                              </span>
+                              <span style={{ 
+                                fontSize: '1.1rem', 
+                                fontWeight: 'bold', 
+                                color: '#059669',
+                                background: '#fff',
+                                padding: '4px 12px',
+                                borderRadius: '20px'
+                              }}>
+                                {jogador.assistencias} 👟
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Jogadores sem assistências */}
+                    {semAssistenciasDoDia.length > 0 && (
+                      <div>
+                        <h3 style={{ 
+                          fontSize: '1.1rem', 
+                          fontWeight: 'bold', 
+                          color: '#1f2937',
+                          marginBottom: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}>
+                          <span>❌</span> Sem Assistências
+                        </h3>
+                        <div style={{
+                          background: '#f3f4f6',
+                          border: '2px solid #d1d5db',
+                          borderRadius: '10px',
+                          padding: '16px'
+                        }}>
+                          <p style={{ 
+                            fontSize: '0.9rem', 
+                            color: '#6b7280',
+                            lineHeight: '1.6',
+                            margin: 0
+                          }}>
+                            {semAssistenciasDoDia.join(', ')} não deram assistências.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: '20px', borderTop: '1px solid #e5e7eb' }}>
+                <button
+                  onClick={() => setShowModalInfoAssistencias(false)}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    fontSize: '1rem',
+                    fontWeight: '600',
+                    border: 'none',
+                    borderRadius: '10px',
+                    background: '#10b981',
                     color: '#fff',
                     cursor: 'pointer'
                   }}

@@ -10,7 +10,7 @@ import { logger } from './logger';
 export interface SyncQueueItem {
   id: string;
   tipo: 'criar_jogador' | 'atualizar_jogador' | 'excluir_jogador' | 
-        'atualizar_fila' | 'inserir_jogo' | 'inserir_gols' | 
+        'atualizar_fila' | 'inserir_jogo' | 'inserir_gols' | 'inserir_assistencias' |
         'atualizar_regras' | 'finalizar_sessao';
   timestamp: number;
   tentativas: number;
@@ -204,6 +204,10 @@ async function syncItemComRetorno(item: SyncQueueItem, peladaId: string): Promis
       await syncInserirGols(item);
       return {};
       
+    case 'inserir_assistencias':
+      await syncInserirAssistencias(item);
+      return {};
+      
     case 'atualizar_fila':
       await syncAtualizarFila(item);
       return {};
@@ -240,6 +244,10 @@ async function syncItem(item: SyncQueueItem): Promise<void> {
       
     case 'inserir_gols':
       await syncInserirGols(item.dados);
+      break;
+      
+    case 'inserir_assistencias':
+      await syncInserirAssistencias(item.dados);
       break;
       
     case 'atualizar_fila':
@@ -404,6 +412,21 @@ async function syncInserirGols(item: SyncQueueItem): Promise<void> {
   if (error) throw error;
 }
 
+async function syncInserirAssistencias(item: SyncQueueItem): Promise<void> {
+  const { jogo_id, pelada_id, dados } = item;
+  
+  if (!pelada_id) throw new Error('pelada_id é obrigatório para sync de assistência');
+  
+  // O jogo_id pode ser local, então precisamos buscar o jogo real
+  // Por enquanto, vamos inserir direto
+  const clienteDb = await getClienteSupabase(pelada_id);
+  const { error } = await clienteDb
+    .from('assistencias')
+    .insert([{ ...dados, jogo_id }]);
+  
+  if (error) throw error;
+}
+
 async function syncAtualizarFila(item: SyncQueueItem): Promise<void> {
   const { jogador_id, pelada_id, sessao_id, dados } = item;
   
@@ -547,6 +570,17 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
         localStorage.setItem(`gols_${sessaoAtiva.id}`, JSON.stringify(gols || []));
         tabelas.gols = gols?.length || 0;
         logger.log(`    ✅ ${tabelas.gols} gols baixados`);
+        
+        // 5.5. Baixar assistências (da sessão ativa)
+        const { data: assistencias, error: assistenciasError } = await clienteDb
+          .from('assistencias')
+          .select('*')
+          .in('jogo_id', jogoIds);
+        
+        if (assistenciasError) throw new Error(`Erro ao baixar assistências: ${assistenciasError.message}`);
+        localStorage.setItem(`assistencias_${sessaoAtiva.id}`, JSON.stringify(assistencias || []));
+        tabelas.assistencias = assistencias?.length || 0;
+        logger.log(`    ✅ ${tabelas.assistencias} assistências baixadas`);
       }
     } else {
       logger.log('    ⚠️ Nenhuma sessão ativa encontrada');
@@ -594,6 +628,7 @@ export function limparCacheOffline(peladaId: string, sessaoId?: string): void {
     localStorage.removeItem(`fila_${sessaoId}`);
     localStorage.removeItem(`jogos_${sessaoId}`);
     localStorage.removeItem(`gols_${sessaoId}`);
+    localStorage.removeItem(`assistencias_${sessaoId}`);
   }
   
   logger.log('✅ Cache offline limpo');

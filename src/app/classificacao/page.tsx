@@ -19,6 +19,12 @@ interface Gol {
   time: 'A' | 'B';
 }
 
+interface Assistencia {
+  jogo_id: string;
+  jogador_id: string;
+  time: 'A' | 'B';
+}
+
 interface Jogo {
   id: string;
   sessao_id: string;
@@ -28,6 +34,7 @@ interface Jogo {
   placar_b: number;
   created_at: string;
   gols?: Gol[];
+  assistencias?: Assistencia[];
 }
 
 export default function ClassificacaoPage() {
@@ -37,17 +44,16 @@ export default function ClassificacaoPage() {
   const [jogosFiltrados, setJogosFiltrados] = useState<Jogo[]>([]);
   const [jogadores, setJogadores] = useState<{ [id: string]: Jogador }>({});
   const [loading, setLoading] = useState(true);
-  const [ordenarPor, setOrdenarPor] = useState<'pontos' | 'vitorias' | 'jogos' | 'gols' | 'derrotas' | 'empates'>('pontos');
+  const [ordenarPor, setOrdenarPor] = useState<'pontos' | 'vitorias' | 'jogos' | 'gols' | 'assistencias' | 'derrotas' | 'empates'>('pontos');
 
   // Estados para filtros
-  const [filtro, setFiltro] = useState<'atual' | 'mes' | 'trimestre' | 'semestre' | 'ano' | 'sessao'>('atual');
+  const [filtro, setFiltro] = useState<'atual' | 'mes' | 'ultimas' | 'ano' | 'historia'>('atual');
   const [dataSelecionada, setDataSelecionada] = useState('');
   const [datasDisponiveis, setDatasDisponiveis] = useState<string[]>([]);
   const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
-  const [trimestresDisponiveis, setTrimestresDisponiveis] = useState<string[]>([]);
-  const [semestresDisponiveis, setSemestresDisponiveis] = useState<string[]>([]);
   const [anosDisponiveis, setAnosDisponiveis] = useState<string[]>([]);
   const [periodoSelecionado, setPeriodoSelecionado] = useState('');
+  const [quantidadePeladas, setQuantidadePeladas] = useState('');
 
   // Bloquear acesso para plano FREE
   useEffect(() => {
@@ -103,37 +109,25 @@ export default function ClassificacaoPage() {
         const umMesAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
         filtered = jogos.filter(jogo => new Date(jogo.created_at) >= umMesAtras);
       }
-    } else if (filtro === 'trimestre') {
-      if (periodoSelecionado) {
-        // Filtrar por trimestre específico (QX/YYYY)
-        filtered = jogos.filter(jogo => {
-          const data = new Date(jogo.created_at);
-          const mes = data.getMonth();
-          const trimestre = Math.floor(mes / 3) + 1;
-          const trimestreStr = `Q${trimestre}/${data.getFullYear()}`;
-          return trimestreStr === periodoSelecionado;
-        });
-      } else {
-        // Último trimestre (90 dias)
-        const hoje = new Date();
-        const trimAtras = new Date(hoje.getTime() - 90 * 24 * 60 * 60 * 1000);
-        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= trimAtras);
-      }
-    } else if (filtro === 'semestre') {
-      if (periodoSelecionado) {
-        // Filtrar por semestre específico (SX/YYYY)
-        filtered = jogos.filter(jogo => {
-          const data = new Date(jogo.created_at);
-          const semestre = data.getMonth() < 6 ? 1 : 2;
-          const semestreStr = `S${semestre}/${data.getFullYear()}`;
-          return semestreStr === periodoSelecionado;
-        });
-      } else {
-        // Último semestre (180 dias)
-        const hoje = new Date();
-        const semAtras = new Date(hoje.getTime() - 180 * 24 * 60 * 60 * 1000);
-        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= semAtras);
-      }
+    } else if (filtro === 'ultimas') {
+      // Pegar as últimas N sessões únicas
+      const sessoesUnicas = [...new Set(jogos.map(j => j.sessao_id))];
+      const sessoesOrdenadas = sessoesUnicas
+        .map(sessaoId => {
+          const jogosDaSessao = jogos.filter(j => j.sessao_id === sessaoId);
+          const dataRecente = jogosDaSessao.reduce((prev, curr) => 
+            new Date(curr.created_at) > new Date(prev.created_at) ? curr : prev
+          );
+          return { sessaoId, data: new Date(dataRecente.created_at) };
+        })
+        .sort((a, b) => b.data.getTime() - a.data.getTime());
+      
+      const quantidadeNum = parseInt(quantidadePeladas);
+      const sessoesParaFiltrar = sessoesOrdenadas.slice(0, quantidadeNum).map(s => s.sessaoId);
+      filtered = jogos.filter(jogo => sessoesParaFiltrar.includes(jogo.sessao_id));
+    } else if (filtro === 'historia') {
+      // Retornar todos os jogos (sem filtro)
+      filtered = [...jogos];
     } else if (filtro === 'ano') {
       if (periodoSelecionado) {
         // Filtrar por ano específico
@@ -217,23 +211,29 @@ export default function ClassificacaoPage() {
         return;
       }
 
-      // Buscar gols de todos os jogos
+      // Buscar gols e assistências de todos os jogos
       if (jogosData && jogosData.length > 0) {
         const jogosIds = jogosData.map(j => j.id);
         const { data: golsData } = await clienteDb
           .from('gols')
           .select('*')
           .in('jogo_id', jogosIds);
+        
+        const { data: assistenciasData } = await clienteDb
+          .from('assistencias')
+          .select('*')
+          .in('jogo_id', jogosIds);
 
-        // Associar gols aos jogos
-        const jogosComGols = jogosData.map(jogo => ({
+        // Associar gols e assistências aos jogos
+        const jogosCompletos = jogosData.map(jogo => ({
           ...jogo,
-          gols: (golsData || []).filter(g => g.jogo_id === jogo.id)
+          gols: (golsData || []).filter(g => g.jogo_id === jogo.id),
+          assistencias: (assistenciasData || []).filter(a => a.jogo_id === jogo.id)
         }));
 
-        setJogos(jogosComGols);
+        setJogos(jogosCompletos);
         
-        // Extrair datas, meses, trimestres, semestres e anos
+        // Extrair datas, meses e anos
         const datas = [...new Set(jogosData.map(jogo => {
           const data = new Date(jogo.created_at);
           return data.toLocaleDateString('pt-BR', { 
@@ -250,19 +250,6 @@ export default function ClassificacaoPage() {
           return `${mes}/${ano}`;
         }))].sort().reverse();
         
-        const trimestres = [...new Set(jogosData.map(jogo => {
-          const data = new Date(jogo.created_at);
-          const mes = data.getMonth();
-          const trimestre = Math.floor(mes / 3) + 1;
-          return `Q${trimestre}/${data.getFullYear()}`;
-        }))].sort().reverse();
-        
-        const semestres = [...new Set(jogosData.map(jogo => {
-          const data = new Date(jogo.created_at);
-          const semestre = data.getMonth() < 6 ? 1 : 2;
-          return `S${semestre}/${data.getFullYear()}`;
-        }))].sort().reverse();
-        
         const anos = [...new Set(jogosData.map(jogo => {
           const data = new Date(jogo.created_at);
           return data.getFullYear().toString();
@@ -270,8 +257,6 @@ export default function ClassificacaoPage() {
         
         setDatasDisponiveis(datas);
         setMesesDisponiveis(meses);
-        setTrimestresDisponiveis(trimestres);
-        setSemestresDisponiveis(semestres);
         setAnosDisponiveis(anos);
       } else {
         setJogos([]);
@@ -339,31 +324,18 @@ export default function ClassificacaoPage() {
               </button>
               <button
                 onClick={() => {
-                  setFiltro('trimestre');
+                  setFiltro('ultimas');
                   setDataSelecionada('');
                   setPeriodoSelecionado('');
+                  setQuantidadePeladas('10');
                 }}
                 className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'trimestre'
+                  filtro === 'ultimas'
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
                 }`}
               >
-                Trimestre
-              </button>
-              <button
-                onClick={() => {
-                  setFiltro('semestre');
-                  setDataSelecionada('');
-                  setPeriodoSelecionado('');
-                }}
-                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'semestre'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                }`}
-              >
-                Semestre
+                Últimas
               </button>
               <button
                 onClick={() => {
@@ -378,6 +350,20 @@ export default function ClassificacaoPage() {
                 }`}
               >
                 Ano
+              </button>
+              <button
+                onClick={() => {
+                  setFiltro('historia');
+                  setDataSelecionada('');
+                  setPeriodoSelecionado('');
+                }}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
+                  filtro === 'historia'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+              >
+                História
               </button>
             </div>
           </div>
@@ -410,29 +396,16 @@ export default function ClassificacaoPage() {
               </select>
             )}
             
-            {filtro === 'trimestre' && (
+            {filtro === 'ultimas' && (
               <select
-                value={periodoSelecionado}
-                onChange={(e) => setPeriodoSelecionado(e.target.value)}
+                value={quantidadePeladas}
+                onChange={(e) => setQuantidadePeladas(e.target.value)}
                 className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="">📅 Selecionar trimestre específico</option>
-                {trimestresDisponiveis.map(trim => (
-                  <option key={trim} value={trim}>{trim}</option>
-                ))}
-              </select>
-            )}
-            
-            {filtro === 'semestre' && (
-              <select
-                value={periodoSelecionado}
-                onChange={(e) => setPeriodoSelecionado(e.target.value)}
-                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">📅 Selecionar semestre específico</option>
-                {semestresDisponiveis.map(sem => (
-                  <option key={sem} value={sem}>{sem}</option>
-                ))}
+                <option value="5">📊 Últimas 5 peladas</option>
+                <option value="10">📊 Últimas 10 peladas</option>
+                <option value="15">📊 Últimas 15 peladas</option>
+                <option value="20">📊 Últimas 20 peladas</option>
               </select>
             )}
             
@@ -484,12 +457,22 @@ export default function ClassificacaoPage() {
               }
             });
           });
+          
+          // Contar assistências por jogador
+          jogosFiltrados.forEach(jogo => {
+            (jogo.assistencias || []).forEach(assist => {
+              const nomeJogador = buscarJogador(assist.jogador_id);
+              if (estatisticasPorJogador[nomeJogador]) {
+                estatisticasPorJogador[nomeJogador].assistencias++;
+              }
+            });
+          });
 
           // Calcular pontos
           const jogadoresComPontos = Object.entries(estatisticasPorJogador).map(([nome, stats]) => ({
             nome,
             ...stats,
-            pontos: stats.vitorias + stats.gols + (stats.assistencias * 0.5) + (stats.empates * 0.5) - (stats.derrotas * 0.5)
+            pontos: stats.vitorias + (stats.gols * 0.5) + (stats.assistencias * 0.5) + (stats.empates * 0.5) - (stats.derrotas * 0.5)
           }));
 
           // Ordenar
@@ -498,6 +481,7 @@ export default function ClassificacaoPage() {
             if (ordenarPor === 'vitorias') return b.vitorias - a.vitorias;
             if (ordenarPor === 'jogos') return b.jogos - a.jogos;
             if (ordenarPor === 'gols') return b.gols - a.gols;
+            if (ordenarPor === 'assistencias') return b.assistencias - a.assistencias;
             if (ordenarPor === 'derrotas') return b.derrotas - a.derrotas;
             if (ordenarPor === 'empates') return b.empates - a.empates;
             return 0;
@@ -525,10 +509,11 @@ export default function ClassificacaoPage() {
                       <span className={ordenarPor === 'gols' ? 'text-base sm:text-xl' : 'text-sm'}>⚽</span>
                     </th>
                     <th 
-                      className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700"
+                      className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                      onClick={() => setOrdenarPor('assistencias')}
                       title="Assistências"
                     >
-                      <span className="text-sm">👟</span>
+                      <span className={ordenarPor === 'assistencias' ? 'text-base sm:text-xl' : 'text-sm'}>👟</span>
                     </th>
                     <th 
                       className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
@@ -582,7 +567,7 @@ export default function ClassificacaoPage() {
                           {jogador.pontos.toFixed(1)}
                         </td>
                         <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-green-600 text-xs sm:text-sm">{jogador.gols}</td>
-                        <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-green-600 text-xs sm:text-sm">0</td>
+                        <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-green-600 text-xs sm:text-sm">{jogador.assistencias}</td>
                         <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-green-600 text-xs sm:text-sm">{jogador.vitorias}</td>
                         <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-amber-600 text-xs sm:text-sm">{jogador.empates}</td>
                         <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-red-600 text-xs sm:text-sm">{jogador.derrotas}</td>
@@ -616,7 +601,7 @@ export default function ClassificacaoPage() {
               <div className="flex items-center gap-1 bg-white rounded px-2 py-1">
                 <span>⚽</span>
                 <span className="font-semibold">Gol:</span>
-                <span className="font-bold text-green-600">+1.0</span>
+                <span className="font-bold text-green-600">+0.5</span>
               </div>
               <div className="flex items-center gap-1 bg-white rounded px-2 py-1">
                 <span>👟</span>

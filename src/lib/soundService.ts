@@ -15,31 +15,66 @@ class SoundService {
     }
   }
 
-  // Som de gol - Melodia celebração
+  // Som de gol - Torcida comemorando
   playGoalSound() {
     this.init();
     if (!this.audioContext) return;
 
     const now = this.audioContext.currentTime;
-    const oscillator = this.audioContext.createOscillator();
-    const gainNode = this.audioContext.createGain();
-
-    oscillator.connect(gainNode);
-    gainNode.connect(this.audioContext.destination);
-
-    // Melodia de gol: C5 -> E5 -> G5
-    const frequencies = [523.25, 659.25, 783.99]; // Dó, Mi, Sol
-    let time = now;
-
-    frequencies.forEach((freq, index) => {
-      oscillator.frequency.setValueAtTime(freq, time);
-      gainNode.gain.setValueAtTime(0.3, time);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
-      time += 0.15;
-    });
-
-    oscillator.start(now);
-    oscillator.stop(now + 0.5);
+    
+    // Criar múltiplas camadas de ruído para simular torcida
+    for (let i = 0; i < 3; i++) {
+      const bufferSize = this.audioContext.sampleRate * 0.8; // 0.8 segundos
+      const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+      const data = buffer.getChannelData(0);
+      
+      // Gerar ruído branco com variação para simular vozes
+      for (let j = 0; j < bufferSize; j++) {
+        data[j] = (Math.random() * 2 - 1) * 0.08;
+      }
+      
+      const source = this.audioContext.createBufferSource();
+      const filter = this.audioContext.createBiquadFilter();
+      const gainNode = this.audioContext.createGain();
+      
+      source.buffer = buffer;
+      
+      // Filtro para simular vozes humanas (100-3000Hz)
+      filter.type = 'bandpass';
+      filter.frequency.value = 800 + (i * 400); // Variação de frequência
+      filter.Q.value = 1.5;
+      
+      source.connect(filter);
+      filter.connect(gainNode);
+      gainNode.connect(this.audioContext.destination);
+      
+      // Envelope: crescendo até pico e depois fade out
+      const startTime = now + (i * 0.05);
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(0.15, startTime + 0.1); // Crescendo
+      gainNode.gain.setValueAtTime(0.15, startTime + 0.3); // Mantém
+      gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.8); // Fade out
+      
+      source.start(startTime);
+      source.stop(startTime + 0.8);
+    }
+    
+    // Adicionar um "apito de comemoração" curto no início
+    const whistle = this.audioContext.createOscillator();
+    const whistleGain = this.audioContext.createGain();
+    
+    whistle.connect(whistleGain);
+    whistleGain.connect(this.audioContext.destination);
+    
+    whistle.frequency.setValueAtTime(2000, now);
+    whistle.frequency.exponentialRampToValueAtTime(2500, now + 0.15);
+    whistle.type = 'sine';
+    
+    whistleGain.gain.setValueAtTime(0.12, now);
+    whistleGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+    
+    whistle.start(now);
+    whistle.stop(now + 0.15);
   }
 
   // Som de apito - Apito de fim de jogo (3 toques curtos)

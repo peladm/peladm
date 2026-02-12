@@ -34,6 +34,12 @@ interface Gol {
   time: 'A' | 'B';
 }
 
+interface Assistencia {
+  jogo_id: string;
+  jogador_id: string;
+  time: 'A' | 'B';
+}
+
 interface Jogo {
   id: string;
   sessao_id: string;
@@ -43,6 +49,7 @@ interface Jogo {
   placar_b: number;
   created_at: string;
   gols?: Gol[];
+  assistencias?: Assistencia[];
 }
 
 export default function Estatisticas() {
@@ -59,14 +66,13 @@ export default function Estatisticas() {
   const [jogadores, setJogadores] = useState<{ [id: string]: Jogador }>({});
 
   // Estados para filtros
-  const [filtro, setFiltro] = useState<'atual' | 'mes' | 'trimestre' | 'semestre' | 'ano' | 'sessao'>('atual');
+  const [filtro, setFiltro] = useState<'atual' | 'mes' | 'ultimas' | 'ano' | 'historia'>('atual');
   const [dataSelecionada, setDataSelecionada] = useState('');
   const [datasDisponiveis, setDatasDisponiveis] = useState<string[]>([]);
   const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
-  const [trimestresDisponiveis, setTrimestresDisponiveis] = useState<string[]>([]);
-  const [semestresDisponiveis, setSemestresDisponiveis] = useState<string[]>([]);
   const [anosDisponiveis, setAnosDisponiveis] = useState<string[]>([]);
   const [periodoSelecionado, setPeriodoSelecionado] = useState('');
+  const [quantidadePeladas, setQuantidadePeladas] = useState('');
 
   // Bloquear acesso para plano FREE
   useEffect(() => {
@@ -99,14 +105,21 @@ export default function Estatisticas() {
   };
 
   const buscarJogador = (jogadorId: any): string => {
+    // Se for objeto com nome, retornar nome diretamente
     if (typeof jogadorId === 'object' && jogadorId?.nome) {
       return jogadorId.apelido || jogadorId.nome;
     }
+    
+    // Se for string, buscar no map
     const idStr = String(jogadorId);
     const jogador = jogadores[idStr];
+    
     if (jogador) {
       return jogador.apelido || jogador.nome;
     }
+    
+    // Fallback: retornar os primeiros 8 caracteres do ID
+    console.warn(`⚠️ Jogador não encontrado para ID: ${idStr.substring(0, 20)}`);
     return idStr.substring(0, 8);
   };
 
@@ -165,31 +178,25 @@ export default function Estatisticas() {
         const umMesAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
         filtered = jogos.filter(jogo => new Date(jogo.created_at) >= umMesAtras);
       }
-    } else if (filtro === 'trimestre') {
-      if (periodoSelecionado) {
-        filtered = jogos.filter(jogo => {
-          const data = new Date(jogo.created_at);
-          const mes = data.getMonth();
-          const trimestre = Math.floor(mes / 3) + 1;
-          return `Q${trimestre}/${data.getFullYear()}` === periodoSelecionado;
-        });
-      } else {
-        const hoje = new Date();
-        const trimAtras = new Date(hoje.getTime() - 90 * 24 * 60 * 60 * 1000);
-        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= trimAtras);
-      }
-    } else if (filtro === 'semestre') {
-      if (periodoSelecionado) {
-        filtered = jogos.filter(jogo => {
-          const data = new Date(jogo.created_at);
-          const semestre = data.getMonth() < 6 ? 1 : 2;
-          return `S${semestre}/${data.getFullYear()}` === periodoSelecionado;
-        });
-      } else {
-        const hoje = new Date();
-        const semAtras = new Date(hoje.getTime() - 180 * 24 * 60 * 60 * 1000);
-        filtered = jogos.filter(jogo => new Date(jogo.created_at) >= semAtras);
-      }
+    } else if (filtro === 'ultimas') {
+      // Pegar as últimas N sessões únicas
+      const sessoesUnicas = [...new Set(jogos.map(j => j.sessao_id))];
+      const sessoesOrdenadas = sessoesUnicas
+        .map(sessaoId => {
+          const jogosDaSessao = jogos.filter(j => j.sessao_id === sessaoId);
+          const dataRecente = jogosDaSessao.reduce((prev, curr) => 
+            new Date(curr.created_at) > new Date(prev.created_at) ? curr : prev
+          );
+          return { sessaoId, data: new Date(dataRecente.created_at) };
+        })
+        .sort((a, b) => b.data.getTime() - a.data.getTime());
+      
+      const quantidadeNum = parseInt(quantidadePeladas);
+      const sessoesParaFiltrar = sessoesOrdenadas.slice(0, quantidadeNum).map(s => s.sessaoId);
+      filtered = jogos.filter(jogo => sessoesParaFiltrar.includes(jogo.sessao_id));
+    } else if (filtro === 'historia') {
+      // Retornar todos os jogos (sem filtro)
+      filtered = [...jogos];
     } else if (filtro === 'ano') {
       if (periodoSelecionado) {
         filtered = jogos.filter(jogo => {
@@ -215,7 +222,7 @@ export default function Estatisticas() {
     // Coletar estatísticas por jogador
     const stats: { [nome: string]: any } = {};
 
-    jogosFiltrados.forEach(jogo => {
+    jogosFiltrados.forEach((jogo, jogoIndex) => {
       [...jogo.time_a, ...jogo.time_b].forEach(jogadorId => {
         const nome = buscarJogador(jogadorId);
         if (!stats[nome]) {
@@ -226,6 +233,9 @@ export default function Estatisticas() {
             derrotas: 0, 
             empates: 0, 
             gols: 0,
+            assistencias: 0,
+            mvp: 0,
+            deiteiRolei: 0,
             sequenciaInvicta: 0,
             sequenciaAtual: 0,
             ultimosResultados: [] as string[]
@@ -260,6 +270,94 @@ export default function Estatisticas() {
           stats[nome].gols++;
         }
       });
+      
+      // Contar assistências
+      (jogo.assistencias || []).forEach(assist => {
+        const nome = buscarJogador(assist.jogador_id);
+        if (stats[nome]) {
+          stats[nome].assistencias++;
+        }
+      });
+      
+      // Calcular MVP (vitória + gol OU assistência)
+      const vencedoresTimeA = jogo.placar_a > jogo.placar_b ? jogo.time_a : [];
+      const vencedoresTimeB = jogo.placar_b > jogo.placar_a ? jogo.time_b : [];
+      const vencedores = [...vencedoresTimeA, ...vencedoresTimeB];
+      
+      if (vencedores.length > 0 && jogoIndex === 0) {
+        console.log('🎯 Debug MVP - Primeiro jogo:', {
+          jogoId: jogo.id,
+          placarA: jogo.placar_a,
+          placarB: jogo.placar_b,
+          timeABruto: jogo.time_a,
+          timeBBruto: jogo.time_b,
+          vencedores: vencedores.map(v => ({ 
+            valorBruto: v, 
+            tipo: typeof v
+          })),
+          golsBruto: jogo.gols || [],
+          assistenciasBruto: jogo.assistencias || []
+        });
+        
+        console.log('🔍 Testando buscarJogador nos vencedores:');
+        vencedores.forEach(v => {
+          console.log(`  - Input: ${JSON.stringify(v)} → Output: "${buscarJogador(v)}"`);
+        });
+        
+        if (jogo.gols && jogo.gols.length > 0) {
+          console.log('🔍 Testando buscarJogador nos gols:');
+          jogo.gols.forEach(g => {
+            console.log(`  - Input UUID: "${g.jogador_id}" → Output: "${buscarJogador(g.jogador_id)}"`);
+          });
+        }
+      }
+      
+      let mvpContador = 0;
+      
+      vencedores.forEach(jogadorId => {
+        const nomeVencedor = buscarJogador(jogadorId);
+        if (stats[nomeVencedor]) {
+          // Comparar pelo NOME do jogador (convertendo UUID dos gols/assists para nome)
+          const fezGol = (jogo.gols || []).some(g => {
+            const nomeGoleador = buscarJogador(g.jogador_id);
+            const match = nomeGoleador === nomeVencedor;
+            if (jogoIndex === 0) {
+              console.log(`   Comparando gol: "${nomeGoleador}" === "${nomeVencedor}" = ${match}`);
+            }
+            return match;
+          });
+          
+          const deuAssist = (jogo.assistencias || []).some(a => {
+            const nomeAssistente = buscarJogador(a.jogador_id);
+            const match = nomeAssistente === nomeVencedor;
+            if (jogoIndex === 0) {
+              console.log(`   Comparando assist: "${nomeAssistente}" === "${nomeVencedor}" = ${match}`);
+            }
+            return match;
+          });
+          
+          if (jogoIndex === 0) {
+            console.log(`   Jogador ${nomeVencedor}: fezGol=${fezGol}, deuAssist=${deuAssist}`);
+          }
+          
+          if (fezGol || deuAssist) {
+            stats[nomeVencedor].mvp++;
+            mvpContador++;
+            if (jogoIndex === 0) {
+              console.log(`   ✅ MVP encontrado:`, nomeVencedor, { fezGol, deuAssist });
+            }
+          }
+          
+          // Deitei e Rolei (vitória + gol + assistência)
+          if (fezGol && deuAssist) {
+            stats[nomeVencedor].deiteiRolei++;
+          }
+        }
+      });
+      
+      if (jogoIndex === 0) {
+        console.log(`🎯 Total de MVPs no primeiro jogo: ${mvpContador}`);
+      }
     });
 
     // Finalizar sequências invictas
@@ -269,33 +367,41 @@ export default function Estatisticas() {
       }
     });
 
+    // Log de MVPs totalizados
+    const totalMVPs = Object.values(stats).reduce((sum: number, s: any) => sum + (s.mvp || 0), 0);
+    console.log(`🎯 TOTAL DE MVPs CALCULADOS: ${totalMVPs}`);
+    const jogadoresComMVP = Object.values(stats).filter((s: any) => s.mvp > 0);
+    console.log(`🎯 Jogadores com MVP:`, jogadoresComMVP.map((s: any) => `${s.nome}: ${s.mvp}`));
+
     // 1. ARTILHEIRO
     const artilheiro = Object.values(stats)
+      .filter((s: any) => s.gols > 0)
       .sort((a: any, b: any) => b.gols - a.gols)
       .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.gols} gols` }));
 
-    // 2. GARÇOM (assistências - ainda não implementado)
+    // 2. GARÇOM (assistências)
     const garcom = Object.values(stats)
-      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: '0 assist.' }));
+      .filter((s: any) => s.assistencias > 0)
+      .sort((a: any, b: any) => b.assistencias - a.assistencias)
+      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.assistencias} assist.` }));
 
     // 3. VITORIOSO
     const vitorioso = Object.values(stats)
+      .filter((s: any) => s.vitorias > 0)
       .sort((a: any, b: any) => b.vitorias - a.vitorias)
       .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.vitorias} vitórias` }));
 
     // 4. SÓ DERROTA
     const soDerrota = Object.values(stats)
+      .filter((s: any) => s.derrotas > 0)
       .sort((a: any, b: any) => b.derrotas - a.derrotas)
       .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.derrotas} derrotas` }));
 
-    // 5. MVP (vitória + gol ou assistência - incompleto)
+    // 5. MVP (vitória + gol ou assistência)
     const mvp = Object.values(stats)
-      .map((s: any) => ({
-        nome: s.nome,
-        mvpCount: 0 // TODO: calcular quando tiver assistências
-      }))
-      .sort((a, b) => b.mvpCount - a.mvpCount)
-      .map((s, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.mvpCount} MVP` }));
+      .filter((s: any) => s.mvp > 0)
+      .sort((a: any, b: any) => b.mvp - a.mvp)
+      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.mvp} MVP` }));
 
     // 6. HAT-TRICKS
     const hatTricks: { [nome: string]: number } = {};
@@ -337,7 +443,7 @@ export default function Estatisticas() {
     const reiPelada = Object.values(stats)
       .map((s: any) => ({
         nome: s.nome,
-        pontos: s.vitorias + s.gols + (s.empates * 0.5) - (s.derrotas * 0.5)
+        pontos: s.vitorias + (s.gols * 0.5) + (s.assistencias * 0.5) + (s.empates * 0.5) - (s.derrotas * 0.5)
       }))
       .sort((a, b) => b.pontos - a.pontos)
       .map((s, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.pontos.toFixed(1)} pts` }));
@@ -346,13 +452,14 @@ export default function Estatisticas() {
     const bolaMurcha = Object.values(stats)
       .map((s: any) => ({
         nome: s.nome,
-        pontos: s.vitorias + s.gols + (s.empates * 0.5) - (s.derrotas * 0.5)
+        pontos: s.vitorias + (s.gols * 0.5) + (s.assistencias * 0.5) + (s.empates * 0.5) - (s.derrotas * 0.5)
       }))
       .sort((a, b) => a.pontos - b.pontos)
       .map((s, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.pontos.toFixed(1)} pts` }));
 
     // 11. FIQUEI NO QUASE
     const fiqueiQuase = Object.values(stats)
+      .filter((s: any) => s.empates > 0)
       .sort((a: any, b: any) => b.empates - a.empates)
       .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.empates} empates` }));
 
@@ -376,21 +483,24 @@ export default function Estatisticas() {
 
     // 14. SEQUÊNCIA INVICTA
     const sequenciaInvicta = Object.values(stats)
+      .filter((s: any) => s.sequenciaInvicta > 0)
       .sort((a: any, b: any) => b.sequenciaInvicta - a.sequenciaInvicta)
       .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.sequenciaInvicta} jogos` }));
 
-    // 15. DEITEI E ROLEI (vitória + gol + assistência na mesma partida - incompleto)
+    // 15. DEITEI E ROLEI (vitória + gol + assistência na mesma partida)
     const deiteiRolei = Object.values(stats)
-      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: '0 vezes' }));
+      .filter((s: any) => s.deiteiRolei > 0)
+      .sort((a: any, b: any) => b.deiteiRolei - a.deiteiRolei)
+      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.deiteiRolei} vezes` }));
 
     // Montar array de estatísticas
     const estatisticasCalculadas: Estatistica[] = [
       { id: 'artilheiro', emoji: '⚽', nome: 'Artilheiro', descricao: 'Quem marcou mais gols', primeiroColocado: formatarPrimeiroColocado(artilheiro), ranking: artilheiro },
       { id: 'mediaGols', emoji: '📊', nome: 'Média de Gols', descricao: 'Maior média de gols por jogo', primeiroColocado: formatarPrimeiroColocado(mediaGols), ranking: mediaGols },
-      { id: 'garcom', emoji: '👟', nome: 'Garçom', descricao: 'Quem mais deu assistências', primeiroColocado: 'Em breve...', ranking: garcom },
+      { id: 'garcom', emoji: '👟', nome: 'Garçom', descricao: 'Quem mais deu assistências', primeiroColocado: formatarPrimeiroColocado(garcom), ranking: garcom },
       { id: 'hatTricks', emoji: '🎩', nome: 'Hat-Trick', descricao: 'Quem fez mais hat-tricks (3+ gols)', primeiroColocado: formatarPrimeiroColocado(hatTricksRanking), ranking: hatTricksRanking },
-      { id: 'mvp', emoji: '⭐', nome: 'MVP', descricao: 'Vitória + gol/assist na mesma partida', primeiroColocado: 'Em breve...', ranking: mvp },
-      { id: 'deiteiRolei', emoji: '🎯', nome: 'Deitei e Rolei', descricao: 'Vitória + gol + assist no mesmo jogo', primeiroColocado: 'Em breve...', ranking: deiteiRolei },
+      { id: 'mvp', emoji: '⭐', nome: 'MVP', descricao: 'Vitória + gol/assist na mesma partida', primeiroColocado: formatarPrimeiroColocado(mvp), ranking: mvp },
+      { id: 'deiteiRolei', emoji: '🎯', nome: 'Deitei e Rolei', descricao: 'Vitória + gol + assist no mesmo jogo', primeiroColocado: formatarPrimeiroColocado(deiteiRolei), ranking: deiteiRolei },
       { id: 'vitorioso', emoji: '🏆', nome: 'Vitorioso', descricao: 'Quem conquistou mais vitórias', primeiroColocado: formatarPrimeiroColocado(vitorioso), ranking: vitorioso },
       { id: 'taxaVitoria', emoji: '🔥', nome: 'Eu Joguei e Ganhei', descricao: 'Maior % de vitórias', primeiroColocado: formatarPrimeiroColocado(taxaVitoria), ranking: taxaVitoria },
       { id: 'naoPerdi', emoji: '🛡️', nome: 'Não Perdi Pelada', descricao: 'Jogou e nunca perdeu', primeiroColocado: formatarPrimeiroColocado(naoPerdi), ranking: naoPerdi },
@@ -427,7 +537,7 @@ export default function Estatisticas() {
         .order('created_at', { ascending: false });
 
       if (jogosData && jogosData.length > 0) {
-        // Extrair datas, meses, trimestres, semestres e anos
+        // Extrair datas, meses e anos
         const datas = [...new Set(jogosData.map(jogo => {
           const data = new Date(jogo.created_at);
           return data.toLocaleDateString('pt-BR', { 
@@ -444,19 +554,6 @@ export default function Estatisticas() {
           return `${mes}/${ano}`;
         }))].sort().reverse();
         
-        const trimestres = [...new Set(jogosData.map(jogo => {
-          const data = new Date(jogo.created_at);
-          const mes = data.getMonth();
-          const trimestre = Math.floor(mes / 3) + 1;
-          return `Q${trimestre}/${data.getFullYear()}`;
-        }))].sort().reverse();
-        
-        const semestres = [...new Set(jogosData.map(jogo => {
-          const data = new Date(jogo.created_at);
-          const semestre = data.getMonth() < 6 ? 1 : 2;
-          return `S${semestre}/${data.getFullYear()}`;
-        }))].sort().reverse();
-        
         const anos = [...new Set(jogosData.map(jogo => {
           const data = new Date(jogo.created_at);
           return data.getFullYear().toString();
@@ -464,24 +561,36 @@ export default function Estatisticas() {
         
         setDatasDisponiveis(datas);
         setMesesDisponiveis(meses);
-        setTrimestresDisponiveis(trimestres);
-        setSemestresDisponiveis(semestres);
         setAnosDisponiveis(anos);
 
-        // Buscar gols de todos os jogos
+        // Buscar gols e assistências de todos os jogos
         const jogosIds = jogosData.map(j => j.id);
         const { data: golsData } = await clienteDb
           .from('gols')
           .select('*')
           .in('jogo_id', jogosIds);
+        
+        const { data: assistenciasData } = await clienteDb
+          .from('assistencias')
+          .select('*')
+          .in('jogo_id', jogosIds);
 
-        // Associar gols aos jogos  
-        const jogosComGols = jogosData.map(jogo => ({
+        // Associar gols e assistências aos jogos  
+        const jogosCompletos = jogosData.map(jogo => ({
           ...jogo,
-          gols: (golsData || []).filter(g => g.jogo_id === jogo.id)
+          gols: (golsData || []).filter(g => g.jogo_id === jogo.id),
+          assistencias: (assistenciasData || []).filter(a => a.jogo_id === jogo.id)
         }));
 
-        setJogos(jogosComGols);
+        console.log('📊 Debug MVP - Total de jogos:', jogosCompletos.length);
+        console.log('📊 Debug MVP - Gols carregados:', golsData?.length || 0);
+        console.log('📊 Debug MVP - Assistências carregadas:', assistenciasData?.length || 0);
+        const jogoComGols = jogosCompletos.find(j => j.gols?.length > 0);
+        if (jogoComGols) {
+          console.log('📊 Debug MVP - Exemplo de jogo com gols:', jogoComGols.id, 'Gols:', jogoComGols.gols);
+        }
+
+        setJogos(jogosCompletos);
       } else {
         setJogos([]);
       }
@@ -498,6 +607,8 @@ export default function Estatisticas() {
           jogadoresMap[j.id] = j;
           jogadoresMap[j.nome] = j;
         });
+        console.log('👥 Jogadores carregados:', jogadoresData.length);
+        console.log('👥 Exemplo UUID→Nome:', Object.keys(jogadoresMap).slice(0, 3).map(k => `${k} → ${jogadoresMap[k].nome || jogadoresMap[k].apelido}`));
         setJogadores(jogadoresMap);
       }
     } catch (error) {
@@ -562,31 +673,18 @@ export default function Estatisticas() {
               </button>
               <button
                 onClick={() => {
-                  setFiltro('trimestre');
+                  setFiltro('ultimas');
                   setDataSelecionada('');
                   setPeriodoSelecionado('');
+                  setQuantidadePeladas('10');
                 }}
                 className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'trimestre'
+                  filtro === 'ultimas'
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
                 }`}
               >
-                Trimestre
-              </button>
-              <button
-                onClick={() => {
-                  setFiltro('semestre');
-                  setDataSelecionada('');
-                  setPeriodoSelecionado('');
-                }}
-                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'semestre'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                }`}
-              >
-                Semestre
+                Últimas
               </button>
               <button
                 onClick={() => {
@@ -601,6 +699,20 @@ export default function Estatisticas() {
                 }`}
               >
                 Ano
+              </button>
+              <button
+                onClick={() => {
+                  setFiltro('historia');
+                  setDataSelecionada('');
+                  setPeriodoSelecionado('');
+                }}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
+                  filtro === 'historia'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                }`}
+              >
+                História
               </button>
             </div>
           </div>
@@ -633,29 +745,16 @@ export default function Estatisticas() {
               </select>
             )}
             
-            {filtro === 'trimestre' && (
+            {filtro === 'ultimas' && (
               <select
-                value={periodoSelecionado}
-                onChange={(e) => setPeriodoSelecionado(e.target.value)}
+                value={quantidadePeladas}
+                onChange={(e) => setQuantidadePeladas(e.target.value)}
                 className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="">📅 Selecionar trimestre específico</option>
-                {trimestresDisponiveis.map(trim => (
-                  <option key={trim} value={trim}>{trim}</option>
-                ))}
-              </select>
-            )}
-            
-            {filtro === 'semestre' && (
-              <select
-                value={periodoSelecionado}
-                onChange={(e) => setPeriodoSelecionado(e.target.value)}
-                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">📅 Selecionar semestre específico</option>
-                {semestresDisponiveis.map(sem => (
-                  <option key={sem} value={sem}>{sem}</option>
-                ))}
+                <option value="5">📊 Últimas 5 peladas</option>
+                <option value="10">📊 Últimas 10 peladas</option>
+                <option value="15">📊 Últimas 15 peladas</option>
+                <option value="20">📊 Últimas 20 peladas</option>
               </select>
             )}
             

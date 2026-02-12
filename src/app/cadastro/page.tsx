@@ -424,12 +424,12 @@ export default function CadastroPage() {
         <span
           key={i}
           onClick={() => handleStarClick(nivelEstrela)}
-          className={`inline-block text-3xl transition-all duration-200 cursor-pointer hover:scale-125 ${
+          className={`inline-block text-xl transition-all duration-200 cursor-pointer hover:scale-125 ${
             i < nivel ? 'opacity-100 scale-110' : 'opacity-30'
           }`}
           style={{ 
             transform: i < nivel ? 'scale(1.1)' : 'scale(1)',
-            marginRight: '10px'
+            marginRight: '6px'
           }}
         >
           ⭐
@@ -464,40 +464,40 @@ export default function CadastroPage() {
         </div>
       )}
 
-      <div className="max-w-sm mx-auto space-y-5">
+      <div className="max-w-sm mx-auto space-y-3">
         {/* Formulário de Cadastro */}
-        <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-          <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+        <section className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
             
             {/* Input Nome */}
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col">
               <input
                 type="text"
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
                 placeholder="Nome do jogador"
-                className="p-4 border-2 border-gray-100 rounded-2xl text-lg text-center bg-gray-50 focus:outline-none focus:border-green-600 focus:bg-white transition-colors"
+                className="p-2.5 border-2 border-gray-100 rounded-xl text-base text-center bg-gray-50 focus:outline-none focus:border-green-600 focus:bg-white transition-colors"
                 required
               />
             </div>
 
             {/* Selector de Estrelas - Apenas para Gold e Premium */}
             {possuiPermissao('cadastrarNivel') && (
-              <div className="flex flex-col items-center gap-2 p-4 bg-gray-50 rounded-2xl">
-                <div className="flex gap-3 justify-center">
+              <div className="flex flex-col items-center gap-1 p-2 bg-gray-50 rounded-xl">
+                <div className="flex gap-1 justify-center">
                   {renderStars(nivel)}
                 </div>
               </div>
             )}
 
             {/* Botão Submit */}
-            <div className="mt-1">
+            <div className="mt-0.5">
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full flex items-center justify-center gap-3 p-4 bg-green-600 text-white rounded-2xl font-medium text-base hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 transition-all duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+                className="w-full flex items-center justify-center gap-2 p-2.5 bg-green-600 text-white rounded-xl font-medium text-sm hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 transition-all duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
               >
-                <span className="text-lg">
+                <span className="text-base">
                   {isLoading ? '⏳' : (editandoId ? '💾' : '✅')}
                 </span>
                 <span>
@@ -512,7 +512,7 @@ export default function CadastroPage() {
                 <button
                   type="button"
                   onClick={cancelarEdicao}
-                  className="w-full mt-2 flex items-center justify-center gap-2 p-3 bg-gray-500 text-white rounded-2xl font-medium text-sm hover:bg-gray-600 transition-colors"
+                  className="w-full mt-1.5 flex items-center justify-center gap-1.5 p-2 bg-gray-500 text-white rounded-xl font-medium text-xs hover:bg-gray-600 transition-colors"
                 >
                   <span>❌</span>
                   <span>Cancelar</span>
@@ -523,28 +523,28 @@ export default function CadastroPage() {
         </section>
 
         {/* Lista de Jogadores */}
-        <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-          <div className="flex justify-between items-center mb-5">
-            <h2 className="text-lg font-medium text-gray-800 m-0 flex items-center gap-2">
-              <span>📋</span>
+        <section className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+          <div className="flex justify-between items-center mb-2.5">
+            <h2 className="text-base font-medium text-gray-800 m-0 flex items-center gap-1.5">
+              <span className="text-sm">📋</span>
               <span>Jogadores Cadastrados</span>
             </h2>
             <button
               onClick={toggleAdminMode}
-              className="w-7 h-7 bg-gray-50 hover:bg-gray-100 rounded-md flex items-center justify-center transition-all duration-200 opacity-60 hover:opacity-100 hover:scale-110"
+              className="w-6 h-6 bg-gray-50 hover:bg-gray-100 rounded-md flex items-center justify-center transition-all duration-200 opacity-60 hover:opacity-100 hover:scale-110"
               title={isAdmin ? "Desativar modo admin" : "Ativar modo admin"}
             >
-              <span className="text-sm">{isAdmin ? '🔓' : '🔒'}</span>
+              <span className="text-xs">{isAdmin ? '🔓' : '🔒'}</span>
             </button>
           </div>
           
           {jogadoresOrdenados.length === 0 ? (
-            <div className="text-center py-10 text-gray-500">
-              <span className="text-4xl block mb-3 opacity-60">😴</span>
-              <p>Nenhum jogador cadastrado ainda</p>
+            <div className="text-center py-6 text-gray-500">
+              <span className="text-3xl block mb-2 opacity-60">😴</span>
+              <p className="text-sm">Nenhum jogador cadastrado ainda</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
               {jogadoresOrdenados.map((jogador) => {
                 const nivelJogador = jogador.nivel || 3;
                 const estrelas = '⭐'.repeat(nivelJogador) + '☆'.repeat(5 - nivelJogador);
@@ -555,47 +555,47 @@ export default function CadastroPage() {
                 return (
                   <div
                     key={jogador.id}
-                    className={`flex justify-between items-center p-4 rounded-xl border-l-4 ${
+                    className={`flex justify-between items-center p-2 rounded-lg border-l-4 ${
                       isInativo 
                         ? 'bg-gray-100 border-l-gray-400 opacity-50' 
                         : 'bg-gray-50 border-l-green-600'
                     }`}
                   >
-                    <div className="flex flex-col gap-1">
-                      <div className={`text-base font-semibold ${
+                    <div className="flex flex-col gap-0.5">
+                      <div className={`text-sm font-semibold ${
                         isInativo ? 'text-gray-500 line-through' : 'text-gray-800'
                       }`}>
                         {jogador.nome}
                       </div>
-                      <div className="text-xs text-gray-600 opacity-80">
+                      <div className="text-xs text-gray-600 opacity-70 leading-none">
                         {estrelas}
                       </div>
                     </div>
                     
-                    <div className="flex gap-3">
+                    <div className="flex gap-1.5">
                       <button
                         onClick={() => editarJogador(jogador.id)}
-                        className="w-9 h-9 bg-yellow-500 hover:bg-yellow-600 rounded-lg flex items-center justify-center transition-all duration-200 hover:scale-110"
+                        className="w-7 h-7 bg-yellow-500 hover:bg-yellow-600 rounded-md flex items-center justify-center transition-all duration-200 hover:scale-110"
                         title="Editar jogador"
                       >
-                        <span className="text-base">✏️</span>
+                        <span className="text-sm">✏️</span>
                       </button>
                       
                       <button
                         onClick={() => alternarStatus(jogador.id)}
-                        className="w-9 h-9 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center transition-all duration-200 hover:scale-110 border border-gray-300"
+                        className="w-7 h-7 bg-gray-100 hover:bg-gray-200 rounded-md flex items-center justify-center transition-all duration-200 hover:scale-110 border border-gray-300"
                         title={isInativo ? 'Ativar jogador' : 'Desativar jogador'}
                       >
-                        <span className="text-base">{statusEmoji}</span>
+                        <span className="text-sm">{statusEmoji}</span>
                       </button>
                       
                       {isAdmin && (
                         <button
                           onClick={() => excluirJogador(jogador.id, jogador.nome)}
-                          className="w-9 h-9 bg-red-500 hover:bg-red-600 rounded-lg flex items-center justify-center transition-all duration-200 hover:scale-110"
+                          className="w-7 h-7 bg-red-500 hover:bg-red-600 rounded-md flex items-center justify-center transition-all duration-200 hover:scale-110"
                           title="Excluir jogador (apenas ADM)"
                         >
-                          <span className="text-base">❌</span>
+                          <span className="text-sm">❌</span>
                         </button>
                       )}
                     </div>
