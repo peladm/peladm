@@ -502,6 +502,7 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
       fila: 0,
       jogos: 0,
       gols: 0,
+      assistencias: 0,
       regras: 0
     };
     
