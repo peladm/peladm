@@ -714,6 +714,14 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Resultados</span>
                 </button>
                 <button
+                  onClick={() => navigateTo('classificacao')}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${title === 'Classificação' ? 'text-green-600 bg-green-50' : 'text-gray-400'}`}
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">🥇</span>
+                  <span className="text-xs font-medium mt-1">Classificação</span>
+                </button>
+                <button
                   onClick={() => {
                     if (ehVisitante()) return;
                     if (onAdminClick) {
