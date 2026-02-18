@@ -1138,12 +1138,12 @@ export default function ResultadosPage() {
                               <div className="text-green-600 font-bold text-xs flex items-center justify-center gap-1">
                                 <span>↑ {buscarJogador(jogadorId)}</span>
                                 {golsJogador > 0 && (
-                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerGol(jogo, jogadorId, 'A')} title={modoAdmin ? 'Clique para remover' : ''}>
+                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerGol(jogadorId, 'A')} title={modoAdmin ? 'Clique para remover' : ''}>
                                     {' ' + '⚽'.repeat(golsJogador)}
                                   </span>
                                 )}
                                 {assistenciasJogador > 0 && (
-                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerAssistencia(jogo, jogadorId, 'A')} title={modoAdmin ? 'Clique para remover' : ''}>
+                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerAssistencia(jogadorId, 'A')} title={modoAdmin ? 'Clique para remover' : ''}>
                                     {' ' + '👟'.repeat(assistenciasJogador)}
                                   </span>
                                 )}
@@ -1212,12 +1212,12 @@ export default function ResultadosPage() {
                               <div className="text-green-600 font-bold text-xs flex items-center justify-center gap-1">
                                 <span>↑ {buscarJogador(jogadorId)}</span>
                                 {golsJogador > 0 && (
-                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerGol(jogo, jogadorId, 'B')} title={modoAdmin ? 'Clique para remover' : ''}>
+                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerGol(jogadorId, 'B')} title={modoAdmin ? 'Clique para remover' : ''}>
                                     {' ' + '⚽'.repeat(golsJogador)}
                                   </span>
                                 )}
                                 {assistenciasJogador > 0 && (
-                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerAssistencia(jogo, jogadorId, 'B')} title={modoAdmin ? 'Clique para remover' : ''}>
+                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerAssistencia(jogadorId, 'B')} title={modoAdmin ? 'Clique para remover' : ''}>
                                     {' ' + '👟'.repeat(assistenciasJogador)}
                                   </span>
                                 )}
