@@ -333,35 +333,13 @@ async function syncAtualizarJogador(item: SyncQueueItem): Promise<void> {
   
   const clienteDb = await getClienteSupabase(pelada_id);
   
-  // Se são incrementos, buscar valores atuais primeiro
-  if (dados.jogos_increment || dados.vitorias_increment || dados.gols_increment) {
-    const { data: jogadorAtual } = await clienteDb
-      .from('jogadores')
-      .select('jogos, vitorias, gols')
-      .eq('id', jogador_id)
-      .single();
-    
-    const updates = {
-      jogos: (jogadorAtual?.jogos || 0) + (dados.jogos_increment || 0),
-      vitorias: (jogadorAtual?.vitorias || 0) + (dados.vitorias_increment || 0),
-      gols: (jogadorAtual?.gols || 0) + (dados.gols_increment || 0)
-    };
-    
-    const { error } = await clienteDb
-      .from('jogadores')
-      .update(updates)
-      .eq('id', jogador_id);
-    
-    if (error) throw error;
-  } else {
-    // Atualização normal
-    const { error } = await clienteDb
-      .from('jogadores')
-      .update(dados)
-      .eq('id', jogador_id);
-    
-    if (error) throw error;
-  }
+  // Atualizar apenas nome e nível
+  const { error } = await clienteDb
+    .from('jogadores')
+    .update(dados)
+    .eq('id', jogador_id);
+  
+  if (error) throw error;
 }
 
 async function syncExcluirJogador(item: SyncQueueItem): Promise<void> {

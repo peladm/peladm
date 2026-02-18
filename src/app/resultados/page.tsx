@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Layout from '../../components/Layout';
 import { getClienteSupabase } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
-import { buscar_pelada_id } from '../../lib/credenciais';
+import { buscar_pelada_id, obterCredenciais } from '../../lib/credenciais';
 
 interface Jogador {
   id: string;
@@ -27,6 +27,20 @@ interface Gol {
 }
 
 interface Assistencia {
+  jogo_id: string;
+  jogador_id: string;
+  time: 'A' | 'B';
+}
+
+interface GolDB {
+  id?: string;
+  jogo_id: string;
+  jogador_id: string;
+  time: 'A' | 'B';
+}
+
+interface AssistenciaDB {
+  id?: string;
   jogo_id: string;
   jogador_id: string;
   time: 'A' | 'B';
@@ -79,6 +93,19 @@ export default function ResultadosPage() {
   const [mostrarConfirmacaoExcluir, setMostrarConfirmacaoExcluir] = useState(false);
   const [mostrarConfirmacaoExcluirTodos, setMostrarConfirmacaoExcluirTodos] = useState(false);
   const [mostrarBotaoFlutuante, setMostrarBotaoFlutuante] = useState(false);
+  
+  // Estados para edição de gols e assistências
+  const [mostrarModalGerenciarTime, setMostrarModalGerenciarTime] = useState(false);
+  const [jogoParaEditar, setJogoParaEditar] = useState<Jogo | null>(null);
+  const [timeParaGerenciar, setTimeParaGerenciar] = useState<'A' | 'B'>('A');
+  
+  // Estados para alterações pendentes (antes de salvar)
+  const [alteracoesPendentes, setAlteracoesPendentes] = useState<{
+    golsAdicionar: { jogadorId: string; time: 'A' | 'B' }[];
+    golsRemover: { jogadorId: string; time: 'A' | 'B' }[];
+    assistsAdicionar: { jogadorId: string; time: 'A' | 'B' }[];
+    assistsRemover: { jogadorId: string; time: 'A' | 'B' }[];
+  }>({ golsAdicionar: [], golsRemover: [], assistsAdicionar: [], assistsRemover: [] });
 
   // Bloquear acesso para plano FREE
   useEffect(() => {
@@ -189,28 +216,16 @@ export default function ResultadosPage() {
 
   const validarSenhaAdmin = async () => {
     try {
-      const peladaId = buscar_pelada_id();
-      if (!peladaId) {
+      // Buscar credenciais locais
+      const credenciais = obterCredenciais();
+      
+      if (!credenciais) {
         setErroSenha('Usuário não está logado');
         return;
       }
-      
-      const supabase = await getClienteSupabase(peladaId);
-      
-      // Buscar senha do cliente no Supabase
-      const { data: cliente, error } = await supabase
-        .from('clientes')
-        .select('senha')
-        .eq('pelada_id', peladaId)
-        .single();
 
-      if (error || !cliente) {
-        console.error('Erro ao buscar cliente:', error);
-        setErroSenha('Erro ao validar cliente');
-        return;
-      }
-
-      if (cliente.senha === senhaAdmin) {
+      // Comparar senha digitada com senha das credenciais locais
+      if (credenciais.senha === senhaAdmin) {
         setModoAdmin(true);
         setMostrarModalSenha(false);
         setSenhaAdmin('');
@@ -294,6 +309,149 @@ export default function ResultadosPage() {
       console.error('Erro ao excluir partidas:', error);
       alert('Erro ao excluir partidas');
     }
+  };
+
+  // Funções de edição de gols (agora apenas modificam estado local)
+  const adicionarGol = (jogadorId: string, time: 'A' | 'B') => {
+    setAlteracoesPendentes(prev => ({
+      ...prev,
+      golsAdicionar: [...prev.golsAdicionar, { jogadorId, time }]
+    }));
+  };
+
+  const removerGol = (jogadorId: string, time: 'A' | 'B') => {
+    setAlteracoesPendentes(prev => ({
+      ...prev,
+      golsRemover: [...prev.golsRemover, { jogadorId, time }]
+    }));
+  };
+
+  // Funções de edição de assistências (agora apenas modificam estado local)
+  const adicionarAssistencia = (jogadorId: string, time: 'A' | 'B') => {
+    setAlteracoesPendentes(prev => ({
+      ...prev,
+      assistsAdicionar: [...prev.assistsAdicionar, { jogadorId, time }]
+    }));
+  };
+
+  const removerAssistencia = (jogadorId: string, time: 'A' | 'B') => {
+    setAlteracoesPendentes(prev => ({
+      ...prev,
+      assistsRemover: [...prev.assistsRemover, { jogadorId, time }]
+    }));
+  };
+
+  // Função para salvar todas as alterações pendentes
+  const salvarAlteracoes = async () => {
+    if (!jogoParaEditar) return;
+    
+    try {
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) return;
+      
+      const supabase = await getClienteSupabase(peladaId);
+      let placarAtualizado = false;
+      let novoPlacarA = jogoParaEditar.placar_a;
+      let novoPlacarB = jogoParaEditar.placar_b;
+
+      // Adicionar gols
+      for (const { jogadorId, time } of alteracoesPendentes.golsAdicionar) {
+        await supabase.from('gols').insert({
+          jogo_id: jogoParaEditar.id,
+          jogador_id: jogadorId,
+          time: time,
+        });
+        
+        if (time === 'A') novoPlacarA++;
+        else novoPlacarB++;
+        placarAtualizado = true;
+      }
+
+      // Remover gols
+      for (const { jogadorId, time } of alteracoesPendentes.golsRemover) {
+        const nomeJogador = buscarJogador(jogadorId);
+        
+        // Buscar gols pelo ID OU pelo nome
+        const { data: golsExistentes } = await supabase
+          .from('gols')
+          .select('id, jogador_id')
+          .eq('jogo_id', jogoParaEditar.id)
+          .eq('time', time);
+
+        // Filtrar gols que correspondem ao jogador (por ID ou nome)
+        const golParaRemover = golsExistentes?.find(g => {
+          const nomeGol = buscarJogador(g.jogador_id);
+          return g.jogador_id === jogadorId || nomeGol === nomeJogador;
+        });
+
+        if (golParaRemover) {
+          await supabase.from('gols').delete().eq('id', golParaRemover.id);
+          
+          if (time === 'A' && novoPlacarA > 0) novoPlacarA--;
+          else if (time === 'B' && novoPlacarB > 0) novoPlacarB--;
+          placarAtualizado = true;
+        }
+      }
+
+      // Adicionar assistências
+      for (const { jogadorId, time } of alteracoesPendentes.assistsAdicionar) {
+        await supabase.from('assistencias').insert({
+          jogo_id: jogoParaEditar.id,
+          jogador_id: jogadorId,
+          time: time,
+        });
+      }
+
+      // Remover assistências
+      for (const { jogadorId, time } of alteracoesPendentes.assistsRemover) {
+        const nomeJogador = buscarJogador(jogadorId);
+        
+        // Buscar assists pelo ID OU pelo nome
+        const { data: assistsExistentes } = await supabase
+          .from('assistencias')
+          .select('id, jogador_id')
+          .eq('jogo_id', jogoParaEditar.id)
+          .eq('time', time);
+
+        // Filtrar assists que correspondem ao jogador (por ID ou nome)
+        const assistParaRemover = assistsExistentes?.find(a => {
+          const nomeAssist = buscarJogador(a.jogador_id);
+          return a.jogador_id === jogadorId || nomeAssist === nomeJogador;
+        });
+
+        if (assistParaRemover) {
+          await supabase.from('assistencias').delete().eq('id', assistParaRemover.id);
+        }
+      }
+
+      // Atualizar placar se houver mudanças
+      if (placarAtualizado) {
+        await supabase
+          .from('jogos')
+          .update({ placar_a: novoPlacarA, placar_b: novoPlacarB })
+          .eq('id', jogoParaEditar.id);
+      }
+
+      // Limpar alterações pendentes
+      setAlteracoesPendentes({ golsAdicionar: [], golsRemover: [], assistsAdicionar: [], assistsRemover: [] });
+      
+      // Recarregar dados
+      await carregarDados();
+      
+      // Fechar modal
+      setMostrarModalGerenciarTime(false);
+      setJogoParaEditar(null);
+    } catch (error) {
+      console.error('Erro ao salvar alterações:', error);
+      alert('Erro ao salvar alterações');
+    }
+  };
+
+  // Função para cancelar e fechar modal
+  const cancelarEdicao = () => {
+    setAlteracoesPendentes({ golsAdicionar: [], golsRemover: [], assistsAdicionar: [], assistsRemover: [] });
+    setMostrarModalGerenciarTime(false);
+    setJogoParaEditar(null);
   };
 
   const compartilharTodosResultados = async () => {
@@ -929,7 +1087,23 @@ export default function ResultadosPage() {
                 {/* Times */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                    <div className="font-semibold text-green-700 mb-2 text-center">Time 1</div>
+                    <div className="font-semibold text-green-700 mb-2 text-center flex items-center justify-center gap-2">
+                      <span>Time 1</span>
+                      {modoAdmin && (
+                        <button
+                          onClick={() => {
+                            setJogoParaEditar(jogo);
+                            setTimeParaGerenciar('A');
+                            setAlteracoesPendentes({ golsAdicionar: [], golsRemover: [], assistsAdicionar: [], assistsRemover: [] });
+                            setMostrarModalGerenciarTime(true);
+                          }}
+                          className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700"
+                          title="Gerenciar Time 1"
+                        >
+                          ✏️
+                        </button>
+                      )}
+                    </div>
                     {jogo.time_a.map((jogadorId, i) => {
                       // Obter nome do jogador para comparação
                       const nomeJogador = buscarJogador(jogadorId);
@@ -961,9 +1135,18 @@ export default function ResultadosPage() {
                                   return (golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '') + (assistsSaiu > 0 ? ' ' + '👟'.repeat(assistsSaiu) : '');
                                 })()}
                               </div>
-                              <div className="text-green-600 font-bold text-xs">↑ {buscarJogador(jogadorId)}
-                                {golsJogador > 0 && ' ' + '⚽'.repeat(golsJogador)}
-                                {assistenciasJogador > 0 && ' ' + '👟'.repeat(assistenciasJogador)}
+                              <div className="text-green-600 font-bold text-xs flex items-center justify-center gap-1">
+                                <span>↑ {buscarJogador(jogadorId)}</span>
+                                {golsJogador > 0 && (
+                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerGol(jogo, jogadorId, 'A')} title={modoAdmin ? 'Clique para remover' : ''}>
+                                    {' ' + '⚽'.repeat(golsJogador)}
+                                  </span>
+                                )}
+                                {assistenciasJogador > 0 && (
+                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerAssistencia(jogo, jogadorId, 'A')} title={modoAdmin ? 'Clique para remover' : ''}>
+                                    {' ' + '👟'.repeat(assistenciasJogador)}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           ) : (
@@ -978,7 +1161,23 @@ export default function ResultadosPage() {
                     })}
                   </div>
                   <div className="bg-gray-100 rounded-lg p-3 border border-gray-300">
-                    <div className="font-semibold text-gray-800 mb-2 text-center">Time 2</div>
+                    <div className="font-semibold text-gray-800 mb-2 text-center flex items-center justify-center gap-2">
+                      <span>Time 2</span>
+                      {modoAdmin && (
+                        <button
+                          onClick={() => {
+                            setJogoParaEditar(jogo);
+                            setTimeParaGerenciar('B');
+                            setAlteracoesPendentes({ golsAdicionar: [], golsRemover: [], assistsAdicionar: [], assistsRemover: [] });
+                            setMostrarModalGerenciarTime(true);
+                          }}
+                          className="bg-gray-600 text-white px-2 py-0.5 rounded text-xs hover:bg-gray-700"
+                          title="Gerenciar Time 2"
+                        >
+                          ✏️
+                        </button>
+                      )}
+                    </div>
                     {jogo.time_b.map((jogadorId, i) => {
                       // Obter nome do jogador para comparação
                       const nomeJogador = buscarJogador(jogadorId);
@@ -1010,9 +1209,18 @@ export default function ResultadosPage() {
                                   return (golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '') + (assistsSaiu > 0 ? ' ' + '👟'.repeat(assistsSaiu) : '');
                                 })()}
                               </div>
-                              <div className="text-green-600 font-bold text-xs">↑ {buscarJogador(jogadorId)}
-                                {golsJogador > 0 && ' ' + '⚽'.repeat(golsJogador)}
-                                {assistenciasJogador > 0 && ' ' + '👟'.repeat(assistenciasJogador)}
+                              <div className="text-green-600 font-bold text-xs flex items-center justify-center gap-1">
+                                <span>↑ {buscarJogador(jogadorId)}</span>
+                                {golsJogador > 0 && (
+                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerGol(jogo, jogadorId, 'B')} title={modoAdmin ? 'Clique para remover' : ''}>
+                                    {' ' + '⚽'.repeat(golsJogador)}
+                                  </span>
+                                )}
+                                {assistenciasJogador > 0 && (
+                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerAssistencia(jogo, jogadorId, 'B')} title={modoAdmin ? 'Clique para remover' : ''}>
+                                    {' ' + '👟'.repeat(assistenciasJogador)}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           ) : (
@@ -1412,6 +1620,141 @@ export default function ResultadosPage() {
                     className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-red-700 transition-colors"
                   >
                     Excluir Tudo
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Gerenciar Time */}
+        {mostrarModalGerenciarTime && jogoParaEditar && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className={`bg-gradient-to-r p-3 ${timeParaGerenciar === 'A' ? 'from-green-500 to-green-600' : 'from-gray-500 to-gray-600'}`}>
+                <h3 className="text-lg font-bold text-white">
+                  ✏️ Gerenciar Time {timeParaGerenciar === 'A' ? '1' : '2'}
+                </h3>
+                <p className="text-white text-xs mt-0.5">
+                  Placar: {timeParaGerenciar === 'A' ? jogoParaEditar.placar_a : jogoParaEditar.placar_b} gols
+                </p>
+              </div>
+              <div className="p-3 overflow-y-auto max-h-[calc(90vh-120px)]">
+                {/* Lista de jogadores */}
+                <div className="space-y-2">
+                  {(timeParaGerenciar === 'A' ? jogoParaEditar.time_a : jogoParaEditar.time_b).map((jogadorId) => {
+                    const nomeJogador = buscarJogador(jogadorId);
+                    
+                    // Contar gols considerando ID OU nome (mesma lógica da exibição) + alterações pendentes
+                    const golsDoJogadorBanco = (jogoParaEditar.gols || []).filter(g => {
+                      const nomeGol = buscarJogador(g.jogador_id);
+                      return (g.jogador_id === jogadorId || nomeGol === nomeJogador) && g.time === timeParaGerenciar;
+                    }).length;
+                    
+                    const golsAdicionadosPendentes = alteracoesPendentes.golsAdicionar.filter(
+                      g => g.jogadorId === jogadorId && g.time === timeParaGerenciar
+                    ).length;
+                    
+                    const golsRemovidosPendentes = alteracoesPendentes.golsRemover.filter(
+                      g => g.jogadorId === jogadorId && g.time === timeParaGerenciar
+                    ).length;
+                    
+                    const golsDoJogador = golsDoJogadorBanco + golsAdicionadosPendentes - golsRemovidosPendentes;
+                    
+                    // Contar assistências considerando ID OU nome (mesma lógica da exibição) + alterações pendentes
+                    const assistsDoJogadorBanco = (jogoParaEditar.assistencias || []).filter(a => {
+                      const nomeAssist = buscarJogador(a.jogador_id);
+                      return (a.jogador_id === jogadorId || nomeAssist === nomeJogador) && a.time === timeParaGerenciar;
+                    }).length;
+                    
+                    const assistsAdicionadosPendentes = alteracoesPendentes.assistsAdicionar.filter(
+                      a => a.jogadorId === jogadorId && a.time === timeParaGerenciar
+                    ).length;
+                    
+                    const assistsRemovidosPendentes = alteracoesPendentes.assistsRemover.filter(
+                      a => a.jogadorId === jogadorId && a.time === timeParaGerenciar
+                    ).length;
+                    
+                    const assistsDoJogador = assistsDoJogadorBanco + assistsAdicionadosPendentes - assistsRemovidosPendentes;
+                    
+                    return (
+                      <div key={jogadorId} className={`rounded-lg p-2.5 border ${timeParaGerenciar === 'A' ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-300'}`}>
+                        {/* Nome do jogador */}
+                        <div className="font-bold text-base text-gray-800 mb-2">{nomeJogador}</div>
+                        
+                        {/* Seção Gols */}
+                        <div className="mb-2 pb-2 border-b border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-600 text-sm">⚽ Gols:</span>
+                              <span className="text-green-600 font-bold text-base">
+                                {golsDoJogador}
+                              </span>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => adicionarGol(jogadorId, timeParaGerenciar)}
+                                className="bg-green-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-green-700 transition-colors"
+                              >
+                                + Gol
+                              </button>
+                              {golsDoJogador > 0 && (
+                                <button
+                                  onClick={() => removerGol(jogadorId, timeParaGerenciar)}
+                                  className="bg-red-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-red-700 transition-colors"
+                                >
+                                  - Gol
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Seção Assistências */}
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-600 text-sm">👟 Assist:</span>
+                              <span className="text-blue-600 font-bold text-base">
+                                {assistsDoJogador}
+                              </span>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => adicionarAssistencia(jogadorId, timeParaGerenciar)}
+                                className="bg-blue-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-blue-700 transition-colors"
+                              >
+                                + Assist
+                              </button>
+                              {assistsDoJogador > 0 && (
+                                <button
+                                  onClick={() => removerAssistencia(jogadorId, timeParaGerenciar)}
+                                  className="bg-red-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-red-700 transition-colors"
+                                >
+                                  - Assist
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="p-3 border-t border-gray-200">
+                <div className="flex gap-2">
+                  <button
+                    onClick={salvarAlteracoes}
+                    className="flex-1 bg-green-600 text-white py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors shadow-md"
+                  >
+                    ✓ Salvar Alterações
+                  </button>
+                  <button
+                    onClick={cancelarEdicao}
+                    className="flex-1 bg-gray-500 text-white py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-gray-600 transition-colors"
+                  >
+                    ✕ Cancelar
                   </button>
                 </div>
               </div>

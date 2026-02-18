@@ -559,11 +559,6 @@ export const fila_cadastrarnovo_adicionar = (
       nivel: nivel,
       pelada_id: peladaId,
       status: 'ativo',
-      jogos: 0,
-      vitorias: 0,
-      derrotas: 0,
-      empates: 0,
-      gols: 0,
       created_at: new Date().toISOString()
     });
     

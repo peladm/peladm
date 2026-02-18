@@ -12,12 +12,8 @@ CREATE TABLE IF NOT EXISTS jogadores (
     nome VARCHAR(100) NOT NULL,
     nivel INTEGER NOT NULL,
     pelada_id TEXT NOT NULL,
-    jogos INTEGER NOT NULL DEFAULT 0,
-    vitorias INTEGER NOT NULL DEFAULT 0,
-    derrotas INTEGER NOT NULL DEFAULT 0,
-    empates INTEGER NOT NULL DEFAULT 0,
-    gols INTEGER NOT NULL DEFAULT 0,
     status TEXT DEFAULT 'ativo',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
     
     CONSTRAINT jogadores_status_check CHECK (status IN ('ativo', 'inativo'))
 );

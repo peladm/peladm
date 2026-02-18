@@ -2580,9 +2580,11 @@ export default function FilaPage() {
             return;
           }
         } else {
-          // MODO PARTIDA (Premium only): Sync completo (soma estatísticas)
-          console.log(`☁️ MODO PARTIDA: Sincronizando jogadores (somando estatísticas)...`);
-          setMensagemSync('Atualizando estatísticas dos jogadores...');
+          // MODO PARTIDA (Premium only): Sincronizar apenas jogadores NOVOS
+          // ⚡ OTIMIZAÇÃO: Estatísticas individuais foram removidas da tabela jogadores
+          // ⚡ As estatísticas históricas são calculadas dinamicamente das tabelas jogos/gols/assistências
+          console.log(`☁️ MODO PARTIDA: Sincronizando apenas jogadores novos...`);
+          setMensagemSync('Sincronizando jogadores novos...');
         
           try {
             const jogadoresKey = `jogadores_${peladaId}`;
@@ -2591,89 +2593,53 @@ export default function FilaPage() {
             if (jogadoresStr) {
               const jogadoresLocal = JSON.parse(jogadoresStr);
               console.log(`👥 ${jogadoresLocal.length} jogadores encontrados no localStorage`);
-            
-            for (const jogadorLocal of jogadoresLocal) {
-              console.log(`  ⚙️ Processando ${jogadorLocal.nome}...`);
               
-              // Buscar jogador existente no Supabase
-              const { data: jogadorExistente, error: errorBusca } = await clienteDb
+              // Buscar todos os IDs do Supabase
+              const { data: jogadoresSupabase, error: errorBuscaTodos } = await clienteDb
                 .from('jogadores')
-                .select('*')
-                .eq('id', jogadorLocal.id)
-                .single();
+                .select('id')
+                .eq('pelada_id', peladaId);
               
-              if (errorBusca && errorBusca.code !== 'PGRST116') {
-                // Erro diferente de "not found"
-                console.error(`❌ ERRO ao buscar jogador ${jogadorLocal.nome}:`, errorBusca);
-                throw new Error(`Falha ao buscar jogador ${jogadorLocal.nome}: ${errorBusca.message}`);
+              if (errorBuscaTodos) {
+                console.error('❌ Erro ao buscar jogadores:', errorBuscaTodos);
+                throw errorBuscaTodos;
               }
               
-              if (jogadorExistente) {
-                // Jogador existe: SOMAR estatísticas
-                console.log(`  ➕ Somando estatísticas de ${jogadorLocal.nome}`);
-                console.log(`     Antes: ${jogadorExistente.jogos}J ${jogadorExistente.vitorias}V ${jogadorExistente.derrotas}D ${jogadorExistente.empates}E ${jogadorExistente.gols}G`);
-                console.log(`     Soma:  +${jogadorLocal.jogos}J +${jogadorLocal.vitorias}V +${jogadorLocal.derrotas}D +${jogadorLocal.empates}E +${jogadorLocal.gols}G`);
+              const idsExistentes = new Set((jogadoresSupabase || []).map(j => j.id));
+              const jogadoresNovos = jogadoresLocal.filter((j: any) => !idsExistentes.has(j.id));
+              
+              console.log(`🆕 ${jogadoresNovos.length} jogadores novos encontrados`);
+              
+              if (jogadoresNovos.length > 0) {
+                console.log('☁️ Sincronizando apenas jogadores novos...');
                 
-                const { error } = await clienteDb
-                  .from('jogadores')
-                  .update({
-                    nome: jogadorLocal.nome,
-                    nivel: jogadorLocal.nivel,
-                    jogos: (jogadorExistente.jogos || 0) + (jogadorLocal.jogos || 0),
-                    vitorias: (jogadorExistente.vitorias || 0) + (jogadorLocal.vitorias || 0),
-                    derrotas: (jogadorExistente.derrotas || 0) + (jogadorLocal.derrotas || 0),
-                    empates: (jogadorExistente.empates || 0) + (jogadorLocal.empates || 0),
-                    gols: (jogadorExistente.gols || 0) + (jogadorLocal.gols || 0),
-                    status: jogadorLocal.status,
-                  })
-                  .eq('id', jogadorLocal.id);
-                
-                if (error) {
-                  console.error(`❌ ERRO ao atualizar jogador ${jogadorLocal.nome}:`, error);
-                  throw new Error(`Falha ao atualizar jogador ${jogadorLocal.nome}: ${error.message}`);
+                for (const jogadorNovo of jogadoresNovos) {
+                  console.log(`  ➕ Inserindo ${jogadorNovo.nome}`);
+                  
+                  const { error } = await clienteDb
+                    .from('jogadores')
+                    .insert({
+                      id: jogadorNovo.id,
+                      nome: jogadorNovo.nome,
+                      nivel: jogadorNovo.nivel,
+                      pelada_id: jogadorNovo.pelada_id,
+                      status: jogadorNovo.status || 'ativo',
+                    });
+                  
+                  if (error) {
+                    console.error(`❌ Erro ao inserir ${jogadorNovo.nome}:`, error);
+                    throw error;
+                  }
+                  console.log(`  ✓ ${jogadorNovo.nome} inserido`);
                 }
                 
-                const novoTotal = {
-                  jogos: (jogadorExistente.jogos || 0) + (jogadorLocal.jogos || 0),
-                  vitorias: (jogadorExistente.vitorias || 0) + (jogadorLocal.vitorias || 0),
-                  derrotas: (jogadorExistente.derrotas || 0) + (jogadorLocal.derrotas || 0),
-                  empates: (jogadorExistente.empates || 0) + (jogadorLocal.empates || 0),
-                  gols: (jogadorExistente.gols || 0) + (jogadorLocal.gols || 0),
-                };
-                console.log(`     Total: ${novoTotal.jogos}J ${novoTotal.vitorias}V ${novoTotal.derrotas}D ${novoTotal.empates}E ${novoTotal.gols}G`);
-                console.log(`  ✓ ${jogadorLocal.nome} atualizado`);
+                console.log('✅ Jogadores novos sincronizados');
               } else {
-                // Jogador novo: INSERIR
-                console.log(`  ➕ Inserindo novo jogador ${jogadorLocal.nome}`);
-                console.log(`     Stats: ${jogadorLocal.jogos}J ${jogadorLocal.vitorias}V ${jogadorLocal.derrotas}D ${jogadorLocal.empates}E ${jogadorLocal.gols}G`);
-                
-                const { error } = await clienteDb
-                  .from('jogadores')
-                  .insert({
-                    id: jogadorLocal.id,
-                    nome: jogadorLocal.nome,
-                    nivel: jogadorLocal.nivel,
-                    pelada_id: jogadorLocal.pelada_id,
-                    jogos: jogadorLocal.jogos || 0,
-                    vitorias: jogadorLocal.vitorias || 0,
-                    derrotas: jogadorLocal.derrotas || 0,
-                    empates: jogadorLocal.empates || 0,
-                    gols: jogadorLocal.gols || 0,
-                    status: jogadorLocal.status,
-                  });
-                
-                if (error) {
-                  console.error(`❌ ERRO ao inserir jogador ${jogadorLocal.nome}:`, error);
-                  throw new Error(`Falha ao inserir jogador ${jogadorLocal.nome}: ${error.message}`);
-                }
-                console.log(`  ✓ ${jogadorLocal.nome} inserido`);
+                console.log('✅ Nenhum jogador novo para sincronizar');
               }
+            } else {
+              console.log('⚠️ Nenhum jogador encontrado no localStorage');
             }
-            
-            console.log('✅ Jogadores sincronizados com Supabase');
-          } else {
-            console.log('⚠️ Nenhum jogador encontrado no localStorage');
-          }
           
         } catch (syncError) {
           console.error('❌ ========== ERRO NO SYNC JOGADORES ==========');
@@ -3723,124 +3689,11 @@ export default function FilaPage() {
       }
       
       // ============================================
-      // ATUALIZAR ESTATÍSTICAS DOS JOGADORES (Gold/Premium, EXCETO modo prancheta)
+      // ⚡ OTIMIZAÇÃO: Estatísticas individuais removidas da tabela jogadores
+      // ⚡ As estatísticas são calculadas dinamicamente das tabelas jogos/gols/assistências
       // ============================================
-      const planoUpper = plano?.toUpperCase() || '';
-      if (!modoPrancheta && (planoUpper === 'GOLD' || planoUpper === 'PREMIUM')) {
-        console.log('📊 Atualizando estatísticas dos jogadores...');
-        console.log('🔍 DEBUG: Plano detectado:', plano);
-        
-        const jogadoresKey = `jogadores_${peladaId}`;
-        const jogadoresStr = localStorage.getItem(jogadoresKey);
-        console.log('🔍 DEBUG: jogadoresKey:', jogadoresKey);
-        console.log('🔍 DEBUG: jogadores encontrados:', jogadoresStr ? 'SIM' : 'NÃO');
-        
-        if (jogadoresStr) {
-          const jogadores = JSON.parse(jogadoresStr);
-          console.log('🔍 DEBUG: Total jogadores na tabela:', jogadores.length);
-          console.log('🔍 DEBUG: Primeiro jogador:', jogadores[0]);
-          console.log('🔍 DEBUG: Time A para atualizar:', timeACompleto.map(j => ({ id: j.id, nome: j.nome })));
-          console.log('🔍 DEBUG: Time B para atualizar:', timeBCompleto.map(j => ({ id: j.id, nome: j.nome })));
-          
-          // Atualizar jogadores do Time A
-          timeACompleto.forEach(jogador => {
-            console.log(`🔍 Buscando jogador Time A: ${jogador.nome} (id: ${jogador.id})`);
-            const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
-            console.log(`   Encontrado?`, jogadorData ? `SIM - ${jogadorData.nome}` : 'NÃO');
-            
-            if (jogadorData) {
-              jogadorData.jogos = (jogadorData.jogos || 0) + 1;
-              
-              if (timeVencedorRegistro === 'A') {
-                jogadorData.vitorias = (jogadorData.vitorias || 0) + 1;
-              } else if (timeVencedorRegistro === 'B') {
-                jogadorData.derrotas = (jogadorData.derrotas || 0) + 1;
-              } else if (timeVencedorRegistro === 'empate') {
-                jogadorData.empates = (jogadorData.empates || 0) + 1;
-              }
-              
-              // Adicionar gols (Premium) - buscar por ID ou nome
-              if (planoUpper === 'PREMIUM' && (golsJogadores[jogador.id] || golsJogadores[jogador.nome])) {
-                const quantidade = golsJogadores[jogador.id] || golsJogadores[jogador.nome];
-                jogadorData.gols = (jogadorData.gols || 0) + quantidade;
-                console.log(`   ⚽ Gols adicionados: ${quantidade}`);
-              }
-              
-              // Adicionar assistências (Premium) - buscar por ID ou nome
-              if (planoUpper === 'PREMIUM' && (assistenciasJogadores[jogador.id] || assistenciasJogadores[jogador.nome])) {
-                const quantidade = assistenciasJogadores[jogador.id] || assistenciasJogadores[jogador.nome];
-                jogadorData.assistencias = (jogadorData.assistencias || 0) + quantidade;
-                console.log(`   👟 Assistências adicionadas: ${quantidade}`);
-              }
-              
-              console.log(`   Atualizado: ${jogadorData.jogos} jogos, ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E`);
-            }
-          });
-          
-          // Atualizar jogadores do Time B
-          timeBCompleto.forEach(jogador => {
-            console.log(`🔍 Buscando jogador Time B: ${jogador.nome} (id: ${jogador.id})`);
-            const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
-            console.log(`   Encontrado?`, jogadorData ? `SIM - ${jogadorData.nome}` : 'NÃO');
-            
-            if (jogadorData) {
-              jogadorData.jogos = (jogadorData.jogos || 0) + 1;
-              
-              if (timeVencedorRegistro === 'B') {
-                jogadorData.vitorias = (jogadorData.vitorias || 0) + 1;
-              } else if (timeVencedorRegistro === 'A') {
-                jogadorData.derrotas = (jogadorData.derrotas || 0) + 1;
-              } else if (timeVencedorRegistro === 'empate') {
-                jogadorData.empates = (jogadorData.empates || 0) + 1;
-              }
-              
-              // Adicionar gols (Premium) - buscar por ID ou nome
-              if (planoUpper === 'PREMIUM' && (golsJogadores[jogador.id] || golsJogadores[jogador.nome])) {
-                const quantidade = golsJogadores[jogador.id] || golsJogadores[jogador.nome];
-                jogadorData.gols = (jogadorData.gols || 0) + quantidade;
-                console.log(`   ⚽ Gols adicionados: ${quantidade}`);
-              }
-              
-              // Adicionar assistências (Premium) - buscar por ID ou nome
-              if (planoUpper === 'PREMIUM' && (assistenciasJogadores[jogador.id] || assistenciasJogadores[jogador.nome])) {
-                const quantidade = assistenciasJogadores[jogador.id] || assistenciasJogadores[jogador.nome];
-                jogadorData.assistencias = (jogadorData.assistencias || 0) + quantidade;
-                console.log(`   👟 Assistências adicionadas: ${quantidade}`);
-              }
-              
-              console.log(`   Atualizado: ${jogadorData.jogos} jogos, ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E`);
-            }
-          });
-          
-          localStorage.setItem(jogadoresKey, JSON.stringify(jogadores));
-          console.log('✅ Estatísticas dos jogadores atualizadas no localStorage');
-          console.log('📊 === ESTATÍSTICAS INDIVIDUAIS ATUALIZADAS ===');
-          
-          // Log Time A
-          console.log('   🔴 Time A:');
-          timeACompleto.forEach(jogador => {
-            const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
-            if (jogadorData) {
-              console.log(`      ${jogadorData.nome}: ${jogadorData.jogos} jogos | ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E | ${jogadorData.gols || 0} gols | ${jogadorData.assistencias || 0} assists`);
-            }
-          });
-          
-          // Log Time B
-          console.log('   🔵 Time B:');
-          timeBCompleto.forEach(jogador => {
-            const jogadorData = jogadores.find((j: any) => j.id === jogador.id || j.nome === jogador.nome);
-            if (jogadorData) {
-              console.log(`      ${jogadorData.nome}: ${jogadorData.jogos} jogos | ${jogadorData.vitorias || 0}V ${jogadorData.derrotas || 0}D ${jogadorData.empates || 0}E | ${jogadorData.gols || 0} gols | ${jogadorData.assistencias || 0} assists`);
-            }
-          });
-        }
-      } else {
-        if (modoPrancheta) {
-          console.log('📋 Modo prancheta ativo - estatísticas NÃO serão atualizadas');
-        } else {
-          console.log('⚠️ Plano não permite salvar estatísticas');
-        }
-      }
+      console.log('⚡ OTIMIZAÇÃO: Estatísticas individuais não são mais atualizadas na tabela jogadores');
+      console.log('⚡ As estatísticas históricas são calculadas dinamicamente das tabelas jogos/gols/assistências');
       
       // === 4. ROTACIONAR FILA ===
       console.log('🔄 MODO:', modoPrancheta ? 'PRANCHETA (rotação sem estatísticas)' : 'PARTIDA (rotação com estatísticas)');

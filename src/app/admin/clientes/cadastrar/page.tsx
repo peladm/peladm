@@ -251,9 +251,6 @@ function CadastrarClienteContent() {
           nivel INTEGER DEFAULT 3 CHECK (nivel >= 1 AND nivel <= 5),
           status TEXT CHECK (status IN ('ativo', 'inativo')) DEFAULT 'ativo',
           pelada_id UUID NOT NULL,
-          jogos INTEGER DEFAULT 0,
-          vitorias INTEGER DEFAULT 0,
-          gols INTEGER DEFAULT 0,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         )`,
