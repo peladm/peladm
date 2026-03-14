@@ -110,7 +110,11 @@ export default function FilaPage() {
   const [posicaoDestino, setPosicaoDestino] = useState<number | null>(null);
 
   // States para NOVO sistema de edição de fila
-  const [historicoAlteracoes, setHistoricoAlteracoes] = useState<Array<{tipo: 'mover', jogadorId: string, posicaoOrigem: number, posicaoDestino: number}>>([]);
+  const [historicoAlteracoes, setHistoricoAlteracoes] = useState<Array<
+    | {tipo: 'mover', jogadorId: string, posicaoOrigem: number, posicaoDestino: number}
+    | {tipo: 'remover', jogador_id: string, jogador_nome: string, posicao_origem: number, posicao_destino: number}
+    | {tipo: 'adicionar', jogador_id: string, jogador_nome: string, posicao_origem: number, posicao_destino: number}
+  >>([]);
   const [showConfirmarEdicaoModal, setShowConfirmarEdicaoModal] = useState(false);
   const [showDesfazerAlteracoesModal, setShowDesfazerAlteracoesModal] = useState(false);
 
