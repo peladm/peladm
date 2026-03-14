@@ -664,8 +664,28 @@ export default function ResultadosPage() {
 
         // Associar gols, assistências e substituições aos jogos
         const jogosCompletos = jogosData.map(jogo => {
-          const subs = Array.isArray(jogo.substituicoes) ? jogo.substituicoes : [];
-          console.log('🔍 Jogo:', jogo.id, 'Substituições:', subs, 'Tipo:', typeof jogo.substituicoes);
+          // Parse de substituições - pode vir como string JSON, objeto ou array
+          let subs: Substituicao[] = [];
+          
+          if (jogo.substituicoes) {
+            if (typeof jogo.substituicoes === 'string') {
+              try {
+                subs = JSON.parse(jogo.substituicoes);
+              } catch (e) {
+                console.error('❌ Erro ao parsear substituições:', e);
+              }
+            } else if (Array.isArray(jogo.substituicoes)) {
+              subs = jogo.substituicoes;
+            }
+          }
+          
+          console.log('🔍 DEBUG Jogo:', jogo.id.substring(0, 8), {
+            substituicoesRaw: jogo.substituicoes,
+            tipo: typeof jogo.substituicoes,
+            substituicoesParsed: subs,
+            quantidade: subs.length
+          });
+          
           return {
             ...jogo,
             gols: (golsData || []).filter(g => g.jogo_id === jogo.id),
@@ -819,7 +839,7 @@ export default function ResultadosPage() {
 
   return (
     <Layout title="Resultados" onAdminClick={abrirModalSenha}>
-      <div className="max-w-2xl mx-auto px-4 py-3">
+      <div className="max-w-2xl mx-auto px-2 py-3">
         {/* Header com filtros */}
         <section className="bg-white rounded-xl shadow-md p-4 mb-4 border border-gray-300">
           {/* Bloco 1: Pelada Atual */}
@@ -1028,9 +1048,9 @@ export default function ResultadosPage() {
 
         {/* Lista de partidas */}
         {!loading && jogosFiltrados.length > 0 && (
-          <section className="space-y-4">
+          <section className="space-y-6">
             {jogosFiltrados.map((jogo, index) => (
-              <div key={jogo.id} className="bg-white rounded-xl shadow-md border border-gray-200 p-4">
+              <div key={jogo.id} className="pb-6 border-b-2 border-gray-300">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-sm font-semibold text-gray-500">
                     Partida #{jogosFiltrados.length - index}
@@ -1085,8 +1105,8 @@ export default function ResultadosPage() {
                 </div>
 
                 {/* Times */}
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="bg-green-50 rounded-lg p-2 border border-green-200">
                     <div className="font-semibold text-green-700 mb-2 text-center flex items-center justify-center gap-2">
                       <span>Time 1</span>
                       {modoAdmin && (
@@ -1115,52 +1135,66 @@ export default function ResultadosPage() {
                         const nomeAssist = buscarJogador(a.jogador_id);
                         return (a.jogador_id === jogadorId || nomeAssist === nomeJogador) && a.time === 'A';
                       }).length;
-                      const substituicaoEntrada = (jogo.substituicoes || []).find(s => s.jogador_entrou_id === jogadorId && s.time === 'A');
+                      // Buscar substituição por ID ou por nome
+                      const substituicaoEntrada = (jogo.substituicoes || []).find(s => {
+                        if (s.time !== 'A') return false;
+                        // Comparar por ID direto
+                        if (s.jogador_entrou_id === jogadorId) return true;
+                        // Comparar por nome (caso time_a tenha nomes ao invés de IDs)
+                        const nomeEntrou = s.jogador_entrou_nome || buscarJogador(s.jogador_entrou_id);
+                        return nomeEntrou === jogadorId || nomeEntrou === nomeJogador;
+                      });
                       
+                      if (substituicaoEntrada) {
+                        // Calcular estatísticas do jogador que saiu
+                        const nomeSaiu = buscarJogador(substituicaoEntrada.jogador_saiu_id);
+                        const golsSaiu = (jogo.gols || []).filter(g => {
+                          const nomeGol = buscarJogador(g.jogador_id);
+                          return (g.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeGol === nomeSaiu) && g.time === 'A';
+                        }).length;
+                        const assistsSaiu = (jogo.assistencias || []).filter(a => {
+                          const nomeAssist = buscarJogador(a.jogador_id);
+                          return (a.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeAssist === nomeSaiu) && a.time === 'A';
+                        }).length;
+                        
+                        return (
+                          <div key={i} className="text-gray-700 text-sm">
+                            {/* Jogador que saiu */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }}>
+                              <div className="text-red-600">↓</div>
+                              <div className="text-left">{nomeSaiu}</div>
+                              <div className="text-right">{assistsSaiu > 0 && golsSaiu > 0 ? `${assistsSaiu}👟` : ''}</div>
+                              <div className="text-right" style={{ minWidth: '30px' }}>
+                                {golsSaiu > 0 ? `${golsSaiu}⚽` : (assistsSaiu > 0 ? `${assistsSaiu}👟` : '')}
+                              </div>
+                            </div>
+                            {/* Jogador que entrou */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }}>
+                              <div className="text-green-600">↑</div>
+                              <div className="text-left">{nomeJogador}</div>
+                              <div className="text-right">{assistenciasJogador > 0 && golsJogador > 0 ? `${assistenciasJogador}👟` : ''}</div>
+                              <div className="text-right" style={{ minWidth: '30px' }}>
+                                {golsJogador > 0 ? `${golsJogador}⚽` : (assistenciasJogador > 0 ? `${assistenciasJogador}👟` : '')}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      
+                      // Jogador normal (sem substituição)
                       return (
-                        <div key={i} className="text-gray-700 py-1 text-center">
-                          {substituicaoEntrada ? (
-                            <div className="bg-green-100 border-l-4 border-green-500 px-2 py-1 my-1">
-                              <div className="text-red-600 text-xs">↓ {buscarJogador(substituicaoEntrada.jogador_saiu_id)}
-                                {(() => {
-                                  const nomeSaiu = buscarJogador(substituicaoEntrada.jogador_saiu_id);
-                                  const golsSaiu = (jogo.gols || []).filter(g => {
-                                    const nomeGol = buscarJogador(g.jogador_id);
-                                    return (g.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeGol === nomeSaiu) && g.time === 'A';
-                                  }).length;
-                                  const assistsSaiu = (jogo.assistencias || []).filter(a => {
-                                    const nomeAssist = buscarJogador(a.jogador_id);
-                                    return (a.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeAssist === nomeSaiu) && a.time === 'A';
-                                  }).length;
-                                  return (golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '') + (assistsSaiu > 0 ? ' ' + '👟'.repeat(assistsSaiu) : '');
-                                })()}
-                              </div>
-                              <div className="text-green-600 font-bold text-xs flex items-center justify-center gap-1">
-                                <span>↑ {buscarJogador(jogadorId)}</span>
-                                {golsJogador > 0 && (
-                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerGol(jogadorId, 'A')} title={modoAdmin ? 'Clique para remover' : ''}>
-                                    {' ' + '⚽'.repeat(golsJogador)}
-                                  </span>
-                                )}
-                                {assistenciasJogador > 0 && (
-                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerAssistencia(jogadorId, 'A')} title={modoAdmin ? 'Clique para remover' : ''}>
-                                    {' ' + '👟'.repeat(assistenciasJogador)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div>
-                              {buscarJogador(jogadorId)}
-                              {golsJogador > 0 && ' ' + '⚽'.repeat(golsJogador)}
-                              {assistenciasJogador > 0 && ' ' + '👟'.repeat(assistenciasJogador)}
-                            </div>
-                          )}
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }} className="text-gray-700 text-sm">
+                          <div></div>
+                          <div className="text-left">{nomeJogador}</div>
+                          <div className="text-right">{assistenciasJogador > 0 && golsJogador > 0 ? `${assistenciasJogador}👟` : ''}</div>
+                          <div className="text-right" style={{ minWidth: '30px' }}>
+                            {golsJogador > 0 ? `${golsJogador}⚽` : (assistenciasJogador > 0 ? `${assistenciasJogador}👟` : '')}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                  <div className="bg-gray-100 rounded-lg p-3 border border-gray-300">
+                  <div className="bg-gray-100 rounded-lg p-2 border border-gray-300">
                     <div className="font-semibold text-gray-800 mb-2 text-center flex items-center justify-center gap-2">
                       <span>Time 2</span>
                       {modoAdmin && (
@@ -1189,47 +1223,61 @@ export default function ResultadosPage() {
                         const nomeAssist = buscarJogador(a.jogador_id);
                         return (a.jogador_id === jogadorId || nomeAssist === nomeJogador) && a.time === 'B';
                       }).length;
-                      const substituicaoEntrada = (jogo.substituicoes || []).find(s => s.jogador_entrou_id === jogadorId && s.time === 'B');
+                      // Buscar substituição por ID ou por nome
+                      const substituicaoEntrada = (jogo.substituicoes || []).find(s => {
+                        if (s.time !== 'B') return false;
+                        // Comparar por ID direto
+                        if (s.jogador_entrou_id === jogadorId) return true;
+                        // Comparar por nome (caso time_b tenha nomes ao invés de IDs)
+                        const nomeEntrou = s.jogador_entrou_nome || buscarJogador(s.jogador_entrou_id);
+                        return nomeEntrou === jogadorId || nomeEntrou === nomeJogador;
+                      });
                       
+                      if (substituicaoEntrada) {
+                        // Calcular estatísticas do jogador que saiu
+                        const nomeSaiu = buscarJogador(substituicaoEntrada.jogador_saiu_id);
+                        const golsSaiu = (jogo.gols || []).filter(g => {
+                          const nomeGol = buscarJogador(g.jogador_id);
+                          return (g.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeGol === nomeSaiu) && g.time === 'B';
+                        }).length;
+                        const assistsSaiu = (jogo.assistencias || []).filter(a => {
+                          const nomeAssist = buscarJogador(a.jogador_id);
+                          return (a.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeAssist === nomeSaiu) && a.time === 'B';
+                        }).length;
+                        
+                        return (
+                          <div key={i} className="text-gray-700 text-sm">
+                            {/* Jogador que saiu */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }}>
+                              <div className="text-red-600">↓</div>
+                              <div className="text-left">{nomeSaiu}</div>
+                              <div className="text-right">{assistsSaiu > 0 && golsSaiu > 0 ? `${assistsSaiu}👟` : ''}</div>
+                              <div className="text-right" style={{ minWidth: '30px' }}>
+                                {golsSaiu > 0 ? `${golsSaiu}⚽` : (assistsSaiu > 0 ? `${assistsSaiu}👟` : '')}
+                              </div>
+                            </div>
+                            {/* Jogador que entrou */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }}>
+                              <div className="text-green-600">↑</div>
+                              <div className="text-left">{nomeJogador}</div>
+                              <div className="text-right">{assistenciasJogador > 0 && golsJogador > 0 ? `${assistenciasJogador}👟` : ''}</div>
+                              <div className="text-right" style={{ minWidth: '30px' }}>
+                                {golsJogador > 0 ? `${golsJogador}⚽` : (assistenciasJogador > 0 ? `${assistenciasJogador}👟` : '')}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      
+                      // Jogador normal (sem substituição)
                       return (
-                        <div key={i} className="text-gray-700 py-1 text-center">
-                          {substituicaoEntrada ? (
-                            <div className="bg-blue-50 border-l-4 border-blue-500 px-2 py-1 my-1">
-                              <div className="text-red-600 text-xs">↓ {buscarJogador(substituicaoEntrada.jogador_saiu_id)}
-                                {(() => {
-                                  const nomeSaiu = buscarJogador(substituicaoEntrada.jogador_saiu_id);
-                                  const golsSaiu = (jogo.gols || []).filter(g => {
-                                    const nomeGol = buscarJogador(g.jogador_id);
-                                    return (g.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeGol === nomeSaiu) && g.time === 'B';
-                                  }).length;
-                                  const assistsSaiu = (jogo.assistencias || []).filter(a => {
-                                    const nomeAssist = buscarJogador(a.jogador_id);
-                                    return (a.jogador_id === substituicaoEntrada.jogador_saiu_id || nomeAssist === nomeSaiu) && a.time === 'B';
-                                  }).length;
-                                  return (golsSaiu > 0 ? ' ' + '⚽'.repeat(golsSaiu) : '') + (assistsSaiu > 0 ? ' ' + '👟'.repeat(assistsSaiu) : '');
-                                })()}
-                              </div>
-                              <div className="text-green-600 font-bold text-xs flex items-center justify-center gap-1">
-                                <span>↑ {buscarJogador(jogadorId)}</span>
-                                {golsJogador > 0 && (
-                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerGol(jogadorId, 'B')} title={modoAdmin ? 'Clique para remover' : ''}>
-                                    {' ' + '⚽'.repeat(golsJogador)}
-                                  </span>
-                                )}
-                                {assistenciasJogador > 0 && (
-                                  <span className={modoAdmin ? 'cursor-pointer hover:opacity-70' : ''} onClick={() => modoAdmin && removerAssistencia(jogadorId, 'B')} title={modoAdmin ? 'Clique para remover' : ''}>
-                                    {' ' + '👟'.repeat(assistenciasJogador)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div>
-                              {buscarJogador(jogadorId)}
-                              {golsJogador > 0 && ' ' + '⚽'.repeat(golsJogador)}
-                              {assistenciasJogador > 0 && ' ' + '👟'.repeat(assistenciasJogador)}
-                            </div>
-                          )}
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }} className="text-gray-700 text-sm">
+                          <div></div>
+                          <div className="text-left">{nomeJogador}</div>
+                          <div className="text-right">{assistenciasJogador > 0 && golsJogador > 0 ? `${assistenciasJogador}👟` : ''}</div>
+                          <div className="text-right" style={{ minWidth: '30px' }}>
+                            {golsJogador > 0 ? `${golsJogador}⚽` : (assistenciasJogador > 0 ? `${assistenciasJogador}👟` : '')}
+                          </div>
                         </div>
                       );
                     })}

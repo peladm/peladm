@@ -44,3 +44,5 @@ next-env.d.ts
 BACKUP_PAGINAS/
 **/page-backup.tsx
 **/page-modal-disaster.tsx
+
+.vercel

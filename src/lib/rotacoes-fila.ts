@@ -610,16 +610,17 @@ export const fila_cadastrarnovo_adicionar = (
  */
 export const fila_snapshot_salvar_edicao_temp = (peladaId: string): boolean => {
   try {
-    console.log('📸 Salvando snapshot TEMPORÁRIO de edição...');
+    console.log('📸 [SNAPSHOT TEMP] Salvando snapshot TEMPORÁRIO de edição...');
     
     // Buscar fila atual do localStorage
     const filaAtivaStr = localStorage.getItem('fila_ativa');
     if (!filaAtivaStr) {
-      console.warn('⚠️ Fila ativa não encontrada no localStorage');
+      console.warn('⚠️ [SNAPSHOT TEMP] Fila ativa não encontrada no localStorage');
       return false;
     }
     
     const filaAtiva = JSON.parse(filaAtivaStr);
+    console.log('📸 [SNAPSHOT TEMP] Fila a ser salva:', filaAtiva.filter((j: any) => j.status === 'fila').map((j: any) => `${j.nome}(${j.posicao_fila})`));
     
     // Criar snapshot temporário
     const snapshot = {
@@ -632,11 +633,12 @@ export const fila_snapshot_salvar_edicao_temp = (peladaId: string): boolean => {
     const keyTemp = `fila_snapshot_edicao_temp_${peladaId}`;
     localStorage.setItem(keyTemp, JSON.stringify(snapshot));
     
-    console.log('✅ Snapshot temporário salvo:', snapshot.timestamp);
+    console.log('✅ [SNAPSHOT TEMP] Snapshot temporário salvo:', snapshot.timestamp);
+    console.log('📸 [SNAPSHOT TEMP] Key usada:', keyTemp);
     return true;
     
   } catch (error) {
-    console.error('❌ Erro ao salvar snapshot temporário:', error);
+    console.error('❌ [SNAPSHOT TEMP] Erro ao salvar snapshot temporário:', error);
     return false;
   }
 };
@@ -645,59 +647,73 @@ export const fila_snapshot_salvar_edicao_temp = (peladaId: string): boolean => {
  * 14. Confirmar ou descartar snapshot de edição ao fechar modo edição
  * 
  * Compara fila atual com snapshot temporário.
- * - Se houver alterações: Confirma temp como oficial (sobrescreve anterior)
+ * - Se houver alterações: Confirma temp como oficial (SOBRESCREVE snapshot anterior)
  * - Se NÃO houver alterações: Descarta temp (mantém oficial intacto)
+ * 
+ * IMPORTANTE: Apenas 1 snapshot de edição é mantido por vez (o mais recente)
  * 
  * @param peladaId - ID da pelada
  * @returns string - 'confirmado' | 'descartado' | 'erro'
  */
 export const fila_snapshot_confirmar_edicao = (peladaId: string): string => {
   try {
-    console.log('🔍 Verificando alterações no modo edição...');
+    console.log('🔍 [CONFIRMAR SNAPSHOT] Verificando alterações no modo edição...');
+    console.log('🔍 [CONFIRMAR SNAPSHOT] peladaId:', peladaId);
     
     const keyTemp = `fila_snapshot_edicao_temp_${peladaId}`;
+    const keyOficial = `fila_snapshot_edicao_${peladaId}`;
+    
+    console.log('🔍 [CONFIRMAR SNAPSHOT] Buscando key temp:', keyTemp);
     const snapshotTempStr = localStorage.getItem(keyTemp);
     
     if (!snapshotTempStr) {
-      console.warn('⚠️ Snapshot temporário não encontrado');
+      console.warn('⚠️ [CONFIRMAR SNAPSHOT] Snapshot temporário não encontrado');
       return 'erro';
     }
     
     const snapshotTemp = JSON.parse(snapshotTempStr);
+    console.log('📸 [CONFIRMAR SNAPSHOT] Snapshot temp timestamp:', snapshotTemp.timestamp);
+    console.log('📸 [CONFIRMAR SNAPSHOT] Fila no temp:', snapshotTemp.fila.filter((j: any) => j.status === 'fila').map((j: any) => `${j.nome}(${j.posicao_fila})`));
     
     // Buscar fila atual
     const filaAtivaStr = localStorage.getItem('fila_ativa');
     if (!filaAtivaStr) {
-      console.warn('⚠️ Fila ativa não encontrada');
+      console.warn('⚠️ [CONFIRMAR SNAPSHOT] Fila ativa não encontrada');
       return 'erro';
     }
     
     const filaAtual = JSON.parse(filaAtivaStr);
+    console.log('📋 [CONFIRMAR SNAPSHOT] Fila atual:', filaAtual.filter((j: any) => j.status === 'fila').map((j: any) => `${j.nome}(${j.posicao_fila})`));
     
     // Comparar fila atual com snapshot temp
-    const houveAlteracoes = JSON.stringify(snapshotTemp.fila) !== JSON.stringify(filaAtual);
+    const tempString = JSON.stringify(snapshotTemp.fila);
+    const atualString = JSON.stringify(filaAtual);
+    const houveAlteracoes = tempString !== atualString;
+    
+    console.log('🔍 [CONFIRMAR SNAPSHOT] Houve alterações?', houveAlteracoes);
     
     if (houveAlteracoes) {
       // CONFIRMAR: Temp vira oficial (sobrescreve anterior)
-      console.log('✅ Alterações detectadas - Confirmando snapshot');
-      const keyOficial = `fila_snapshot_edicao_${peladaId}`;
+      console.log('✅ [CONFIRMAR SNAPSHOT] Alterações detectadas - Confirmando snapshot');
+      console.log('✅ [CONFIRMAR SNAPSHOT] Salvando em key oficial:', keyOficial);
       localStorage.setItem(keyOficial, snapshotTempStr);
       
       // Deletar temp
       localStorage.removeItem(keyTemp);
+      console.log('🗑️ [CONFIRMAR SNAPSHOT] Temp removido');
       
       return 'confirmado';
       
     } else {
       // DESCARTAR: Remove temp, mantém oficial intacto
-      console.log('🔄 Nenhuma alteração - Descartando snapshot temp (oficial preservado)');
+      console.log('🔄 [CONFIRMAR SNAPSHOT] Nenhuma alteração - Descartando snapshot temp (oficial preservado)');
       localStorage.removeItem(keyTemp);
       
       return 'descartado';
     }
     
   } catch (error) {
-    console.error('❌ Erro ao confirmar/descartar snapshot:', error);
+    console.error('❌ [CONFIRMAR SNAPSHOT] Erro ao confirmar/descartar snapshot:', error);
     return 'erro';
   }
 };
@@ -707,6 +723,8 @@ export const fila_snapshot_confirmar_edicao = (peladaId: string): string => {
  * 
  * Salva o estado atual da fila no momento do MODAL de confirmação.
  * Este é o último momento para capturar a fila ANTES do resultado.
+ * 
+ * IMPORTANTE: Apenas 1 snapshot de partida é mantido por vez (SOBRESCREVE anterior)
  * 
  * @param peladaId - ID da pelada
  * @returns boolean - Sucesso ou falha
@@ -748,7 +766,10 @@ export const fila_snapshot_salvar_partida = (peladaId: string): boolean => {
  * 16. Restaurar snapshot (edição ou partida)
  * 
  * Restaura a fila para o estado do snapshot escolhido.
- * IMPORTANTE: Validação de senha deve ser feita ANTES de chamar esta função.
+ * IMPORTANTE: 
+ * - Validação de senha deve ser feita ANTES de chamar esta função
+ * - O snapshot é APAGADO após restaurar (comportamento "consumir e liberar")
+ * - Isso permite um sistema em cascata: desfaz edição → sobra partida → desfaz partida → fim
  * 
  * @param peladaId - ID da pelada
  * @param tipo - 'edicao' ou 'partida'
@@ -756,44 +777,47 @@ export const fila_snapshot_salvar_partida = (peladaId: string): boolean => {
  */
 export const fila_snapshot_restaurar = (peladaId: string, tipo: 'edicao' | 'partida'): boolean => {
   try {
-    console.log(`🔄 Restaurando snapshot de ${tipo}...`);
+    console.log(`🔄 [RESTAURAR] Restaurando snapshot de ${tipo}...`);
+    console.log(`🔄 [RESTAURAR] peladaId:`, peladaId);
     
     // Buscar snapshot
     const key = `fila_snapshot_${tipo}_${peladaId}`;
+    console.log(`🔄 [RESTAURAR] Buscando key:`, key);
     const snapshotStr = localStorage.getItem(key);
     
     if (!snapshotStr) {
+      console.error(`❌ [RESTAURAR] Snapshot de ${tipo} não encontrado na key: ${key}`);
       alert(`❌ Snapshot de ${tipo} não encontrado!`);
       return false;
     }
     
     const snapshot = JSON.parse(snapshotStr);
+    console.log('📸 [RESTAURAR] Snapshot encontrado, timestamp:', snapshot.timestamp);
+    console.log('📸 [RESTAURAR] Fila no snapshot:', snapshot.fila.filter((j: any) => j.status === 'fila').map((j: any) => `${j.nome}(${j.posicao_fila})`));
     
     // Validar snapshot
     if (!snapshot.fila || snapshot.fila.length === 0) {
+      console.error('❌ [RESTAURAR] Snapshot está vazio!');
       alert('❌ Snapshot está vazio! Não é possível restaurar.');
       return false;
     }
     
-    console.log('📊 Restaurando fila do snapshot:', snapshot.timestamp);
+    console.log('📊 [RESTAURAR] Restaurando fila do snapshot...');
     
     // Restaurar fila
     localStorage.setItem('fila_ativa', JSON.stringify(snapshot.fila));
+    console.log('✅ [RESTAURAR] fila_ativa atualizada');
     
-    // Se for snapshot de partida, limpar após restaurar
-    if (tipo === 'partida') {
-      console.log('🗑️ Limpando snapshot de partida após restauração');
-      localStorage.removeItem(key);
-    }
+    // SEMPRE apagar snapshot após restaurar (tanto edição quanto partida)
+    // Isso libera o próximo snapshot na fila de desfazer
+    console.log(`🗑️ [RESTAURAR] Limpando snapshot de ${tipo} após restauração`);
+    localStorage.removeItem(key);
     
-    // Se for snapshot de edição, manter para futuros desfazer
-    // (será sobrescrito apenas na próxima confirmação de edição)
-    
-    console.log('✅ Fila restaurada com sucesso!');
+    console.log('✅ [RESTAURAR] Fila restaurada com sucesso!');
     return true;
     
   } catch (error) {
-    console.error('❌ Erro ao restaurar snapshot:', error);
+    console.error('❌ [RESTAURAR] Erro ao restaurar snapshot:', error);
     alert('❌ Erro ao restaurar fila!');
     return false;
   }

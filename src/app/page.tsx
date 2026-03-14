@@ -122,62 +122,58 @@ export default function Home() {
 
   const verificarSessaoAtiva = async () => {
     try {
-      const peladaId = buscar_pelada_id();
-      const supabaseUrl = buscar_supabase_url();
-      const supabaseKey = buscar_supabase_anon_key();
+      // Buscar sessão ativa do LOCALSTORAGE (não do banco!)
+      const sessaoAtivaStr = localStorage.getItem('sessao_ativa');
       
-      if (!peladaId || !supabaseUrl || !supabaseKey) {
+      if (!sessaoAtivaStr) {
         setSessaoAtiva(false);
+        setInfoSessao(null);
         return;
       }
 
-      // BANCO DO CLIENTE: buscar sessoes, fila, jogos
-      const supabaseCliente = createClient(supabaseUrl, supabaseKey);
-
-      const { data: sessao, error } = await supabaseCliente
-        .from('sessoes')
-        .select('id, status, created_at')
-        .eq('pelada_id', peladaId)
-        .eq('status', 'ativa')
-        .single();
-
-      if (error || !sessao) {
+      const sessao = JSON.parse(sessaoAtivaStr);
+      
+      // Verificar se a sessão está realmente ativa
+      if (sessao.status !== 'ativa') {
         setSessaoAtiva(false);
         setInfoSessao(null);
-      } else {
-        setSessaoAtiva(true);
-        
-        // Buscar jogadores na fila com status 'fila'
-        const { data: jogadores } = await supabaseCliente
-          .from('fila')
-          .select('id')
-          .eq('sessao_id', sessao.id)
-          .eq('status', 'fila');
-        
-        // Buscar jogos finalizados
-        const { data: jogos } = await supabaseCliente
-          .from('jogos')
-          .select('id, placar_a, placar_b')
-          .eq('sessao_id', sessao.id)
-          .eq('status', 'finalizado');
-        
-        const totalJogadores = jogadores?.length || 0;
-        const totalPartidas = jogos?.length || 0;
-        const totalGols = jogos?.reduce((sum, jogo) => sum + (jogo.placar_a || 0) + (jogo.placar_b || 0), 0) || 0;
-        
-        // Formatar data
-        const dataFormatada = new Date(sessao.created_at).toLocaleDateString('pt-BR', {
-          day: '2-digit',
-          month: '2-digit'
-        });
-        
-        setInfoSessao({
-          data: dataFormatada,
-          jogadores: totalJogadores,
-          partidas: totalPartidas,
-          gols: totalGols
-        });
+        return;
       }
+
+      setSessaoAtiva(true);
+      
+      // Buscar dados do localStorage
+      const filaAtivaStr = localStorage.getItem('fila_ativa');
+      const filaAtiva = filaAtivaStr ? JSON.parse(filaAtivaStr) : [];
+      
+      // Buscar jogos do localStorage usando o ID da sessão
+      const jogosKey = `jogos_${sessao.id}`;
+      const jogosStr = localStorage.getItem(jogosKey);
+      const jogos = jogosStr ? JSON.parse(jogosStr) : [];
+      
+      // Contar jogadores na fila (status 'fila')
+      const totalJogadores = filaAtiva.filter((j: any) => j.status === 'fila').length;
+      
+      // Contar jogos finalizados
+      const totalPartidas = jogos.filter((j: any) => j.status === 'finalizado').length;
+      
+      // Somar gols das partidas finalizadas
+      const totalGols = jogos
+        .filter((j: any) => j.status === 'finalizado')
+        .reduce((sum: number, jogo: any) => sum + (jogo.placar_a || 0) + (jogo.placar_b || 0), 0);
+      
+      // Formatar data
+      const dataFormatada = new Date(sessao.data).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit'
+      });
+      
+      setInfoSessao({
+        data: dataFormatada,
+        jogadores: totalJogadores,
+        partidas: totalPartidas,
+        gols: totalGols
+      });
     } catch (err) {
       console.error('Erro ao verificar sessão:', err);
       setSessaoAtiva(false);
@@ -367,6 +363,36 @@ export default function Home() {
         </button>
       </section>
 
+      {/* Estatísticas Gerais - Apenas Premium */}
+      {plano === 'premium' && (
+        <section className="mb-6">
+          <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl shadow-lg p-6 md:p-8 border border-orange-200 transition-all min-h-[180px] md:min-h-[192px] hover:shadow-xl">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 h-full">
+              {/* Conteúdo Principal */}
+              <div className="flex items-center space-x-4">
+                <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
+                  <span className="text-xl md:text-2xl">📊</span>
+                </div>
+                <div>
+                  <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-1">Estatísticas Gerais</h2>
+                  <p className="text-sm md:text-base text-gray-600">Veja todos os dados da pelada</p>
+                </div>
+              </div>
+              
+              {/* Botão de Ação */}
+              <button
+                onClick={() => navigateTo('resultados')}
+                className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 md:space-x-3 shadow-lg text-sm md:text-base bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white hover:shadow-xl cursor-pointer"
+              >
+                <span>📋</span>
+                <span>Ver Relatório Completo</span>
+                <span className="text-base md:text-lg">→</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Avisos do Sistema */}
       {avisosLista.length > 0 && (
         <section className="mb-6">
@@ -408,36 +434,6 @@ export default function Home() {
                   Quadro de avisos do sistema. No momento não há avisos disponíveis.
                 </p>
               </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Estatísticas Gerais - Apenas Premium */}
-      {plano === 'premium' && (
-        <section className="mb-6">
-          <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl shadow-lg p-6 md:p-8 border border-orange-200 transition-all min-h-[180px] md:min-h-[192px] hover:shadow-xl">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 h-full">
-              {/* Conteúdo Principal */}
-              <div className="flex items-center space-x-4">
-                <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
-                  <span className="text-xl md:text-2xl">📊</span>
-                </div>
-                <div>
-                  <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-1">Estatísticas Gerais</h2>
-                  <p className="text-sm md:text-base text-gray-600">Veja todos os dados da pelada</p>
-                </div>
-              </div>
-              
-              {/* Botão de Ação */}
-              <button
-                onClick={() => navigateTo('resultados')}
-                className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 md:space-x-3 shadow-lg text-sm md:text-base bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white hover:shadow-xl cursor-pointer"
-              >
-                <span>📋</span>
-                <span>Ver Relatório Completo</span>
-                <span className="text-base md:text-lg">→</span>
-              </button>
             </div>
           </div>
         </section>

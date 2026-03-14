@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import { supabase, getClienteSupabase, validarSenhaPelada, jogadoresService } from '../../lib/supabase';
@@ -104,10 +104,15 @@ export default function FilaPage() {
   const [showSelecionarJogadorModal, setShowSelecionarJogadorModal] = useState(false);
   const [posicaoParaAdicionar, setPosicaoParaAdicionar] = useState<number | null>(null);
   
-  // States para confirmar mudança de posição
+  // States para confirmar mudança de posição (ANTIGO - será removido)
   const [showConfirmarMudancaPosicaoModal, setShowConfirmarMudancaPosicaoModal] = useState(false);
   const [jogadorMoverPosicao, setJogadorMoverPosicao] = useState<JogadorFila | null>(null);
   const [posicaoDestino, setPosicaoDestino] = useState<number | null>(null);
+
+  // States para NOVO sistema de edição de fila
+  const [historicoAlteracoes, setHistoricoAlteracoes] = useState<Array<{tipo: 'mover', jogadorId: string, posicaoOrigem: number, posicaoDestino: number}>>([]);
+  const [showConfirmarEdicaoModal, setShowConfirmarEdicaoModal] = useState(false);
+  const [showDesfazerAlteracoesModal, setShowDesfazerAlteracoesModal] = useState(false);
 
   // States para modo de sincronização
   const [modoSincronizacao, setModoSincronizacao] = useState<'tempo_real' | 'local_first'>('tempo_real');
@@ -759,6 +764,35 @@ export default function FilaPage() {
       [jogadorIdReal]: (prev[jogadorIdReal] || 0) + 1
     }));
     
+    // 💾 SALVAR GOL IMEDIATAMENTE NO LOCALSTORAGE
+    const partidaSalva = localStorage.getItem('partida_em_andamento');
+    if (partidaSalva) {
+      const estadoPartida = JSON.parse(partidaSalva);
+      const jogoId = estadoPartida.jogoId;
+      const sessaoId = estadoPartida.sessaoId;
+      
+      // Criar registro do gol
+      const golId = `gol_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const novoGol = {
+        id: golId,
+        jogo_id: jogoId,
+        jogador_id: jogadorIdReal,
+        time: time,
+        created_at: new Date().toISOString()
+      };
+      
+      // Buscar array de gols existente
+      const golsKey = `gols_${sessaoId}`;
+      const golsStr = localStorage.getItem(golsKey);
+      const gols = golsStr ? JSON.parse(golsStr) : [];
+      
+      // Adicionar novo gol
+      gols.push(novoGol);
+      localStorage.setItem(golsKey, JSON.stringify(gols));
+      
+      console.log(`💾 Gol salvo no localStorage: ${golId} (Jogador: ${nomeJogador}, Time: ${time})`);
+    }
+    
     // Adicionar ao histórico usando ID REAL
     setHistoricoAcoes(prev => [...prev, { tipo: 'gol', time, jogadorId: jogadorIdReal }]);
     
@@ -805,6 +839,35 @@ export default function FilaPage() {
       [jogadorIdReal]: (prev[jogadorIdReal] || 0) + 1
     }));
     
+    // 💾 SALVAR ASSISTÊNCIA IMEDIATAMENTE NO LOCALSTORAGE
+    const partidaSalva = localStorage.getItem('partida_em_andamento');
+    if (partidaSalva) {
+      const estadoPartida = JSON.parse(partidaSalva);
+      const jogoId = estadoPartida.jogoId;
+      const sessaoId = estadoPartida.sessaoId;
+      
+      // Criar registro da assistência
+      const assistId = `assist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const novaAssist = {
+        id: assistId,
+        jogo_id: jogoId,
+        jogador_id: jogadorIdReal,
+        time: time,
+        created_at: new Date().toISOString()
+      };
+      
+      // Buscar array de assistências existente
+      const assistenciasKey = `assistencias_${sessaoId}`;
+      const assistenciasStr = localStorage.getItem(assistenciasKey);
+      const assistencias = assistenciasStr ? JSON.parse(assistenciasStr) : [];
+      
+      // Adicionar nova assistência
+      assistencias.push(novaAssist);
+      localStorage.setItem(assistenciasKey, JSON.stringify(assistencias));
+      
+      console.log(`💾 Assistência salva no localStorage: ${assistId} (Jogador: ${nomeJogador}, Time: ${time})`);
+    }
+    
     // Adicionar ao histórico com info do gol
     setHistoricoAcoes(prev => [...prev, { 
       tipo: 'assistencia', 
@@ -841,13 +904,39 @@ export default function FilaPage() {
     
     const ultimaAcao = historicoAcoes[historicoAcoes.length - 1];
     
+    // Obter sessao_id para manipular tabelas localStorage
+    const partidaSalva = localStorage.getItem('partida_em_andamento');
+    let sessaoId = null;
+    if (partidaSalva) {
+      const estadoPartida = JSON.parse(partidaSalva);
+      sessaoId = estadoPartida.sessaoId;
+    }
+    
     // Se a última ação for ASSISTÊNCIA, anular ela E o gol relacionado
     if (ultimaAcao.tipo === 'assistencia') {
-      // Remover assistência do jogador
+      // Remover assistência do jogador (state)
       setAssistenciasJogadores(prev => ({
         ...prev,
         [ultimaAcao.jogadorId]: Math.max(0, (prev[ultimaAcao.jogadorId] || 0) - 1)
       }));
+      
+      // 🗑️ REMOVER ASSISTÊNCIA DA TABELA LOCALSTORAGE
+      if (sessaoId) {
+        const assistenciasKey = `assistencias_${sessaoId}`;
+        const assistenciasStr = localStorage.getItem(assistenciasKey);
+        if (assistenciasStr) {
+          const assistencias = JSON.parse(assistenciasStr);
+          // Remover última assistência do jogador no time específico
+          const index = assistencias.findIndex((a: any) => 
+            a.jogador_id === ultimaAcao.jogadorId && a.time === ultimaAcao.time
+          );
+          if (index !== -1) {
+            const removida = assistencias.splice(index, 1);
+            localStorage.setItem(assistenciasKey, JSON.stringify(assistencias));
+            console.log(`🗑️ VAR: Assistência removida da tabela localStorage:`, removida[0]);
+          }
+        }
+      }
       
       console.log(`🎬 VAR: Assistência anulada - Jogador ${ultimaAcao.jogadorId} do Time ${ultimaAcao.time}`);
       
@@ -872,11 +961,29 @@ export default function FilaPage() {
             });
           }
           
-          // Remover gol do jogador
+          // Remover gol do jogador (state)
           setGolsJogadores(prev => ({
             ...prev,
             [penultimaAcao.jogadorId]: Math.max(0, (prev[penultimaAcao.jogadorId] || 0) - 1)
           }));
+          
+          // 🗑️ REMOVER GOL DA TABELA LOCALSTORAGE
+          if (sessaoId) {
+            const golsKey = `gols_${sessaoId}`;
+            const golsStr = localStorage.getItem(golsKey);
+            if (golsStr) {
+              const gols = JSON.parse(golsStr);
+              // Remover último gol do jogador no time específico
+              const index = gols.findIndex((g: any) => 
+                g.jogador_id === penultimaAcao.jogadorId && g.time === penultimaAcao.time
+              );
+              if (index !== -1) {
+                const removido = gols.splice(index, 1);
+                localStorage.setItem(golsKey, JSON.stringify(gols));
+                console.log(`🗑️ VAR: Gol removido da tabela localStorage:`, removido[0]);
+              }
+            }
+          }
           
           console.log(`🎬 VAR: Gol anulado JUNTO - Jogador ${penultimaAcao.jogadorId} do Time ${penultimaAcao.time}`);
           
@@ -906,11 +1013,29 @@ export default function FilaPage() {
         });
       }
       
-      // Remover gol do jogador
+      // Remover gol do jogador (state)
       setGolsJogadores(prev => ({
         ...prev,
         [ultimaAcao.jogadorId]: Math.max(0, (prev[ultimaAcao.jogadorId] || 0) - 1)
       }));
+      
+      // 🗑️ REMOVER GOL DA TABELA LOCALSTORAGE
+      if (sessaoId) {
+        const golsKey = `gols_${sessaoId}`;
+        const golsStr = localStorage.getItem(golsKey);
+        if (golsStr) {
+          const gols = JSON.parse(golsStr);
+          // Remover último gol do jogador no time específico
+          const index = gols.findIndex((g: any) => 
+            g.jogador_id === ultimaAcao.jogadorId && g.time === ultimaAcao.time
+          );
+          if (index !== -1) {
+            const removido = gols.splice(index, 1);
+            localStorage.setItem(golsKey, JSON.stringify(gols));
+            console.log(`🗑️ VAR: Gol removido da tabela localStorage:`, removido[0]);
+          }
+        }
+      }
       
       // Remover do histórico
       setHistoricoAcoes(prev => prev.slice(0, -1));
@@ -1238,9 +1363,13 @@ export default function FilaPage() {
           });
           
           // Remover duplicatas baseado no ID antes de separar
-          const todosJogadoresFila = todosJogadoresFilaTemp.filter((jogador: any, index: number, self: any[]) => 
-            index === self.findIndex((j: any) => j.id === jogador.id)
-          );
+          const todosJogadoresFila = todosJogadoresFilaTemp
+            .filter((jogador: any, index: number, self: any[]) => 
+              index === self.findIndex((j: any) => j.id === jogador.id)
+            )
+            .sort((a: any, b: any) => a.posicao_fila - b.posicao_fila); // ⚠️ ORDENAR por posição!
+          
+          console.log('🔄 [CARREGAR] Fila ordenada:', todosJogadoresFila.map((j: any) => `${j.nome}(${j.posicao_fila})`));
           
           // Separar jogadores que estão jogando (primeiras posições) dos que estão na fila
           const jogadoresJogando = todosJogadoresFila.filter((_: any, index: number) => index < jogadoresPorTime * 2);
@@ -1338,9 +1467,13 @@ export default function FilaPage() {
           };
         });
         
-        const todosJogadoresFila = todosJogadoresFilaTemp.filter((jogador: JogadorFila, index: number, self: JogadorFila[]) => 
-          index === self.findIndex(j => j.id === jogador.id)
-        );
+        const todosJogadoresFila = todosJogadoresFilaTemp
+          .filter((jogador: JogadorFila, index: number, self: JogadorFila[]) => 
+            index === self.findIndex(j => j.id === jogador.id)
+          )
+          .sort((a: JogadorFila, b: JogadorFila) => a.posicao_fila - b.posicao_fila); // ⚠️ ORDENAR!
+        
+        console.log('🔄 [CARREGAR OFFLINE] Fila ordenada:', todosJogadoresFila.map((j: JogadorFila) => `${j.nome}(${j.posicao_fila})`));
         
         const jogadoresJogando = todosJogadoresFila.filter((_: JogadorFila, index: number) => index < regras.jogadores_por_time * 2);
         const jogadoresFila = todosJogadoresFila.filter((_: JogadorFila, index: number) => index >= regras.jogadores_por_time * 2);
@@ -1428,9 +1561,13 @@ export default function FilaPage() {
       });
       
       // Remover duplicatas baseado no ID antes de separar
-      const todosJogadoresFila = todosJogadoresFilaTemp.filter((jogador, index, self) => 
-        index === self.findIndex(j => j.id === jogador.id)
-      );
+      const todosJogadoresFila = todosJogadoresFilaTemp
+        .filter((jogador, index, self) => 
+          index === self.findIndex(j => j.id === jogador.id)
+        )
+        .sort((a, b) => a.posicao_fila - b.posicao_fila); // ⚠️ ORDENAR!
+      
+      console.log('🔄 [CARREGAR GERAL] Fila ordenada:', todosJogadoresFila.map(j => `${j.nome}(${j.posicao_fila})`));
       
       // Separar jogadores que estão jogando (primeiras posições) dos que estão na fila
       const jogadoresJogando = todosJogadoresFila.filter((_, index) => index < regras.jogadores_por_time * 2);
@@ -2049,10 +2186,10 @@ export default function FilaPage() {
 
   const abrirModalDesfazer = async () => {
     try {
-      console.log('🔍 ABRINDO MODAL DESFAZER...');
+      console.log('🔍 [MODAL DESFAZER] ABRINDO MODAL DESFAZER...');
       
       const peladaId = buscar_pelada_id();
-      console.log('📋 PeladaId:', peladaId);
+      console.log('📋 [MODAL DESFAZER] PeladaId:', peladaId);
       
       if (!peladaId) {
         alert('❌ Usuário não encontrado!');
@@ -2063,39 +2200,68 @@ export default function FilaPage() {
       const keyEdicao = `fila_snapshot_edicao_${peladaId}`;
       const keyPartida = `fila_snapshot_partida_${peladaId}`;
       
-      console.log('🔑 Buscando keys:', { keyEdicao, keyPartida });
+      console.log('🔑 [MODAL DESFAZER] Buscando keys:', { keyEdicao, keyPartida });
       
       const snapshotEdicao = localStorage.getItem(keyEdicao);
       const snapshotPartida = localStorage.getItem(keyPartida);
       
-      console.log('📸 Snapshots encontrados:', {
+      console.log('📸 [MODAL DESFAZER] Snapshots encontrados:', {
         edicao: snapshotEdicao ? 'SIM' : 'NÃO',
         partida: snapshotPartida ? 'SIM' : 'NÃO'
       });
+      
+      if (snapshotEdicao) {
+        const dados = JSON.parse(snapshotEdicao);
+        console.log('📸 [MODAL DESFAZER] Snapshot edição timestamp:', dados.timestamp);
+        console.log('📸 [MODAL DESFAZER] Snapshot edição fila:', dados.fila.filter((j: any) => j.status === 'fila').map((j: any) => `${j.nome}(${j.posicao_fila})`));
+      }
+      
+      if (snapshotPartida) {
+        const dados = JSON.parse(snapshotPartida);
+        console.log('📸 [MODAL DESFAZER] Snapshot partida timestamp:', dados.timestamp);
+        console.log('📸 [MODAL DESFAZER] Snapshot partida fila:', dados.fila.filter((j: any) => j.status === 'fila').map((j: any) => `${j.nome}(${j.posicao_fila})`));
+      }
 
       if (!snapshotEdicao && !snapshotPartida) {
-        console.warn('⚠️ Nenhum snapshot encontrado no localStorage');
+        console.warn('⚠️ [MODAL DESFAZER] Nenhum snapshot encontrado no localStorage');
         alert('❌ Não há ações para desfazer.\n\nEsta funcionalidade só funciona após iniciar uma partida ou fazer edições na fila.');
         return;
       }
 
-      // Priorizar snapshot de partida (mais recente geralmente)
+      // Comparar timestamps para decidir qual é mais recente
       let tipoSnapshot: 'partida' | 'edicao' = 'edicao';
       
-      if (snapshotPartida) {
+      if (snapshotEdicao && snapshotPartida) {
+        // Ambos existem - comparar timestamps
+        const dadosEdicao = JSON.parse(snapshotEdicao);
+        const dadosPartida = JSON.parse(snapshotPartida);
+        
+        const timestampEdicao = new Date(dadosEdicao.timestamp).getTime();
+        const timestampPartida = new Date(dadosPartida.timestamp).getTime();
+        
+        console.log('🕐 [MODAL DESFAZER] Comparando timestamps:', {
+          edicao: dadosEdicao.timestamp,
+          partida: dadosPartida.timestamp,
+          maisRecente: timestampEdicao > timestampPartida ? 'EDIÇÃO' : 'PARTIDA'
+        });
+        
+        // Priorizar o mais recente
+        tipoSnapshot = timestampEdicao > timestampPartida ? 'edicao' : 'partida';
+        
+      } else if (snapshotPartida) {
         tipoSnapshot = 'partida';
       } else if (snapshotEdicao) {
         tipoSnapshot = 'edicao';
       }
 
-      console.log('✅ Snapshot encontrado, tipo:', tipoSnapshot);
+      console.log('✅ [MODAL DESFAZER] Snapshot selecionado, tipo:', tipoSnapshot);
       setTipoAcaoDesfazer(tipoSnapshot);
       
       // Abrir modal informativo
       setShowDesfazerModal(true);
 
     } catch (error: any) {
-      console.error('❌ Erro ao buscar opções de desfazer:', error);
+      console.error('❌ [MODAL DESFAZER] Erro ao buscar opções de desfazer:', error);
       alert(`❌ Erro: ${error.message || 'Erro desconhecido'}`);
     }
   };
@@ -2715,10 +2881,78 @@ export default function FilaPage() {
   
   const handleRemover = (jogador: JogadorFila) => {
     fila_remover(jogador, regras, setJogadoresJogando, setJogadoresFila, setJogadoresReserva);
+    
+    // Se estiver em modo edição, atualizar também os estados locais
+    if (modoEdicao) {
+      const listaCompleta = [...localJogadoresJogando, ...localJogadoresFila];
+      const listaAtualizada = listaCompleta.filter(j => j.id !== jogador.id);
+      
+      // Reordenar posições
+      const listaReordenada = listaAtualizada.map((j, index) => ({
+        ...j,
+        posicao_fila: index + 1
+      }));
+      
+      // Separar novamente
+      const jogadoresPorTime = regras.jogadores_por_time || 5;
+      setLocalJogadoresJogando(listaReordenada.slice(0, jogadoresPorTime * 2));
+      setLocalJogadoresFila(listaReordenada.slice(jogadoresPorTime * 2));
+      
+      // Registrar no histórico para poder desfazer
+      setHistoricoAlteracoes(prev => [...prev, {
+        jogador_id: jogador.id,
+        jogador_nome: jogador.nome,
+        posicao_origem: jogador.posicao_fila,
+        posicao_destino: 999, // Removido = reserva
+        tipo: 'remover'
+      }]);
+      
+      // Marcar que há alterações pendentes
+      setHasLocalChanges(true);
+      
+      console.log(`✅ [MODO EDIÇÃO] ${jogador.nome} removido dos estados locais`);
+    }
   };
 
   const handleAdicionar = (jogador: JogadorFila) => {
     fila_adicionar(jogador, regras, setJogadoresJogando, setJogadoresFila, setJogadoresReserva);
+    
+    // Se estiver em modo edição, atualizar também os estados locais
+    if (modoEdicao) {
+      const listaCompleta = [...localJogadoresJogando, ...localJogadoresFila];
+      const proximaPosicao = listaCompleta.length + 1;
+      
+      const jogadorAtualizado = {
+        ...jogador,
+        status: 'fila' as const,
+        posicao_fila: proximaPosicao
+      };
+      
+      // Adicionar ao final da fila local
+      const novaListaCompleta = [...listaCompleta, jogadorAtualizado];
+      
+      // Separar novamente
+      const jogadoresPorTime = regras.jogadores_por_time || 5;
+      setLocalJogadoresJogando(novaListaCompleta.slice(0, jogadoresPorTime * 2));
+      setLocalJogadoresFila(novaListaCompleta.slice(jogadoresPorTime * 2));
+      
+      // Remover da reserva local também
+      setJogadoresReserva(prev => prev.filter(j => j.id !== jogador.id));
+      
+      // Registrar no histórico para poder desfazer
+      setHistoricoAlteracoes(prev => [...prev, {
+        jogador_id: jogador.id,
+        jogador_nome: jogador.nome,
+        posicao_origem: 999, // Origem = reserva
+        posicao_destino: proximaPosicao,
+        tipo: 'adicionar'
+      }]);
+      
+      // Marcar que há alterações pendentes
+      setHasLocalChanges(true);
+      
+      console.log(`✅ [MODO EDIÇÃO] ${jogador.nome} adicionado aos estados locais na posição ${proximaPosicao}`);
+    }
   };
 
   const handleMover = (jogador: JogadorFila, novaPosicao: number) => {
@@ -2916,6 +3150,7 @@ export default function FilaPage() {
           nome: 'VERDE'
         },
         historico: [],
+        substituicoes: [], // 🔄 Histórico de substituições durante a partida
         vitoriaConsecutiva: vitoriasConsecutivasAtual,
         regrasEmpate: {
           empate_modo: regrasData?.regra_empate || null,
@@ -3262,6 +3497,542 @@ export default function FilaPage() {
     }
   };
 
+  // ========== NOVAS FUNÇÕES DE EDIÇÃO SIMPLIFICADA ==========
+  
+  // Subir jogador 1 posição na fila
+  const subirJogador = () => {
+    console.log('⬆️ [SUBIR] Função chamada');
+    
+    if (!jogadorSelecionadoTroca) {
+      console.log('⚠️ [SUBIR] Nenhum jogador selecionado');
+      return;
+    }
+    
+    const posicaoAtual = jogadorSelecionadoTroca.posicao_fila;
+    console.log(`⬆️ [SUBIR] Jogador: ${jogadorSelecionadoTroca.nome}, Posição atual: ${posicaoAtual}`);
+    
+    if (posicaoAtual === 1) {
+      console.log('⚠️ [SUBIR] Jogador já está no topo');
+      return; // Já está no topo
+    }
+    
+    const novaPosicao = posicaoAtual - 1;
+    console.log(`⬆️ [SUBIR] Nova posição será: ${novaPosicao}`);
+    
+    // Combinar listas
+    const jogandoAtual = hasLocalChanges ? localJogadoresJogando : jogadoresJogando;
+    const filaAtual = hasLocalChanges ? localJogadoresFila : jogadoresFila;
+    const listaCompleta = [...jogandoAtual, ...filaAtual];
+    
+    console.log(`⬆️ [SUBIR] Lista completa tem ${listaCompleta.length} jogadores`);
+    console.log(`⬆️ [SUBIR] hasLocalChanges: ${hasLocalChanges}`);
+    
+    // Encontrar jogadores envolvidos
+    const jogadorAtual = listaCompleta.find(j => j.id === jogadorSelecionadoTroca.id);
+    const jogadorAcima = listaCompleta.find(j => j.posicao_fila === novaPosicao);
+    
+    if (!jogadorAtual || !jogadorAcima) {
+      console.log('⚠️ [SUBIR] Jogadores não encontrados:', { jogadorAtual: !!jogadorAtual, jogadorAcima: !!jogadorAcima });
+      return;
+    }
+    
+    console.log(`⬆️ [SUBIR] Trocando: ${jogadorAtual.nome}(${posicaoAtual}) ↔ ${jogadorAcima.nome}(${novaPosicao})`);
+    
+    // Trocar posições - CRIAR NOVOS OBJETOS (imutabilidade para React detectar)
+    const listaAtualizada = listaCompleta.map(j => {
+      if (j.id === jogadorAtual.id) {
+        return { ...j, posicao_fila: novaPosicao };
+      } else if (j.id === jogadorAcima.id) {
+        return { ...j, posicao_fila: posicaoAtual };
+      }
+      return { ...j }; // Criar cópia mesmo dos que não mudaram
+    });
+    
+    console.log('⬆️ [SUBIR] Lista atualizada (novos objetos criados)');
+    
+    // Reordenar lista
+    const listaOrdenada = listaAtualizada.sort((a, b) => a.posicao_fila - b.posicao_fila);
+    
+    // Separar novamente
+    const novosJogando = listaOrdenada.filter((_, index) => index < regras.jogadores_por_time * 2);
+    const novaFila = listaOrdenada.filter((_, index) => index >= regras.jogadores_por_time * 2);
+    
+    console.log(`⬆️ [SUBIR] Após reordenar: ${novosJogando.length} jogando, ${novaFila.length} em fila`);
+    
+    // Atualizar estados
+    setLocalJogadoresJogando(novosJogando);
+    setLocalJogadoresFila(novaFila);
+    setHasLocalChanges(true);
+    
+    console.log('⬆️ [SUBIR] Estados atualizados, hasLocalChanges = true');
+    
+    // Adicionar ao histórico - APENAS a primeira vez que move o jogador
+    const alteracaoExistente = historicoAlteracoes.find(a => a.jogadorId === jogadorSelecionadoTroca.id);
+    if (!alteracaoExistente) {
+      // Primeira movimentação deste jogador - salvar posição original
+      console.log(`⬆️ [SUBIR] Primeira movimentação de ${jogadorSelecionadoTroca.nome}, adicionando ao histórico`);
+      setHistoricoAlteracoes([...historicoAlteracoes, {
+        tipo: 'mover',
+        jogadorId: jogadorSelecionadoTroca.id,
+        posicaoOrigem: posicaoAtual, // Posição ANTES do movimento
+        posicaoDestino: novaPosicao
+      }]);
+    } else {
+      // Já existe - apenas atualizar destino, manter origem
+      console.log(`⬆️ [SUBIR] Atualizando destino no histórico: ${alteracaoExistente.posicaoOrigem} → ${novaPosicao}`);
+      const novoHistorico = historicoAlteracoes.map(a => 
+        a.jogadorId === jogadorSelecionadoTroca.id 
+          ? { ...a, posicaoDestino: novaPosicao } 
+          : a
+      );
+      setHistoricoAlteracoes(novoHistorico);
+    }
+    
+    // Atualizar jogador selecionado com referência da lista ordenada
+    const jogadorAtualizado = listaOrdenada.find(j => j.id === jogadorSelecionadoTroca.id);
+    if (jogadorAtualizado) {
+      setJogadorSelecionadoTroca(jogadorAtualizado);
+      console.log(`⬆️ [SUBIR] Jogador selecionado atualizado para posição ${jogadorAtualizado.posicao_fila}`);
+    }
+    
+    console.log(`✅ [SUBIR] Concluído: ${jogadorAtual.nome} de ${posicaoAtual} para ${novaPosicao}`);
+  };
+
+  // Descer jogador 1 posição na fila
+  const descerJogador = () => {
+    if (!jogadorSelecionadoTroca) return;
+    
+    const jogandoAtual = hasLocalChanges ? localJogadoresJogando : jogadoresJogando;
+    const filaAtual = hasLocalChanges ? localJogadoresFila : jogadoresFila;
+    const listaCompleta = [...jogandoAtual, ...filaAtual];
+    
+    const posicaoAtual = jogadorSelecionadoTroca.posicao_fila;
+    if (posicaoAtual === listaCompleta.length) return; // Já está no final
+    
+    const novaPosicao = posicaoAtual + 1;
+    
+    // Encontrar jogadores envolvidos
+    const jogadorAtual = listaCompleta.find(j => j.id === jogadorSelecionadoTroca.id);
+    const jogadorAbaixo = listaCompleta.find(j => j.posicao_fila === novaPosicao);
+    
+    if (!jogadorAtual || !jogadorAbaixo) {
+      console.log('⚠️ [DESCER] Jogadores não encontrados:', { jogadorAtual: !!jogadorAtual, jogadorAbaixo: !!jogadorAbaixo });
+      return;
+    }
+    
+    console.log(`⬇️ [DESCER] Trocando: ${jogadorAtual.nome}(${posicaoAtual}) ↔ ${jogadorAbaixo.nome}(${novaPosicao})`);
+    
+    // Trocar posições - CRIAR NOVOS OBJETOS (imutabilidade para React detectar)
+    const listaAtualizada = listaCompleta.map(j => {
+      if (j.id === jogadorAtual.id) {
+        return { ...j, posicao_fila: novaPosicao };
+      } else if (j.id === jogadorAbaixo.id) {
+        return { ...j, posicao_fila: posicaoAtual };
+      }
+      return { ...j }; // Criar cópia mesmo dos que não mudaram
+    });
+    
+    console.log('⬇️ [DESCER] Lista atualizada (novos objetos criados)');
+    
+    // Reordenar lista
+    const listaOrdenada = listaAtualizada.sort((a, b) => a.posicao_fila - b.posicao_fila);
+    
+    // Separar novamente
+    const novosJogando = listaOrdenada.filter((_, index) => index < regras.jogadores_por_time * 2);
+    const novaFila = listaOrdenada.filter((_, index) => index >= regras.jogadores_por_time * 2);
+    
+    // Atualizar estados
+    setLocalJogadoresJogando(novosJogando);
+    setLocalJogadoresFila(novaFila);
+    setHasLocalChanges(true);
+    
+    // Adicionar ao histórico - APENAS a primeira vez que move o jogador
+    const alteracaoExistente = historicoAlteracoes.find(a => a.jogadorId === jogadorSelecionadoTroca.id);
+    if (!alteracaoExistente) {
+      // Primeira movimentação deste jogador - salvar posição original
+      setHistoricoAlteracoes([...historicoAlteracoes, {
+        tipo: 'mover',
+        jogadorId: jogadorSelecionadoTroca.id,
+        posicaoOrigem: posicaoAtual, // Posição ANTES do movimento
+        posicaoDestino: novaPosicao
+      }]);
+    } else {
+      // Já existe - apenas atualizar destino, manter origem
+      const novoHistorico = historicoAlteracoes.map(a => 
+        a.jogadorId === jogadorSelecionadoTroca.id 
+          ? { ...a, posicaoDestino: novaPosicao } 
+          : a
+      );
+      setHistoricoAlteracoes(novoHistorico);
+    }
+    
+    // Atualizar jogador selecionado com referência da lista ordenada
+    const jogadorAtualizado = listaOrdenada.find(j => j.id === jogadorSelecionadoTroca.id);
+    if (jogadorAtualizado) {
+      setJogadorSelecionadoTroca(jogadorAtualizado);
+    }
+    
+    console.log(`⬇️ Jogador desceu: ${jogadorAtual.nome} de ${posicaoAtual} para ${novaPosicao}`);
+  };
+
+  // Desfazer última alteração
+  const desfazerUltimaAlteracao = () => {
+    console.log('↩️ [DESFAZER] Função chamada');
+    console.log(`↩️ [DESFAZER] Histórico tem ${historicoAlteracoes.length} alterações`);
+    
+    if (historicoAlteracoes.length === 0) {
+      console.log('⚠️ [DESFAZER] Nenhuma alteração para desfazer');
+      return;
+    }
+    
+    const ultimaAlteracao = historicoAlteracoes[historicoAlteracoes.length - 1];
+    console.log('↩️ [DESFAZER] Última alteração:', ultimaAlteracao);
+    
+    // Combinar listas
+    const jogandoAtual = localJogadoresJogando.length > 0 ? localJogadoresJogando : jogadoresJogando;
+    const filaAtual = localJogadoresFila.length > 0 ? localJogadoresFila : jogadoresFila;
+    
+    // Verificar tipo de alteração
+    if (ultimaAlteracao.tipo === 'adicionar') {
+      // Desfazer adição = remover jogador da fila e voltar para reserva
+      console.log(`↩️ [DESFAZER] Desfazendo adição de ${ultimaAlteracao.jogador_nome}`);
+      
+      const listaCompleta = [...jogandoAtual, ...filaAtual];
+      const listaAtualizada = listaCompleta.filter(j => j.id !== ultimaAlteracao.jogador_id);
+      
+      // Reordenar posições
+      const listaReordenada = listaAtualizada.map((j, index) => ({
+        ...j,
+        posicao_fila: index + 1
+      }));
+      
+      // Separar novamente
+      setLocalJogadoresJogando(listaReordenada.slice(0, regras.jogadores_por_time * 2));
+      setLocalJogadoresFila(listaReordenada.slice(regras.jogadores_por_time * 2));
+      
+      // Voltar jogador para reserva - buscar da fila_ativa
+      const filaLocal = localStorage.getItem('fila_ativa');
+      if (filaLocal) {
+        const fila = JSON.parse(filaLocal);
+        const jogadorOriginal = fila.find((item: any) => item.id === ultimaAlteracao.jogador_id);
+        if (jogadorOriginal) {
+          setJogadoresReserva(prev => [...prev, {
+            id: jogadorOriginal.id,
+            nome: jogadorOriginal.nome,
+            nivel: jogadorOriginal.nivel || 3,
+            posicao_fila: 999,
+            status: 'reserva' as const
+          }]);
+        }
+      }
+      
+      console.log(`✅ [DESFAZER] ${ultimaAlteracao.jogador_nome} voltou para reserva`);
+      
+    } else if (ultimaAlteracao.tipo === 'remover') {
+      // Desfazer remoção = adicionar jogador de volta na posição original
+      console.log(`↩️ [DESFAZER] Desfazendo remoção de ${ultimaAlteracao.jogador_nome}`);
+      
+      const listaCompleta = [...jogandoAtual, ...filaAtual];
+      
+      // Buscar jogador da reserva
+      const jogadorReserva = jogadoresReserva.find(j => j.id === ultimaAlteracao.jogador_id);
+      if (jogadorReserva) {
+        const jogadorAtualizado = {
+          ...jogadorReserva,
+          status: 'fila' as const,
+          posicao_fila: ultimaAlteracao.posicao_origem
+        };
+        
+        // Adicionar de volta na posição original
+        const novaLista = [...listaCompleta, jogadorAtualizado].sort((a, b) => a.posicao_fila - b.posicao_fila);
+        
+        // Reordenar todas as posições
+        const listaReordenada = novaLista.map((j, index) => ({
+          ...j,
+          posicao_fila: index + 1
+        }));
+        
+        // Separar novamente
+        setLocalJogadoresJogando(listaReordenada.slice(0, regras.jogadores_por_time * 2));
+        setLocalJogadoresFila(listaReordenada.slice(regras.jogadores_por_time * 2));
+        
+        // Remover da reserva
+        setJogadoresReserva(prev => prev.filter(j => j.id !== ultimaAlteracao.jogador_id));
+        
+        console.log(`✅ [DESFAZER] ${ultimaAlteracao.jogador_nome} voltou para fila na posição ${ultimaAlteracao.posicao_origem}`);
+      }
+      
+    } else {
+      // Desfazer movimento (lógica original)
+      const listaCompleta = [...jogandoAtual, ...filaAtual];
+      console.log(`↩️ [DESFAZER] Lista completa: ${listaCompleta.length} jogadores`);
+      
+      // Encontrar jogador e restaurar posição original
+      const jogador = listaCompleta.find(j => j.id === ultimaAlteracao.jogadorId);
+      if (!jogador) {
+        console.log('❌ [DESFAZER] Jogador não encontrado:', ultimaAlteracao.jogadorId);
+        return;
+      }
+      
+      // Mover jogador de volta para posição de origem
+      const posicaoAtual = jogador.posicao_fila;
+      const posicaoOrigem = ultimaAlteracao.posicaoOrigem;
+      
+      console.log(`↩️ [DESFAZER] Voltando ${jogador.nome}: ${posicaoAtual} → ${posicaoOrigem}`);
+      
+      // Reorganizar todos os jogadores entre origem e destino
+      const listaAtualizada = listaCompleta.map(j => {
+        if (j.id === jogador.id) {
+          console.log(`↩️ [DESFAZER] Restaurando ${j.nome} para posição ${posicaoOrigem}`);
+          return { ...j, posicao_fila: posicaoOrigem };
+        } else if (posicaoOrigem < posicaoAtual) {
+          // Jogador subiu, então outros que estavam acima voltam para baixo
+          if (j.posicao_fila >= posicaoOrigem && j.posicao_fila < posicaoAtual) {
+            console.log(`↩️ [DESFAZER] Empurrando ${j.nome} para baixo: ${j.posicao_fila} → ${j.posicao_fila + 1}`);
+            return { ...j, posicao_fila: j.posicao_fila + 1 };
+          }
+        } else {
+          // Jogador desceu, então outros que estavam abaixo voltam para cima
+          if (j.posicao_fila > posicaoAtual && j.posicao_fila <= posicaoOrigem) {
+            console.log(`↩️ [DESFAZER] Puxando ${j.nome} para cima: ${j.posicao_fila} → ${j.posicao_fila - 1}`);
+            return { ...j, posicao_fila: j.posicao_fila - 1 };
+          }
+        }
+        return j;
+      });
+      
+      // Reordenar lista
+      const listaOrdenada = listaAtualizada.sort((a, b) => a.posicao_fila - b.posicao_fila);
+      console.log('↩️ [DESFAZER] Lista reordenada:', listaOrdenada.map(j => `${j.nome}(${j.posicao_fila})`));
+      
+      // Separar novamente
+      const novosJogando = listaOrdenada.filter((_, index) => index < regras.jogadores_por_time * 2);
+      const novaFila = listaOrdenada.filter((_, index) => index >= regras.jogadores_por_time * 2);
+      
+      console.log(`↩️ [DESFAZER] Após separar: ${novosJogando.length} jogando, ${novaFila.length} em fila`);
+      
+      // Atualizar estados com nova ordem
+      setLocalJogadoresJogando(novosJogando);
+      setLocalJogadoresFila(novaFila);
+      
+      // Atualizar jogador selecionado com dados atualizados da lista
+      if (jogadorSelecionadoTroca?.id === jogador.id) {
+        const jogadorAtualizado = listaOrdenada.find(j => j.id === jogador.id);
+        if (jogadorAtualizado) {
+          setJogadorSelecionadoTroca(jogadorAtualizado);
+          console.log(`↩️ [DESFAZER] Jogador selecionado atualizado para posição ${jogadorAtualizado.posicao_fila}`);
+        }
+      }
+    }
+    
+    // Remover última alteração do histórico ANTES de atualizar estados
+    const novoHistorico = historicoAlteracoes.slice(0, -1);
+    setHistoricoAlteracoes(novoHistorico);
+    console.log(`↩️ [DESFAZER] Histórico atualizado: ${novoHistorico.length} alterações restantes`);
+    
+    // Se não há mais alterações, resetar hasLocalChanges
+    if (novoHistorico.length === 0) {
+      console.log('↩️ [DESFAZER] Sem mais alterações, resetando tudo');
+      setHasLocalChanges(false);
+      setLocalJogadoresJogando([]);
+      setLocalJogadoresFila([]);
+      setJogadorSelecionadoTroca(null);
+    } else {
+      setHasLocalChanges(true);
+    }
+    
+    console.log(`✅ [DESFAZER] Concluído`);
+  };
+
+  // Confirmar edição e salvar
+  const confirmarEdicaoFila = async () => {
+    console.log('🔍 [CONFIRMAR] Iniciando confirmação de edição...');
+    console.log('🔍 [CONFIRMAR] hasLocalChanges:', hasLocalChanges);
+    console.log('🔍 [CONFIRMAR] historicoAlteracoes.length:', historicoAlteracoes.length);
+    
+    if (!hasLocalChanges || historicoAlteracoes.length === 0) {
+      // Sem alterações, apenas fechar modo edição
+      console.log('⚠️ [CONFIRMAR] Sem alterações para salvar, fechando modo edição');
+      
+      // Descartar snapshot temp sem confirmar
+      console.log('📸 Descartando snapshot temp (nenhuma alteração)...');
+      const resultadoSnapshot = fila_snapshot_confirmar_edicao(peladaId);
+      console.log('📸 Resultado:', resultadoSnapshot); // Deve retornar 'descartado'
+      
+      setModoEdicao(false);
+      setJogadorSelecionadoTroca(null);
+      return;
+    }
+    
+    console.log('💾 [CONFIRMAR] Confirmando edição da fila...');
+    const peladaId = buscar_pelada_id();
+    const planoUsuario = buscar_plano();
+    console.log('🔍 [CONFIRMAR] peladaId:', peladaId);
+    console.log('🔍 [CONFIRMAR] planoUsuario:', planoUsuario);
+    
+    if (!peladaId) {
+      console.error('❌ [CONFIRMAR] peladaId não encontrado!');
+      return;
+    }
+    
+    try {
+      // Combinar jogadores ativos (jogando + fila) E REORDENAR
+      const listaCompleta = [...localJogadoresJogando, ...localJogadoresFila]
+        .sort((a, b) => a.posicao_fila - b.posicao_fila);
+      
+      console.log('📝 [CONFIRMAR] Lista completa ORDENADA para salvar:', {
+        total: listaCompleta.length,
+        jogadores: listaCompleta.map((j, i) => `${i + 1}-${j.nome}(pos:${j.posicao_fila})`)
+      });
+      
+      // === TODOS OS PLANOS: Salvar no localStorage (sync com Supabase só ao encerrar pelada) ===
+      console.log('💾 Salvando alterações no localStorage...');
+      
+      const filaLocal = localStorage.getItem('fila_ativa');
+      
+      if (!filaLocal) {
+        console.error('❌ fila_ativa não encontrada!');
+        alert('Erro: Fila não encontrada no armazenamento local');
+        return;
+      }
+      
+      const filaData = JSON.parse(filaLocal);
+      console.log('📦 Fila atual:', filaData.length, 'jogadores');
+      
+      // Atualizar posições na fila
+      const filaAtualizada = filaData.map((item: any) => {
+        const indice = listaCompleta.findIndex(j => j.id === item.id || j.nome === item.nome);
+        
+        if (indice !== -1) {
+          return {
+            ...item,
+            posicao_fila: indice + 1,
+            status: 'fila'
+          };
+        } else {
+          return {
+            ...item,
+            posicao_fila: 999,
+            status: 'reserva'
+          };
+        }
+      });
+      
+      localStorage.setItem('fila_ativa', JSON.stringify(filaAtualizada));
+      console.log('✅ Alterações salvas no localStorage!');
+      
+      // 🔄 REGISTRAR SUBSTITUIÇÕES SE HOUVER PARTIDA EM ANDAMENTO
+      const partidaSalva = localStorage.getItem('partida_em_andamento');
+      if (partidaSalva && (modoPartida || modoPrancheta)) {
+        const estadoPartida = JSON.parse(partidaSalva);
+        const jogadoresPorTime = regras.jogadores_por_time;
+        
+        // Times ANTES da edição
+        const timeAAntes = estadoPartida.timeA?.jogadores || [];
+        const timeBAntes = estadoPartida.timeB?.jogadores || [];
+        
+        // Times DEPOIS da edição (baseado na nova ordem da fila)
+        const timeADepois = listaCompleta.slice(0, jogadoresPorTime);
+        const timeBDepois = listaCompleta.slice(jogadoresPorTime, jogadoresPorTime * 2);
+        
+        console.log('🔄 [SUBSTITUIÇÕES] Detectando mudanças nos times...');
+        console.log('  Time A antes:', timeAAntes.map((j: any) => j.nome));
+        console.log('  Time A depois:', timeADepois.map(j => j.nome));
+        console.log('  Time B antes:', timeBAntes.map((j: any) => j.nome));
+        console.log('  Time B depois:', timeBDepois.map(j => j.nome));
+        
+        const substituicoesArray = estadoPartida.substituicoes || [];
+        const momento = cronometro ? `${Math.floor(cronometro / 60)}:${String(cronometro % 60).padStart(2, '0')}` : '00:00';
+        
+        // Detectar substituições no Time A
+        timeAAntes.forEach((jogadorAntes: any) => {
+          const aindaNoTime = timeADepois.find(j => j.id === jogadorAntes.id || j.nome === jogadorAntes.nome);
+          if (!aindaNoTime) {
+            // Jogador SAIU do Time A
+            const jogadorNovo = timeADepois.find(j => !timeAAntes.find((ja: any) => ja.id === j.id || ja.nome === j.nome));
+            if (jogadorNovo) {
+              substituicoesArray.push({
+                jogador_saiu_id: jogadorAntes.id,
+                jogador_saiu_nome: jogadorAntes.nome,
+                jogador_entrou_id: jogadorNovo.id,
+                jogador_entrou_nome: jogadorNovo.nome,
+                time: 'A',
+                momento: momento,
+                timestamp: new Date().toISOString()
+              });
+              console.log(`🔄 Substituição detectada no Time A: ${jogadorAntes.nome} → ${jogadorNovo.nome}`);
+            }
+          }
+        });
+        
+        // Detectar substituições no Time B
+        timeBAntes.forEach((jogadorAntes: any) => {
+          const aindaNoTime = timeBDepois.find(j => j.id === jogadorAntes.id || j.nome === jogadorAntes.nome);
+          if (!aindaNoTime) {
+            // Jogador SAIU do Time B
+            const jogadorNovo = timeBDepois.find(j => !timeBAntes.find((ja: any) => ja.id === j.id || ja.nome === j.nome));
+            if (jogadorNovo) {
+              substituicoesArray.push({
+                jogador_saiu_id: jogadorAntes.id,
+                jogador_saiu_nome: jogadorAntes.nome,
+                jogador_entrou_id: jogadorNovo.id,
+                jogador_entrou_nome: jogadorNovo.nome,
+                time: 'B',
+                momento: momento,
+                timestamp: new Date().toISOString()
+              });
+              console.log(`🔄 Substituição detectada no Time B: ${jogadorAntes.nome} → ${jogadorNovo.nome}`);
+            }
+          }
+        });
+        
+        // Atualizar times e substituições no estado da partida
+        estadoPartida.timeA.jogadores = timeADepois;
+        estadoPartida.timeB.jogadores = timeBDepois;
+        estadoPartida.substituicoes = substituicoesArray;
+        
+        localStorage.setItem('partida_em_andamento', JSON.stringify(estadoPartida));
+        console.log(`✅ [SUBSTITUIÇÕES] ${substituicoesArray.length} substituição(ões) registrada(s)`);
+      }
+      
+      // Confirmar snapshot de edição (temp vira oficial)
+      console.log('📸 Confirmando snapshot de edição...');
+      const resultadoSnapshot = fila_snapshot_confirmar_edicao(peladaId);
+      console.log('📸 Resultado snapshot:', resultadoSnapshot);
+      
+      console.log('🔄 [CONFIRMAR] Recarregando dados...');
+      // Recarregar dados do banco/localStorage
+      await carregarDados();
+      console.log('✅ [CONFIRMAR] Dados recarregados!');
+      
+      // Limpar histórico e estados locais
+      console.log('🧹 [CONFIRMAR] Limpando estados locais...');
+      setHistoricoAlteracoes([]);
+      setHasLocalChanges(false);
+      setLocalJogadoresJogando([]);
+      setLocalJogadoresFila([]);
+      setModoEdicao(false);
+      setJogadorSelecionadoTroca(null);
+      
+      console.log('✅ [CONFIRMAR] Edição confirmada e salva com sucesso!');
+    } catch (error) {
+      console.error('❌ [CONFIRMAR] Erro ao confirmar edição:', error);
+      alert('Erro ao salvar alterações da fila');
+    }
+  };
+
+  // Cancelar edição e descartar alterações
+  const cancelarEdicaoFila = () => {
+    // Resetar todas as alterações
+    setLocalJogadoresJogando([]);
+    setLocalJogadoresFila([]);
+    setHasLocalChanges(false);
+    setHistoricoAlteracoes([]);
+    setJogadorSelecionadoTroca(null);
+    // Não fechar modo edição, apenas resetar
+    console.log('↩️ Alterações descartadas, fila restaurada');
+  };
+
   const salvarMudancasEFecharModal = async () => {
     if (hasLocalChanges) {
       console.log('💾 Salvando mudanças no banco...');
@@ -3269,46 +4040,95 @@ export default function FilaPage() {
         const userData = localStorage.getItem('user');
         const user = JSON.parse(userData!);
         const peladaId = user.id;
+        const planoUsuario = buscar_plano();
         
-        // 1. Salvar jogadores ativos (jogando + fila) - todos com status 'fila'
-        const listaCompleta = [...localJogadoresJogando, ...localJogadoresFila];
-        const clienteDb = await getClienteSupabase(peladaId);
-        const updatesAtivos = listaCompleta.map((jogador, index) => {
-          const posicaoSequencial = index + 1;
-          
-          return clienteDb
-            .from('fila')
-            .update({ 
-              posicao_fila: posicaoSequencial,
-              status: 'fila'
-            })
-            .eq('jogador_id', jogador.id)
-            .eq('pelada_id', peladaId);
-        });
+        // 1. Combinar jogadores ativos (jogando + fila) E REORDENAR - todos com status 'fila'
+        const listaCompleta = [...localJogadoresJogando, ...localJogadoresFila]
+          .sort((a, b) => a.posicao_fila - b.posicao_fila);
         
-        // 2. Identificar e salvar jogadores removidos como reserva
-        const idsAtivosAtuais = listaCompleta.map(j => j.id);
-        const idsOriginais = [...jogadoresJogando, ...jogadoresFila].map(j => j.id);
-        const idsRemovidos = idsOriginais.filter(id => !idsAtivosAtuais.includes(id));
-        
-        const updatesReserva = idsRemovidos.map(jogadorId => 
-          clienteDb
-            .from('fila')
-            .update({ 
-              status: 'reserva',
-              posicao_fila: 999
-            })
-            .eq('jogador_id', jogadorId)
-            .eq('pelada_id', peladaId)
-        );
-        
-        console.log('📝 Salvando:', {
+        console.log('📝 Salvando (ORDENADO):', {
           ativos: listaCompleta.length,
-          removidos: idsRemovidos.length
+          jogadores: listaCompleta.map((j, i) => `${i + 1}-${j.nome}(pos:${j.posicao_fila})`),
+          plano: planoUsuario
         });
         
-        // 3. Executar todas as atualizações
-        await Promise.all([...updatesAtivos, ...updatesReserva]);
+        // === PLANO FREE: Salvar no localStorage ===
+        if (planoUsuario === 'free') {
+          console.log('📦 FREE: Salvando no localStorage...');
+          
+          // Carregar fila atual do localStorage
+          const filaLocal = localStorage.getItem('fila_ativa');
+          if (!filaLocal) {
+            console.error('❌ fila_ativa não encontrada no localStorage');
+            return;
+          }
+          
+          const filaData = JSON.parse(filaLocal);
+          
+          // Atualizar posições na fila
+          const filaAtualizada = filaData.map((item: any) => {
+            // Encontrar jogador na lista completa
+            const indice = listaCompleta.findIndex(j => j.id === item.id || j.nome === item.nome);
+            
+            if (indice !== -1) {
+              // Jogador está na fila ativa, atualizar posição
+              return {
+                ...item,
+                posicao_fila: indice + 1,
+                status: 'fila'
+              };
+            } else {
+              // Jogador foi removido da fila, colocar como reserva
+              return {
+                ...item,
+                posicao_fila: 999,
+                status: 'reserva'
+              };
+            }
+          });
+          
+          // Salvar fila atualizada
+          localStorage.setItem('fila_ativa', JSON.stringify(filaAtualizada));
+          console.log('✅ FREE: Mudanças salvas no localStorage');
+        } 
+        // === PLANO GOLD/PREMIUM: Salvar no Supabase ===
+        else {
+          console.log('📡 GOLD/PREMIUM: Salvando no Supabase...');
+          
+          const clienteDb = await getClienteSupabase(peladaId);
+          const updatesAtivos = listaCompleta.map((jogador, index) => {
+            const posicaoSequencial = index + 1;
+            
+            return clienteDb
+              .from('fila')
+              .update({ 
+                posicao_fila: posicaoSequencial,
+                status: 'fila'
+              })
+              .eq('jogador_id', jogador.id)
+              .eq('pelada_id', peladaId);
+          });
+          
+          // 2. Identificar e salvar jogadores removidos como reserva
+          const idsAtivosAtuais = listaCompleta.map(j => j.id);
+          const idsOriginais = [...jogadoresJogando, ...jogadoresFila].map(j => j.id);
+          const idsRemovidos = idsOriginais.filter(id => !idsAtivosAtuais.includes(id));
+          
+          const updatesReserva = idsRemovidos.map(jogadorId => 
+            clienteDb
+              .from('fila')
+              .update({ 
+                status: 'reserva',
+                posicao_fila: 999
+              })
+              .eq('jogador_id', jogadorId)
+              .eq('pelada_id', peladaId)
+          );
+          
+          // 3. Executar todas as atualizações
+          await Promise.all([...updatesAtivos, ...updatesReserva]);
+          console.log('✅ GOLD/PREMIUM: Mudanças salvas no Supabase');
+        }
         
         // 4. Recarregar dados
         await carregarDados();
@@ -3348,9 +4168,23 @@ export default function FilaPage() {
   // Organizar times com base apenas nos jogadores que estão jogando (primeiras posições)
   const jogadoresPorTime = regras.jogadores_por_time;
   
-  // Usar APENAS todosJogadoresFila já ordenado (evita duplicação)
-  // Usar apenas jogadores com status 'fila' (jogando + fila de espera), EXCLUIR reservas
-  const todosJogadoresNaFila = [...jogadoresJogando, ...jogadoresFila].sort((a, b) => a.posicao_fila - b.posicao_fila);
+  // ⚠️ IMPORTANTE: Usar estados LOCAIS quando está em modo edição E tem dados locais
+  // Ou quando já fez alterações (hasLocalChanges = true)
+  const usarEstadosLocais = modoEdicao && (localJogadoresJogando.length > 0 || localJogadoresFila.length > 0 || hasLocalChanges);
+  
+  const jogadoresJogandoParaExibir = usarEstadosLocais ? localJogadoresJogando : jogadoresJogando;
+  const jogadoresFilaParaExibir = usarEstadosLocais ? localJogadoresFila : jogadoresFila;
+  
+  const todosJogadoresNaFila = [...jogadoresJogandoParaExibir, ...jogadoresFilaParaExibir].sort((a, b) => a.posicao_fila - b.posicao_fila);
+  
+  console.log('🎬 [RENDER] Renderizando com:', {
+    modoEdicao,
+    hasLocalChanges,
+    usandoEstadosLocais: usarEstadosLocais,
+    temDadosLocais: localJogadoresJogando.length > 0 || localJogadoresFila.length > 0,
+    totalJogadores: todosJogadoresNaFila.length,
+    jogadores: todosJogadoresNaFila.map(j => `${j.nome}(${j.posicao_fila})`)
+  });
   
   // Times: primeiros 2 times completos (adapta automaticamente ao jogadores_por_time)
   const time1 = todosJogadoresNaFila.slice(0, regras.jogadores_por_time);
@@ -3497,6 +4331,14 @@ export default function FilaPage() {
         // Calcular número do jogo baseado na quantidade de jogos existentes
         const numeroJogo = jogos.length + 1;
       
+        // Buscar substituições da partida (se houver)
+        const partidaSalva = localStorage.getItem('partida_em_andamento');
+        let substituicoesPartida = [];
+        if (partidaSalva) {
+          const estadoPartida = JSON.parse(partidaSalva);
+          substituicoesPartida = estadoPartida.substituicoes || [];
+        }
+      
         novoJogo = {
           id: gerarUUID(),
           sessao_id: sessaoId,
@@ -3510,6 +4352,7 @@ export default function FilaPage() {
           tempo_decorrido: cronometro,
           data_inicio: partidaAtiva?.data_inicio,
           data_fim: new Date().toISOString(),
+          substituicoes: substituicoesPartida, // 🔄 Histórico de substituições
           created_at: new Date().toISOString(),
         };
       
@@ -3952,6 +4795,9 @@ export default function FilaPage() {
           gap: 12px;
           align-items: start;
           transition: margin-top 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          width: 100%;
+          max-width: 100%;
+          box-sizing: border-box;
         }
 
         .team-card {
@@ -3964,6 +4810,10 @@ export default function FilaPage() {
           display: flex;
           flex-direction: column;
           min-height: 200px;
+          width: 100%;
+          max-width: 100%;
+          box-sizing: border-box;
+          overflow: hidden;
         }
 
         .team-card:hover {
@@ -3999,6 +4849,7 @@ export default function FilaPage() {
           width: 100%;
           border-collapse: collapse;
           flex-grow: 1;
+          table-layout: fixed;
         }
 
         .team-table td {
@@ -4010,6 +4861,9 @@ export default function FilaPage() {
           vertical-align: middle;
           text-align: center;
           color: #333;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          word-wrap: break-word;
         }
 
         .team-table tr.empty-row td {
@@ -4089,6 +4943,9 @@ export default function FilaPage() {
           display: flex;
           flex-direction: column;
           gap: 12px;
+          width: 100%;
+          max-width: 100%;
+          box-sizing: border-box;
         }
 
         .queue-block {
@@ -4097,6 +4954,10 @@ export default function FilaPage() {
           padding: 12px;
           border: 2px solid #28a745;
           margin-bottom: 12px;
+          width: 100%;
+          max-width: 100%;
+          box-sizing: border-box;
+          overflow: hidden;
         }
 
         .queue-block-header h4 {
@@ -4110,6 +4971,7 @@ export default function FilaPage() {
         .queue-block-table {
           width: 100%;
           border-collapse: collapse;
+          table-layout: fixed;
         }
 
         .queue-block-table td {
@@ -4121,6 +4983,9 @@ export default function FilaPage() {
           vertical-align: middle;
           text-align: center;
           color: #333;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          word-wrap: break-word;
         }
 
         .queue-block-table tr.empty-row td {
@@ -4225,57 +5090,16 @@ export default function FilaPage() {
       <div className="main">
         <div className="container">
           {/* Header */}
-          <section className="header-card">
-            <div style={{ width: '100%' }}>
-              {modoEdicao ? (
-                <h2 style={{
-                  color: '#10b981',
-                  fontWeight: '800',
-                  fontSize: '1.5rem',
-                  textAlign: 'center',
-                  animation: 'pulse 2s infinite'
-                }}>
-                  Modo de Edição
-                </h2>
-              ) : (
+          {!modoEdicao && (
+            <section className="header-card">
+              <div style={{ width: '100%' }}>
                 <h2>📋 Organização da Fila 📋</h2>
-              )}
-              <div className="status-info">
-                {formatarData()} • <span style={{color: '#dc3545'}}>{jogadoresJogando.length + jogadoresFila.length} jogadores</span>
+                <div className="status-info">
+                  {formatarData()} • <span style={{color: '#dc3545'}}>{jogadoresJogando.length + jogadoresFila.length} jogadores</span>
+                </div>
               </div>
-            </div>
-            
-            {jogadorSelecionadoTroca && (
-              <div style={{
-                background: '#3b82f6',
-                color: 'white',
-                borderRadius: '8px',
-                padding: '12px',
-                marginTop: '12px',
-                textAlign: 'center',
-                fontWeight: '600',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span>� Mover {jogadorSelecionadoTroca.nome} para qual posição?</span>
-                <button
-                  onClick={() => setJogadorSelecionadoTroca(null)}
-                  style={{
-                    background: 'rgba(255,255,255,0.2)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    padding: '6px 12px',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                  }}
-                >
-                  ❌ Cancelar
-                </button>
-              </div>
-            )}
-          </section>
+            </section>
+          )}
 
           {/* Overlay para cancelar seleção de gol/assistência ao clicar fora */}
           {modoPartida && (selecionandoGolPara || selecionandoAssistenciaPara) && (
@@ -4769,26 +5593,20 @@ export default function FilaPage() {
                             } else if (estaEsperandoAssistencia) {
                               registrarAssistencia(jogador.id, 'A');
                             } else if (modoEdicao) {
-                              if (!jogadorSelecionadoTroca) {
-                                // Primeiro clique: selecionar jogador
+                              // NOVO SISTEMA: Apenas selecionar/desselecionar
+                              if (!jogadorSelecionadoTroca || jogadorSelecionadoTroca.id !== jogador.id) {
                                 setJogadorSelecionadoTroca(jogador);
-                              } else if (jogadorSelecionadoTroca.id !== jogador.id) {
-                                // Segundo clique: abrir modal de confirmação
-                                setJogadorMoverPosicao(jogadorSelecionadoTroca);
-                                setPosicaoDestino(jogador.posicao_fila);
-                                setShowConfirmarMudancaPosicaoModal(true);
                               } else {
-                                // Clicou no mesmo: desselecionar
                                 setJogadorSelecionadoTroca(null);
                               }
                             }
                           }}
                         >
-                          <td style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: modoEdicao ? 'flex-start' : 'center', height: '45px', padding: '8px 12px' }}>
-                            <span style={{ flex: 1, textAlign: modoEdicao ? 'left' : 'center' }}>
+                          <td style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: modoEdicao ? 'flex-start' : 'center', height: '45px', padding: '8px 12px', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+                            <span style={{ flex: 1, textAlign: modoEdicao ? 'left' : 'center', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: modoEdicao ? 'normal' : 'nowrap' }}>
                               {jogador.nome}
-                              {golsDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{'⚽'.repeat(golsDoJogador)}</span>}
-                              {assistenciasDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{'👟'.repeat(assistenciasDoJogador)}</span>}
+                              {golsDoJogador > 0 && <span style={{ marginLeft: '6px', flexShrink: 0 }}>{'⚽'.repeat(golsDoJogador)}</span>}
+                              {assistenciasDoJogador > 0 && <span style={{ marginLeft: '6px', flexShrink: 0 }}>{'👟'.repeat(assistenciasDoJogador)}</span>}
                             </span>
                             {modoEdicao && (
                               <button
@@ -4803,7 +5621,8 @@ export default function FilaPage() {
                                   borderRadius: '6px',
                                   padding: '6px 10px',
                                   cursor: 'pointer',
-                                  fontSize: '14px'
+                                  fontSize: '14px',
+                                  flexShrink: 0
                                 }}
                               >
                                 ❌
@@ -4905,26 +5724,20 @@ export default function FilaPage() {
                             } else if (estaEsperandoAssistencia) {
                               registrarAssistencia(jogador.id, 'B');
                             } else if (modoEdicao) {
-                              if (!jogadorSelecionadoTroca) {
-                                // Primeiro clique: selecionar jogador
+                              // NOVO SISTEMA: Apenas selecionar/desselecionar
+                              if (!jogadorSelecionadoTroca || jogadorSelecionadoTroca.id !== jogador.id) {
                                 setJogadorSelecionadoTroca(jogador);
-                              } else if (jogadorSelecionadoTroca.id !== jogador.id) {
-                                // Segundo clique: abrir modal de confirmação
-                                setJogadorMoverPosicao(jogadorSelecionadoTroca);
-                                setPosicaoDestino(jogador.posicao_fila);
-                                setShowConfirmarMudancaPosicaoModal(true);
                               } else {
-                                // Clicou no mesmo: desselecionar
                                 setJogadorSelecionadoTroca(null);
                               }
                             }
                           }}
                         >
-                          <td style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: modoEdicao ? 'flex-start' : 'center', height: '45px', padding: '8px 12px' }}>
-                            <span style={{ flex: 1, textAlign: modoEdicao ? 'left' : 'center' }}>
+                          <td style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: modoEdicao ? 'flex-start' : 'center', height: '45px', padding: '8px 12px', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+                            <span style={{ flex: 1, textAlign: modoEdicao ? 'left' : 'center', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: modoEdicao ? 'normal' : 'nowrap' }}>
                               {jogador.nome}
-                              {golsDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{'⚽'.repeat(golsDoJogador)}</span>}
-                              {assistenciasDoJogador > 0 && <span style={{ marginLeft: '6px' }}>{'👟'.repeat(assistenciasDoJogador)}</span>}
+                              {golsDoJogador > 0 && <span style={{ marginLeft: '6px', flexShrink: 0 }}>{'⚽'.repeat(golsDoJogador)}</span>}
+                              {assistenciasDoJogador > 0 && <span style={{ marginLeft: '6px', flexShrink: 0 }}>{'👟'.repeat(assistenciasDoJogador)}</span>}
                             </span>
                             {modoEdicao && (
                               <button
@@ -4939,7 +5752,8 @@ export default function FilaPage() {
                                   borderRadius: '6px',
                                   padding: '6px 10px',
                                   cursor: 'pointer',
-                                  fontSize: '14px'
+                                  fontSize: '14px',
+                                  flexShrink: 0
                                 }}
                               >
                                 ❌
@@ -5001,7 +5815,7 @@ export default function FilaPage() {
           </section>
 
           {/* Controles da Partida ou Botão Iniciar */}
-          {modoPartida ? (
+          {!modoEdicao && modoPartida ? (
             <section style={{
               background: 'white',
               borderRadius: '12px',
@@ -5182,7 +5996,7 @@ export default function FilaPage() {
                 </button>
               </div>
             </section>
-          ) : modoPrancheta ? (
+          ) : !modoEdicao && modoPrancheta ? (
             <section style={{
               background: 'white',
               borderRadius: '12px',
@@ -5349,29 +6163,27 @@ export default function FilaPage() {
                 </button>
               </div>
             </section>
-          ) : (
+          ) : !modoEdicao ? (
             <section className="start-match-container">
               <button
                 className="start-match-btn"
                 onClick={iniciarPartida}
-                disabled={modoEdicao || todosJogadoresNaFila.length < (regras.jogadores_por_time * 2)}
-                style={{
-                  opacity: modoEdicao ? 0.5 : 1,
-                  cursor: modoEdicao ? 'not-allowed' : 'pointer'
-                }}
+                disabled={todosJogadoresNaFila.length < (regras.jogadores_por_time * 2)}
               >
                 ⚽ Iniciar Pelada ⚽
               </button>
             </section>
-          )}
+          ) : null}
 
           {/* Fila */}
           {(filaDeEspera.length > 0 || modoEdicao) && (
             <section className="queue-card">
-              <div className="queue-header">
-                <h3>📋 Fila de Espera</h3>
-                <span style={{fontSize: '0.75rem', color: '#666'}}>{filaDeEspera.length} aguardando</span>
-              </div>
+              {!modoEdicao && (
+                <div className="queue-header">
+                  <h3>📋 Fila de Espera</h3>
+                  <span style={{fontSize: '0.75rem', color: '#666'}}>{filaDeEspera.length} aguardando</span>
+                </div>
+              )}
               <div className="queue-blocks-container" style={{ 
                 display: 'grid', 
                 gridTemplateColumns: filaDeEspera.length > jogadoresPorTime ? '1fr 1fr' : '1fr',
@@ -5409,23 +6221,19 @@ export default function FilaPage() {
                                 }}
                                 onClick={() => {
                                   if (modoEdicao) {
-                                    if (!jogadorSelecionadoTroca) {
-                                      // Primeiro clique: selecionar jogador
+                                    // NOVO SISTEMA: Apenas selecionar/desselecionar
+                                    if (!jogadorSelecionadoTroca || jogadorSelecionadoTroca.id !== jogador.id) {
                                       setJogadorSelecionadoTroca(jogador);
-                                    } else if (jogadorSelecionadoTroca.id !== jogador.id) {
-                                      // Segundo clique: abrir modal de confirmação
-                                      setJogadorMoverPosicao(jogadorSelecionadoTroca);
-                                      setPosicaoDestino(jogador.posicao_fila);
-                                      setShowConfirmarMudancaPosicaoModal(true);
                                     } else {
-                                      // Clicou no mesmo: desselecionar
                                       setJogadorSelecionadoTroca(null);
                                     }
                                   }
                                 }}
                               >
-                                <td style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: modoEdicao ? 'flex-start' : 'center', height: '45px', padding: '8px 12px' }}>
-                                  <span style={{ flex: 1, textAlign: modoEdicao ? 'left' : 'center' }}>{jogador.nome}</span>
+                                <td style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: modoEdicao ? 'flex-start' : 'center', height: '45px', padding: '8px 12px', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+                                  <span style={{ flex: 1, textAlign: modoEdicao ? 'left' : 'center', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: modoEdicao ? 'normal' : 'nowrap' }}>
+                                    {jogador.nome}
+                                  </span>
                                   {modoEdicao && (
                                     <button
                                       onClick={(e) => {
@@ -5439,7 +6247,8 @@ export default function FilaPage() {
                                         borderRadius: '6px',
                                         padding: '6px 10px',
                                         cursor: 'pointer',
-                                        fontSize: '14px'
+                                        fontSize: '14px',
+                                        flexShrink: 0
                                       }}
                                     >
                                       ❌
@@ -5492,7 +6301,7 @@ export default function FilaPage() {
         </div>
 
         {/* Cards Informativos - Partidas, Gols e Assistências do Dia */}
-        {!semSessaoAtiva && (
+        {!semSessaoAtiva && !modoEdicao && (
           <div style={{
             padding: '16px 16px 100px',
             display: 'grid',
@@ -5696,152 +6505,218 @@ export default function FilaPage() {
         {/* Footer Mobile */}
         <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden z-30 safe-area-padding">
           <nav className="flex py-2 px-4" style={{ minHeight: '84px' }}>
-            <button
-              onClick={() => {
-                console.log('🎯 Botão Gerenciar clicado!');
+            {modoEdicao ? (
+              <>
+                {/* RODAPÉ MODO EDIÇÃO */}
+                <button
+                  onClick={() => setShowConfirmarEdicaoModal(true)}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
+                  style={{ 
+                    flex: 1,
+                    color: '#10b981',
+                    opacity: 1,
+                    animation: hasLocalChanges ? 'pulseGlow 2s ease-in-out infinite' : 'none'
+                  }}
+                >
+                  <span className="text-4xl">✅</span>
+                </button>
                 
-                // Inicializar estados locais com dados atuais
-                setLocalJogadoresJogando([...jogadoresJogando]);
-                setLocalJogadoresFila([...jogadoresFila]);
-                setLocalJogadoresReserva([...jogadoresReserva]);
-                setHasLocalChanges(false);
+                <button
+                  onClick={subirJogador}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
+                  style={{ 
+                    flex: 1,
+                    color: jogadorSelecionadoTroca && jogadorSelecionadoTroca.posicao_fila > 1 ? '#10b981' : '#cbd5e1',
+                    opacity: jogadorSelecionadoTroca && jogadorSelecionadoTroca.posicao_fila > 1 ? 1 : 0.4
+                  }}
+                  disabled={!jogadorSelecionadoTroca || jogadorSelecionadoTroca.posicao_fila === 1}
+                >
+                  <span className="text-4xl">⬆️</span>
+                </button>
                 
-                setShowManagementModal(true);
-                console.log('🎯 Estado alterado para true');
-              }}
-              className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400 hover:text-green-600 hover:bg-green-50"
-              style={{ flex: 1, display: 'none' }} // Escondido temporariamente
-            >
-              <span className="text-2xl">👤</span>
-              <span className="text-xs font-medium mt-1">Gerenciar</span>
-            </button>
-            
-            {/* Botão Peladeiros - Modo Edição */}
-            <button
-              onClick={() => {
-                const novoModo = !modoEdicao;
+                <button
+                  onClick={descerJogador}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
+                  style={{ 
+                    flex: 1,
+                    color: jogadorSelecionadoTroca && jogadorSelecionadoTroca.posicao_fila < (hasLocalChanges ? localJogadoresJogando : jogadoresJogando).length + (hasLocalChanges ? localJogadoresFila : jogadoresFila).length ? '#ef4444' : '#cbd5e1',
+                    opacity: jogadorSelecionadoTroca && jogadorSelecionadoTroca.posicao_fila < (hasLocalChanges ? localJogadoresJogando : jogadoresJogando).length + (hasLocalChanges ? localJogadoresFila : jogadoresFila).length ? 1 : 0.4
+                  }}
+                  disabled={!jogadorSelecionadoTroca || jogadorSelecionadoTroca.posicao_fila === (hasLocalChanges ? localJogadoresJogando : jogadoresJogando).length + (hasLocalChanges ? localJogadoresFila : jogadoresFila).length}
+                >
+                  <span className="text-4xl">⬇️</span>
+                </button>
                 
-                if (novoModo) {
-                  // ATIVANDO modo edição: Salvar snapshot TEMPORÁRIO
-                  console.log('✏️ ATIVANDO modo edição - Salvando snapshot temp...');
-                  const peladaId = buscar_pelada_id();
-                  if (peladaId) {
-                    fila_snapshot_salvar_edicao_temp(peladaId);
-                  }
-                } else {
-                  // DESATIVANDO modo edição: Confirmar ou descartar snapshot
-                  console.log('✏️ DESATIVANDO modo edição - Verificando alterações...');
-                  const peladaId = buscar_pelada_id();
-                  if (peladaId) {
-                    const resultado = fila_snapshot_confirmar_edicao(peladaId);
-                    if (resultado === 'confirmado') {
-                      console.log('✅ Snapshot confirmado (alterações detectadas)');
-                    } else if (resultado === 'descartado') {
-                      console.log('🔄 Snapshot descartado (sem alterações - oficial preservado)');
+                <button
+                  onClick={() => {
+                    if (historicoAlteracoes.length > 0) {
+                      setShowDesfazerAlteracoesModal(true);
                     }
-                  }
-                  // Limpar seleção
-                  setJogadorSelecionadoTroca(null);
-                }
+                  }}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
+                  style={{ 
+                    flex: 1,
+                    color: historicoAlteracoes.length > 0 ? '#f59e0b' : '#cbd5e1',
+                    opacity: historicoAlteracoes.length > 0 ? 1 : 0.4,
+                    animation: historicoAlteracoes.length > 0 ? 'pulseGlow 2s ease-in-out infinite' : 'none'
+                  }}
+                  disabled={historicoAlteracoes.length === 0}
+                >
+                  <span className="text-4xl">↩️</span>
+                </button>
+                <style>
+                  {`
+                    @keyframes pulseGlow {
+                      0%, 100% { 
+                        opacity: 1; 
+                        transform: scale(1);
+                      }
+                      50% { 
+                        opacity: 0.7; 
+                        transform: scale(1.05);
+                      }
+                    }
+                  `}
+                </style>
+              </>
+            ) : (
+              <>
+                {/* RODAPÉ NORMAL */}
+                <button
+                  onClick={() => {
+                    console.log('🎯 Botão Gerenciar clicado!');
+                    
+                    // Inicializar estados locais com dados atuais (DEEP COPY)
+                    setLocalJogadoresJogando(jogadoresJogando.map(j => ({ ...j })));
+                    setLocalJogadoresFila(jogadoresFila.map(j => ({ ...j })));
+                    setLocalJogadoresReserva(jogadoresReserva.map(j => ({ ...j })));
+                    setHasLocalChanges(false);
+                    
+                    setShowManagementModal(true);
+                    console.log('🎯 Estado alterado para true');
+                  }}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400 hover:text-green-600 hover:bg-green-50"
+                  style={{ flex: 1, display: 'none' }} // Escondido temporariamente
+                >
+                  <span className="text-2xl">👤</span>
+                  <span className="text-xs font-medium mt-1">Gerenciar</span>
+                </button>
                 
-                setModoEdicao(novoModo);
-                console.log('✏️ Modo edição:', novoModo ? 'ATIVADO' : 'DESATIVADO');
-              }}
-              className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
-              style={{ 
-                flex: 1,
-                color: modoEdicao ? '#10b981' : '#9ca3af',
-                background: modoEdicao ? '#d1fae5' : 'transparent'
-              }}
-            >
-              <span className="text-2xl" style={{
-                animation: modoEdicao ? 'bounce 1s infinite' : 'none'
-              }}>👥</span>
-              <span className="text-xs font-medium mt-1">Peladeiros</span>
-            </button>
-            <style>
-              {`
-                @keyframes pulse {
-                  0%, 100% { transform: scale(1); opacity: 1; }
-                  50% { transform: scale(1.05); opacity: 0.8; }
-                }
-                @keyframes bounce {
-                  0%, 100% { transform: translateY(0); }
-                  50% { transform: translateY(-5px); }
-                }
-              `}
-            </style>
-            <button
-              onClick={() => !modoEdicao && (window.location.href = '/fila')}
-              className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
-              style={{ 
-                flex: 1,
-                opacity: modoEdicao ? 0.3 : 1,
-                pointerEvents: modoEdicao ? 'none' : 'auto',
-                color: modoEdicao ? '#6b7280' : '#10b981',
-                background: modoEdicao ? 'transparent' : '#d1fae5'
-              }}
-            >
-              <span className="text-2xl">📋</span>
-              <span className="text-xs font-medium mt-1">Fila</span>
-            </button>
-            <button
-              onClick={() => {
-                if (!possuiPermissao('desfazerPartida')) {
-                  alert('🔒 Recurso exclusivo do plano Gold e Premium!\n\nFaça upgrade para desfazer partidas.');
-                  return;
-                }
-                if (!modoEdicao) {
-                  abrirModalDesfazer();
-                }
-              }}
-              disabled={modoEdicao}
-              className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors relative"
-              style={{ 
-                flex: 1,
-                opacity: modoEdicao ? 0.3 : (!possuiPermissao('desfazerPartida') ? 0.6 : 1),
-                pointerEvents: modoEdicao ? 'none' : 'auto',
-                color: modoEdicao ? '#6b7280' : (!possuiPermissao('desfazerPartida') ? '#9ca3af' : '#9ca3af'),
-                background: !possuiPermissao('desfazerPartida') ? 'rgba(251, 191, 36, 0.1)' : 'transparent'
-              }}
-            >
-              {!possuiPermissao('desfazerPartida') && (
-                <div style={{
-                  position: 'absolute',
-                  top: '2px',
-                  right: '2px',
-                  background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-                  color: '#fff',
-                  padding: '3px 6px',
-                  borderRadius: '10px',
-                  fontSize: '10px',
-                  fontWeight: 'bold',
-                  boxShadow: '0 2px 8px rgba(251, 191, 36, 0.5)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '2px',
-                  zIndex: 10
-                }}>
-                  <span style={{ fontSize: '8px' }}>⭐</span>
-                  <span>Gold</span>
-                </div>
-              )}
-              <span className="text-2xl">↩️</span>
-              <span className="text-xs font-medium mt-1">Desfazer</span>
-            </button>
-            <button
-              onClick={() => !modoEdicao && abrirModalEncerrar()}
-              className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
-              style={{ 
-                flex: 1,
-                opacity: modoEdicao ? 0.3 : 1,
-                pointerEvents: modoEdicao ? 'none' : 'auto',
-                color: modoEdicao ? '#6b7280' : '#9ca3af'
-              }}
-            >
-              <span className="text-2xl">🏁</span>
-              <span className="text-xs font-medium mt-1">Encerrar</span>
-            </button>
+                {/* Botão Peladeiros - Modo Edição */}
+                <button
+                  onClick={() => {
+                    const novoModo = true; // Sempre ativar modo edição
+                    
+                    // ATIVANDO modo edição: Salvar snapshot TEMPORÁRIO
+                    console.log('✏️ ATIVANDO modo edição - Salvando snapshot temp...');
+                    const peladaId = buscar_pelada_id();
+                    if (peladaId) {
+                      fila_snapshot_salvar_edicao_temp(peladaId);
+                    }
+                    
+                    // INICIALIZAR estados locais com CÓPIA PROFUNDA dos dados atuais
+                    console.log('✏️ Inicializando estados locais com dados atuais...');
+                    setLocalJogadoresJogando(jogadoresJogando.map(j => ({ ...j })));
+                    setLocalJogadoresFila(jogadoresFila.map(j => ({ ...j })));
+                    console.log('✏️ Estados inicializados (deep copy):', {
+                      jogando: jogadoresJogando.length,
+                      fila: jogadoresFila.length
+                    });
+                    
+                    // Limpar seleção e histórico
+                    setJogadorSelecionadoTroca(null);
+                    setHistoricoAlteracoes([]);
+                    setHasLocalChanges(false); // Vai mudar para true quando fizer movimentos
+                    
+                    setModoEdicao(novoModo);
+                    console.log('✏️ Modo edição:', novoModo ? 'ATIVADO ✅' : 'DESATIVADO');
+                  }}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
+                  style={{ 
+                    flex: 1,
+                    color: '#9ca3af'
+                  }}
+                >
+                  <span className="text-2xl">📋</span>
+                  <span className="text-xs font-medium mt-1">Jogadores</span>
+                </button>
+                <style>
+                  {`
+                    @keyframes pulse {
+                      0%, 100% { transform: scale(1); opacity: 1; }
+                      50% { transform: scale(1.05); opacity: 0.8; }
+                    }
+                    @keyframes bounce {
+                      0%, 100% { transform: translateY(0); }
+                      50% { transform: translateY(-5px); }
+                    }
+                  `}
+                </style>
+                <button
+                  onClick={() => window.location.href = '/fila'}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
+                  style={{ 
+                    flex: 1,
+                    color: '#10b981',
+                    background: '#d1fae5'
+                  }}
+                >
+                  <span className="text-2xl">⚽</span>
+                  <span className="text-xs font-medium mt-1">Pelada</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (!possuiPermissao('desfazerPartida')) {
+                      alert('🔒 Recurso exclusivo do plano Gold e Premium!\n\nFaça upgrade para desfazer partidas.');
+                      return;
+                    }
+                    abrirModalDesfazer();
+                  }}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors relative"
+                  style={{ 
+                    flex: 1,
+                    opacity: !possuiPermissao('desfazerPartida') ? 0.6 : 1,
+                    color: !possuiPermissao('desfazerPartida') ? '#9ca3af' : '#9ca3af',
+                    background: !possuiPermissao('desfazerPartida') ? 'rgba(251, 191, 36, 0.1)' : 'transparent'
+                  }}
+                >
+                  {!possuiPermissao('desfazerPartida') && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '2px',
+                      right: '2px',
+                      background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+                      color: '#fff',
+                      padding: '3px 6px',
+                      borderRadius: '10px',
+                      fontSize: '10px',
+                      fontWeight: 'bold',
+                      boxShadow: '0 2px 8px rgba(251, 191, 36, 0.5)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '2px',
+                      zIndex: 10
+                    }}>
+                      <span style={{ fontSize: '8px' }}>⭐</span>
+                      <span>Gold</span>
+                    </div>
+                  )}
+                  <span className="text-2xl">↩️</span>
+                  <span className="text-xs font-medium mt-1">Desfazer</span>
+                </button>
+                <button
+                  onClick={() => abrirModalEncerrar()}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors"
+                  style={{ 
+                    flex: 1,
+                    color: '#9ca3af'
+                  }}
+                >
+                  <span className="text-2xl">🏁</span>
+                  <span className="text-xs font-medium mt-1">Encerrar</span>
+                </button>
+              </>
+            )}
           </nav>
         </footer>
 
@@ -9421,6 +10296,178 @@ export default function FilaPage() {
                   }}
                 >
                   Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Confirmar Edição de Fila */}
+        {showConfirmarEdicaoModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 3000
+          }}
+          onClick={() => setShowConfirmarEdicaoModal(false)}
+          >
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '16px',
+              padding: '24px',
+              maxWidth: '90%',
+              width: '350px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ 
+                fontSize: '1.3rem', 
+                fontWeight: 'bold', 
+                color: '#10b981',
+                marginBottom: '16px',
+                textAlign: 'center'
+              }}>
+                ✅ Confirmar Alterações
+              </h3>
+              <p style={{ 
+                fontSize: '1rem', 
+                color: '#4b5563',
+                marginBottom: '24px',
+                textAlign: 'center',
+                lineHeight: '1.5'
+              }}>
+                Deseja salvar as alterações na fila?<br/>
+                <strong>{historicoAlteracoes.length}</strong> {historicoAlteracoes.length === 1 ? 'alteração feita' : 'alterações feitas'}
+              </p>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setShowConfirmarEdicaoModal(false)}
+                  style={{
+                    flex: 1,
+                    background: '#f3f4f6',
+                    color: '#4b5563',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    fontSize: '1rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={async () => {
+                    await confirmarEdicaoFila();
+                    setShowConfirmarEdicaoModal(false);
+                  }}
+                  style={{
+                    flex: 1,
+                    background: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    fontSize: '1rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Desfazer Alterações */}
+        {showDesfazerAlteracoesModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 3000
+          }}
+          onClick={() => setShowDesfazerAlteracoesModal(false)}
+          >
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '16px',
+              padding: '24px',
+              maxWidth: '90%',
+              width: '350px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ 
+                fontSize: '1.3rem', 
+                fontWeight: 'bold', 
+                color: '#f59e0b',
+                marginBottom: '16px',
+                textAlign: 'center'
+              }}>
+                ↩️ Desfazer Alteração
+              </h3>
+              <p style={{ 
+                fontSize: '1rem', 
+                color: '#4b5563',
+                marginBottom: '24px',
+                textAlign: 'center',
+                lineHeight: '1.5'
+              }}>
+                Deseja desfazer a última alteração?<br/>
+                <strong>{historicoAlteracoes.length}</strong> {historicoAlteracoes.length === 1 ? 'alteração restante' : 'alterações restantes'}
+              </p>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setShowDesfazerAlteracoesModal(false)}
+                  style={{
+                    flex: 1,
+                    background: '#f3f4f6',
+                    color: '#4b5563',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    fontSize: '1rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDesfazerAlteracoesModal(false);
+                    desfazerUltimaAlteracao();
+                  }}
+                  style={{
+                    flex: 1,
+                    background: '#f59e0b',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    fontSize: '1rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Desfazer
                 </button>
               </div>
             </div>

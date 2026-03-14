@@ -42,14 +42,13 @@ export default function SorteioPage() {
   const [message, setMessage] = useState('');
   const [mostrarResultado, setMostrarResultado] = useState(false);
   const [todosSelecionados, setTodosSelecionados] = useState(false);
+  const [modalSorteioAberto, setModalSorteioAberto] = useState(false);
   
   // Estados para controle do sticky behavior
   const [botaoSortearSticky, setBotaoSortearSticky] = useState(false);
-  const [botaoConfirmarSticky, setBotaoConfirmarSticky] = useState(false);
   
   // Refs para os elementos que queremos observar
   const botaoSortearRef = useRef<HTMLElement>(null);
-  const botaoConfirmarRef = useRef<HTMLElement>(null);
 
   // Derivar jogadoresPorTime das regras
   const jogadoresPorTime = regras.jogadores_por_time;
@@ -58,7 +57,7 @@ export default function SorteioPage() {
     carregarDados();
   }, []);
 
-  // Hook para controlar o comportamento sticky dos botões
+  // Hook para controlar o comportamento sticky do botão sortear
   useEffect(() => {
     const handleScroll = () => {
       // Controle do botão sortear (antes do resultado)
@@ -71,16 +70,6 @@ export default function SorteioPage() {
         const isBelow = rect.top > (windowHeight - footerHeight);
         setBotaoSortearSticky(isBelow);
       }
-      
-      // Controle do botão confirmar (após o resultado) - apenas este tem sticky behavior
-      if (botaoConfirmarRef.current && mostrarResultado) {
-        const rect = botaoConfirmarRef.current.getBoundingClientRect();
-        const windowHeight = window.innerHeight;
-        const footerHeight = 80;
-        
-        const isBelow = rect.top > (windowHeight - footerHeight);
-        setBotaoConfirmarSticky(isBelow);
-      }
     };
 
     // Adicionar listener de scroll
@@ -92,7 +81,7 @@ export default function SorteioPage() {
     return () => {
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [mostrarResultado]); // Dependência importante para recriar o listener
+  }, [mostrarResultado]);
 
   const carregarDados = async () => {
     await Promise.all([
@@ -346,19 +335,9 @@ export default function SorteioPage() {
 
       setTimesFormados(times);
       setMostrarResultado(true);
+      setModalSorteioAberto(true);
       
       mostrarMensagem('✅ Times sorteados com sucesso!', 2000);
-
-      // Auto-scroll para o resultado após um pequeno delay
-      setTimeout(() => {
-        const resultadoElement = document.getElementById('resultado-sorteio');
-        if (resultadoElement) {
-          resultadoElement.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start'
-          });
-        }
-      }, 300);
 
     } catch (error) {
       console.error('Erro no sorteio:', error);
@@ -927,6 +906,7 @@ export default function SorteioPage() {
 
   const resortear = () => {
     setMostrarResultado(false);
+    setModalSorteioAberto(false);
     setTimesFormados([]);
     
     // Dar um pequeno delay antes de sortear novamente
@@ -1014,21 +994,7 @@ export default function SorteioPage() {
           )}
         </section>
 
-        {/* Botão Re-sortear estático após lista de jogadores (só quando há resultado) */}
-        {mostrarResultado && (
-          <section>
-            <div className="bg-white rounded-2xl p-4 shadow-lg border border-gray-100">
-              <button
-                id="botao-resortear-estatico"
-                onClick={resortear}
-                className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200"
-              >
-                <span className="text-xl">🔄</span>
-                <span>Re-sortear</span>
-              </button>
-            </div>
-          </section>
-        )}
+
 
         {/* Botão Sortear estático após lista de jogadores (só antes do sorteio) */}
         {!mostrarResultado && (
@@ -1051,96 +1017,175 @@ export default function SorteioPage() {
           </section>
         )}
 
-        {/* Resultado do Sorteio */}
-        {mostrarResultado && (
-          <>
-            <section id="resultado-sorteio" className="bg-white rounded-3xl p-5 mb-6 shadow-sm border-2 border-green-600">
-              <h2 className="text-lg font-semibold text-green-600 mb-5 text-center">⚽ Times Formados</h2>
-              
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                {timesFormados.filter(time => time.jogadores.length > 0).map(time => (
-                  <div key={time.id} className="bg-white border-2 border-gray-200 rounded-2xl p-4 hover:-translate-y-1 hover:shadow-lg hover:border-green-600 transition-all duration-200">
-                    <div className="text-center mb-3 pb-2 border-b-2 border-gray-100">
-                      <div className="text-base font-bold text-green-600 mb-1">
-                        {time.cores} {time.nome}
-                      </div>
-                      <div className="text-xs text-gray-600 font-medium">
-                        {possuiPermissao('cadastrarNivel') && (
-                          <>
-                            ⭐ {time.nivelMedio.toFixed(1).replace('.', ',')}
-                            <small className="ml-1">•</small>
-                          </>
-                        )}
-                        <small className="ml-1">({time.jogadores.length} jogadores)</small>
-                      </div>
+        {/* Botões quando há resultado mas modal está fechado */}
+        {mostrarResultado && !modalSorteioAberto && (
+          <section>
+            <div className="bg-white rounded-2xl p-4 shadow-lg border border-gray-100">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Botão Reexibir Sorteio */}
+                <button
+                  onClick={() => setModalSorteioAberto(true)}
+                  className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-green-600 text-white hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200"
+                >
+                  <span className="text-xl">⚽</span>
+                  <span>Reexibir Sorteio</span>
+                </button>
+
+                {/* Botão Re-sortear */}
+                <button
+                  onClick={resortear}
+                  className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200"
+                >
+                  <span className="text-xl">🔄</span>
+                  <span>Re-sortear</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+      {/* Modal de Resultado do Sorteio */}
+      {modalSorteioAberto && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+            overflowY: 'auto'
+          }}
+          onClick={() => setModalSorteioAberto(false)}
+        >
+          <div 
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '24px',
+              padding: '24px',
+              maxWidth: '600px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+              border: '3px solid #16a34a'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header do Modal */}
+            <div className="flex justify-between items-center mb-6 pb-4 border-b-2 border-green-100">
+              <h2 className="text-2xl font-bold text-green-600 flex items-center gap-2">
+                <span>⚽</span>
+                <span>Times Formados</span>
+              </h2>
+              <button
+                onClick={() => setModalSorteioAberto(false)}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-red-100 hover:text-red-600 transition-colors text-gray-600 font-bold text-xl"
+                title="Fechar"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Times Sorteados */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              {timesFormados.filter(time => time.jogadores.length > 0).map(time => (
+                <div key={time.id} className="bg-white border-2 border-gray-200 rounded-2xl p-4 hover:-translate-y-1 hover:shadow-lg hover:border-green-600 transition-all duration-200">
+                  <div className="text-center mb-3 pb-2 border-b-2 border-gray-100">
+                    <div className="text-base font-bold text-green-600 mb-1">
+                      {time.cores} {time.nome}
                     </div>
-                    
-                    <div className="space-y-1">
-                      {time.jogadores.map((jogador, index) => (
-                        <div
-                          key={index}
-                          className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-center hover:bg-green-50 hover:border-green-600 transition-all duration-150"
-                        >
-                          <span className="text-sm font-medium text-gray-800 block truncate">
-                            {jogador.nome}
-                          </span>
-                        </div>
-                      ))}
+                    <div className="text-xs text-gray-600 font-medium">
+                      {possuiPermissao('cadastrarNivel') && (
+                        <>
+                          ⭐ {time.nivelMedio.toFixed(1).replace('.', ',')}
+                          <small className="ml-1">•</small>
+                        </>
+                      )}
+                      <small className="ml-1">({time.jogadores.length} jogadores)</small>
                     </div>
                   </div>
-                ))}
-              </div>
-            </section>
-            
-            {/* Botão Confirmar Times estático após os times */}
-            <section ref={botaoConfirmarRef} className="mb-6">
-              <div className="bg-white rounded-2xl p-4 shadow-lg border border-gray-100">
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {/* Botão Confirmar Times - 75% */}
-                  <button
-                    id="botao-confirmar-estatico"
-                    onClick={confirmarTimes}
-                    style={{ flex: '0 0 75%' }}
-                    className="flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-green-600 text-white hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200"
-                  >
-                    <span className="text-xl">✅</span>
-                    <span>Confirmar Times</span>
-                  </button>
                   
-                  {/* Botão WhatsApp - 25% */}
-                  <div style={{ flex: '0 0 calc(25% - 8px)' }} className="relative">
-                    {!possuiPermissao('compartilharWhatsApp') && (
-                      <div className="absolute -top-2 -right-2 bg-gradient-to-r from-yellow-400 to-yellow-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1 z-10">
-                        <span>⭐</span>
-                        <span>Gold</span>
+                  <div className="space-y-1">
+                    {time.jogadores.map((jogador, index) => (
+                      <div
+                        key={index}
+                        className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-center hover:bg-green-50 hover:border-green-600 transition-all duration-150"
+                      >
+                        <span className="text-sm font-medium text-gray-800 block truncate">
+                          {jogador.nome}
+                        </span>
                       </div>
-                    )}
-                    <button
-                      onClick={() => {
-                        if (possuiPermissao('compartilharWhatsApp')) {
-                          compartilharTimesWhatsApp();
-                        } else {
-                          alert('🔒 Recurso exclusivo do plano Gold e Premium!\n\nFaça upgrade para compartilhar times no WhatsApp.');
-                        }
-                      }}
-                      disabled={!possuiPermissao('compartilharWhatsApp')}
-                      className={`w-full flex items-center justify-center py-4 px-3 rounded-xl text-base font-semibold transition-all duration-200 ${
-                        possuiPermissao('compartilharWhatsApp')
-                          ? 'bg-green-500 text-white hover:bg-green-600 hover:-translate-y-0.5 hover:shadow-lg'
-                          : 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
-                      }`}
-                      title={possuiPermissao('compartilharWhatsApp') ? 'Compartilhar no WhatsApp' : 'Recurso Gold'}
-                    >
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                      </svg>
-                    </button>
+                    ))}
                   </div>
                 </div>
+              ))}
+            </div>
+
+            {/* Botões de Ação */}
+            <div className="space-y-3">
+              {/* Botão Re-sortear */}
+              <button
+                onClick={resortear}
+                className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200"
+              >
+                <span className="text-xl">🔄</span>
+                <span>Re-sortear</span>
+              </button>
+
+              {/* Botão Confirmar Times e WhatsApp */}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                {/* Botão Confirmar Times - 75% */}
+                <button
+                  onClick={confirmarTimes}
+                  style={{ flex: '0 0 calc(75% - 6px)' }}
+                  className="flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-green-600 text-white hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200"
+                >
+                  <span className="text-xl">✅</span>
+                  <span>Confirmar Times</span>
+                </button>
+                
+                {/* Botão WhatsApp - 25% */}
+                <div style={{ flex: '0 0 calc(25% - 6px)' }} className="relative">
+                  {!possuiPermissao('compartilharWhatsApp') && (
+                    <div className="absolute -top-2 -right-2 bg-gradient-to-r from-yellow-400 to-yellow-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1 z-10">
+                      <span>⭐</span>
+                      <span>Gold</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (possuiPermissao('compartilharWhatsApp')) {
+                        compartilharTimesWhatsApp();
+                      } else {
+                        alert('🔒 Recurso exclusivo do plano Gold e Premium!\n\nFaça upgrade para compartilhar times no WhatsApp.');
+                      }
+                    }}
+                    disabled={!possuiPermissao('compartilharWhatsApp')}
+                    className={`w-full flex items-center justify-center py-4 px-3 rounded-xl text-base font-semibold transition-all duration-200 ${
+                      possuiPermissao('compartilharWhatsApp')
+                        ? 'bg-green-500 text-white hover:bg-green-600 hover:-translate-y-0.5 hover:shadow-lg'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
+                    }`}
+                    title={possuiPermissao('compartilharWhatsApp') ? 'Compartilhar no WhatsApp' : 'Recurso Gold'}
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
-            </section>
-          </>
-        )}
+            </div>
+          </div>
+        </div>
+      )}
+
+
         
       {/* Botões Sticky - Aparecem quando os originais saem da tela */}
       
@@ -1160,57 +1205,6 @@ export default function SorteioPage() {
               <span className="text-xl">🎲</span>
               <span>Sortear Times: {jogadoresSelecionados.length}</span>
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Botão Re-sortear Sticky (após o resultado) - REMOVIDO */}
-
-      {/* Botão Confirmar Sticky (após o resultado) - ÚNICO que acompanha após sorteio */}
-      {mostrarResultado && botaoConfirmarSticky && (
-        <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-sm px-4">
-          <div className="bg-white rounded-2xl p-4 shadow-xl border border-gray-200">
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {/* Botão Confirmar Times - 75% */}
-              <button
-                onClick={confirmarTimes}
-                style={{ flex: '0 0 75%' }}
-                className="flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-green-600 text-white hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200"
-              >
-                <span className="text-xl">✅</span>
-                <span>Confirmar Times</span>
-              </button>
-              
-              {/* Botão WhatsApp - 25% */}
-              <div style={{ flex: '0 0 calc(25% - 8px)' }} className="relative">
-                {!possuiPermissao('compartilharWhatsApp') && (
-                  <div className="absolute -top-2 -right-2 bg-gradient-to-r from-yellow-400 to-yellow-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1 z-10">
-                    <span>⭐</span>
-                    <span>Gold</span>
-                  </div>
-                )}
-                <button
-                  onClick={() => {
-                    if (possuiPermissao('compartilharWhatsApp')) {
-                      compartilharTimesWhatsApp();
-                    } else {
-                      alert('🔒 Recurso exclusivo do plano Gold e Premium!\n\nFaça upgrade para compartilhar times no WhatsApp.');
-                    }
-                  }}
-                  disabled={!possuiPermissao('compartilharWhatsApp')}
-                  className={`w-full flex items-center justify-center py-4 px-3 rounded-xl text-base font-semibold transition-all duration-200 ${
-                    possuiPermissao('compartilharWhatsApp')
-                      ? 'bg-green-500 text-white hover:bg-green-600 hover:-translate-y-0.5 hover:shadow-lg'
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
-                  }`}
-                  title={possuiPermissao('compartilharWhatsApp') ? 'Compartilhar no WhatsApp' : 'Recurso Gold'}
-                >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}
