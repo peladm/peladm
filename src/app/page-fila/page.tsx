@@ -3860,7 +3860,7 @@ export default function FilaPage() {
       
       // Descartar snapshot temp sem confirmar
       console.log('📸 Descartando snapshot temp (nenhuma alteração)...');
-      const resultadoSnapshot = fila_snapshot_confirmar_edicao(peladaId);
+      const resultadoSnapshot = fila_snapshot_confirmar_edicao(peladaId!);
       console.log('📸 Resultado:', resultadoSnapshot); // Deve retornar 'descartado'
       
       setModoEdicao(false);
@@ -4001,7 +4001,7 @@ export default function FilaPage() {
       
       // Confirmar snapshot de edição (temp vira oficial)
       console.log('📸 Confirmando snapshot de edição...');
-      const resultadoSnapshot = fila_snapshot_confirmar_edicao(peladaId);
+      const resultadoSnapshot = fila_snapshot_confirmar_edicao(peladaId!);
       console.log('📸 Resultado snapshot:', resultadoSnapshot);
       
       console.log('🔄 [CONFIRMAR] Recarregando dados...');
