@@ -3581,7 +3581,7 @@ export default function FilaPage() {
         posicaoOrigem: posicaoAtual, // Posição ANTES do movimento
         posicaoDestino: novaPosicao
       }]);
-    } else {
+    } else if (alteracaoExistente.tipo === 'mover') {
       // Já existe - apenas atualizar destino, manter origem
       console.log(`⬆️ [SUBIR] Atualizando destino no histórico: ${alteracaoExistente.posicaoOrigem} → ${novaPosicao}`);
       const novoHistorico = historicoAlteracoes.map(a => 
