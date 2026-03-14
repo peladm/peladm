@@ -1141,7 +1141,7 @@ export default function ResultadosPage() {
                         // Comparar por ID direto
                         if (s.jogador_entrou_id === jogadorId) return true;
                         // Comparar por nome (caso time_a tenha nomes ao invés de IDs)
-                        const nomeEntrou = s.jogador_entrou_nome || buscarJogador(s.jogador_entrou_id);
+                        const nomeEntrou = buscarJogador(s.jogador_entrou_id);
                         return nomeEntrou === jogadorId || nomeEntrou === nomeJogador;
                       });
                       
@@ -1229,7 +1229,7 @@ export default function ResultadosPage() {
                         // Comparar por ID direto
                         if (s.jogador_entrou_id === jogadorId) return true;
                         // Comparar por nome (caso time_b tenha nomes ao invés de IDs)
-                        const nomeEntrou = s.jogador_entrou_nome || buscarJogador(s.jogador_entrou_id);
+                        const nomeEntrou = buscarJogador(s.jogador_entrou_id);
                         return nomeEntrou === jogadorId || nomeEntrou === nomeJogador;
                       });
                       
