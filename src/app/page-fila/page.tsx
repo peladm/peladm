@@ -3571,7 +3571,7 @@ export default function FilaPage() {
     console.log('⬆️ [SUBIR] Estados atualizados, hasLocalChanges = true');
     
     // Adicionar ao histórico - APENAS a primeira vez que move o jogador
-    const alteracaoExistente = historicoAlteracoes.find(a => a.jogadorId === jogadorSelecionadoTroca.id);
+    const alteracaoExistente = historicoAlteracoes.find(a => a.tipo === 'mover' && a.jogadorId === jogadorSelecionadoTroca.id);
     if (!alteracaoExistente) {
       // Primeira movimentação deste jogador - salvar posição original
       console.log(`⬆️ [SUBIR] Primeira movimentação de ${jogadorSelecionadoTroca.nome}, adicionando ao histórico`);
@@ -3585,7 +3585,7 @@ export default function FilaPage() {
       // Já existe - apenas atualizar destino, manter origem
       console.log(`⬆️ [SUBIR] Atualizando destino no histórico: ${alteracaoExistente.posicaoOrigem} → ${novaPosicao}`);
       const novoHistorico = historicoAlteracoes.map(a => 
-        a.jogadorId === jogadorSelecionadoTroca.id 
+        a.tipo === 'mover' && a.jogadorId === jogadorSelecionadoTroca.id 
           ? { ...a, posicaoDestino: novaPosicao } 
           : a
       );
@@ -3651,7 +3651,7 @@ export default function FilaPage() {
     setHasLocalChanges(true);
     
     // Adicionar ao histórico - APENAS a primeira vez que move o jogador
-    const alteracaoExistente = historicoAlteracoes.find(a => a.jogadorId === jogadorSelecionadoTroca.id);
+    const alteracaoExistente = historicoAlteracoes.find(a => a.tipo === 'mover' && a.jogadorId === jogadorSelecionadoTroca.id);
     if (!alteracaoExistente) {
       // Primeira movimentação deste jogador - salvar posição original
       setHistoricoAlteracoes([...historicoAlteracoes, {
@@ -3663,7 +3663,7 @@ export default function FilaPage() {
     } else {
       // Já existe - apenas atualizar destino, manter origem
       const novoHistorico = historicoAlteracoes.map(a => 
-        a.jogadorId === jogadorSelecionadoTroca.id 
+        a.tipo === 'mover' && a.jogadorId === jogadorSelecionadoTroca.id 
           ? { ...a, posicaoDestino: novaPosicao } 
           : a
       );
