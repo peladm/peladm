@@ -3854,6 +3854,11 @@ export default function FilaPage() {
     console.log('🔍 [CONFIRMAR] hasLocalChanges:', hasLocalChanges);
     console.log('🔍 [CONFIRMAR] historicoAlteracoes.length:', historicoAlteracoes.length);
     
+    const peladaId = buscar_pelada_id();
+    const planoUsuario = buscar_plano();
+    console.log('🔍 [CONFIRMAR] peladaId:', peladaId);
+    console.log('🔍 [CONFIRMAR] planoUsuario:', planoUsuario);
+
     if (!hasLocalChanges || historicoAlteracoes.length === 0) {
       // Sem alterações, apenas fechar modo edição
       console.log('⚠️ [CONFIRMAR] Sem alterações para salvar, fechando modo edição');
@@ -3869,8 +3874,6 @@ export default function FilaPage() {
     }
     
     console.log('💾 [CONFIRMAR] Confirmando edição da fila...');
-    const peladaId = buscar_pelada_id();
-    const planoUsuario = buscar_plano();
     console.log('🔍 [CONFIRMAR] peladaId:', peladaId);
     console.log('🔍 [CONFIRMAR] planoUsuario:', planoUsuario);
     
