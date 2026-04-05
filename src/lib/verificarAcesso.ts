@@ -29,7 +29,7 @@ export const obterUsuario = (): Usuario | null => {
       id: credenciais.pelada_id,
       nome: credenciais.username,
       plano: credenciais.plano || 'free',
-      is_master: tipoAcesso === 'completo',
+      is_master: credenciais.is_master === true,
       status: true,
       tipo_acesso: tipoAcesso
     };
@@ -73,7 +73,10 @@ export const ehAdmin = (): boolean => {
 // Páginas permitidas para visitantes
 const PAGINAS_VISITANTE = [
   '/resultados',
-  '/estatisticas'
+  '/estatisticas',
+  '/classificacao',
+  '/individual',
+  '/x1'
 ];
 
 // Verificar se página é acessível para o tipo de acesso

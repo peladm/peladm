@@ -134,10 +134,11 @@ export default function FilaPage() {
   const [corTimeB, setCorTimeB] = useState('#000000'); // Preto
   const [selecionandoGolPara, setSelecionandoGolPara] = useState<'A' | 'B' | null>(null);
   const [selecionandoAssistenciaPara, setSelecionandoAssistenciaPara] = useState<'A' | 'B' | null>(null);
-  const [ultimoGolInfo, setUltimoGolInfo] = useState<{jogadorId: string, time: 'A' | 'B'} | null>(null);
+  const [ultimoGolInfo, setUltimoGolInfo] = useState<{jogadorId: string, golId: string, time: 'A' | 'B'} | null>(null);
   const [golsJogadores, setGolsJogadores] = useState<Record<string, number>>({});
   const [assistenciasJogadores, setAssistenciasJogadores] = useState<Record<string, number>>({});
   const [historicoAcoes, setHistoricoAcoes] = useState<Array<{tipo: 'gol' | 'assistencia', time: 'A' | 'B', jogadorId: string, golJogadorId?: string}>>([]);
+  const [showEventos, setShowEventos] = useState(false);
   const [showModalVAR, setShowModalVAR] = useState(false);
   const [showModalFinalizacao, setShowModalFinalizacao] = useState(false);
   const [limiteVitorias, setLimiteVitorias] = useState<number | null>(null);
@@ -153,6 +154,7 @@ export default function FilaPage() {
   const [regraEmpateConfig, setRegraEmpateConfig] = useState<string>('');
   const [empateContaVitoriaConfig, setEmpateContaVitoriaConfig] = useState<boolean>(false);
   const [timeEscolhidoDesempate, setTimeEscolhidoDesempate] = useState<'A' | 'B' | null>(null);
+  const [showModalTutorialCores, setShowModalTutorialCores] = useState(false);
 
   // States para regras de empate (compatível com modal de /partida)
   const [regrasEmpate, setRegrasEmpate] = useState<{
@@ -176,6 +178,7 @@ export default function FilaPage() {
 
   // States para modais informativos de partidas, gols e assistências
   const [showModalInfoPartidas, setShowModalInfoPartidas] = useState(false);
+  const [eventosAbertosPartidas, setEventosAbertosPartidas] = useState<Set<string>>(new Set());
   const [showModalInfoGols, setShowModalInfoGols] = useState(false);
   const [showModalInfoAssistencias, setShowModalInfoAssistencias] = useState(false);
   const [partidasDoDia, setPartidasDoDia] = useState<any[]>([]);
@@ -769,6 +772,10 @@ export default function FilaPage() {
     }));
     
     // 💾 SALVAR GOL IMEDIATAMENTE NO LOCALSTORAGE
+    const golId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
     const partidaSalva = localStorage.getItem('partida_em_andamento');
     if (partidaSalva) {
       const estadoPartida = JSON.parse(partidaSalva);
@@ -776,7 +783,6 @@ export default function FilaPage() {
       const sessaoId = estadoPartida.sessaoId;
       
       // Criar registro do gol
-      const golId = `gol_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const novoGol = {
         id: golId,
         jogo_id: jogoId,
@@ -800,8 +806,8 @@ export default function FilaPage() {
     // Adicionar ao histórico usando ID REAL
     setHistoricoAcoes(prev => [...prev, { tipo: 'gol', time, jogadorId: jogadorIdReal }]);
     
-    // Guardar info do último gol para a assistência
-    setUltimoGolInfo({ jogadorId: jogadorIdReal, time });
+    // Guardar info do último gol para a assistência (incluindo golId para vincular)
+    setUltimoGolInfo({ jogadorId: jogadorIdReal, golId, time });
     
     // Desativar modo seleção de gol
     setSelecionandoGolPara(null);
@@ -851,11 +857,15 @@ export default function FilaPage() {
       const sessaoId = estadoPartida.sessaoId;
       
       // Criar registro da assistência
-      const assistId = `assist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const assistId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
       const novaAssist = {
         id: assistId,
         jogo_id: jogoId,
         jogador_id: jogadorIdReal,
+        gol_id: ultimoGolInfo?.golId || null,
         time: time,
         created_at: new Date().toISOString()
       };
@@ -1608,13 +1618,18 @@ export default function FilaPage() {
         const jogos = JSON.parse(jogosStr);
         partidasReais = jogos.length;
         
-        // Calcular total de gols da tabela jogadores
-        const jogadoresKey = `jogadores_${peladaId}`;
-        const jogadoresStr = localStorage.getItem(jogadoresKey);
-        if (jogadoresStr) {
-          const jogadores = JSON.parse(jogadoresStr);
-          golsReais = jogadores.reduce((total: number, j: any) => total + (j.gols || 0), 0);
-          assistenciasReais = jogadores.reduce((total: number, j: any) => total + (j.assistencias || 0), 0);
+        // Calcular total de gols da sessão atual (não carreira)
+        const golsKey = `gols_${sessao.id}`;
+        const golsStr = localStorage.getItem(golsKey);
+        if (golsStr) {
+          golsReais = JSON.parse(golsStr).length;
+        }
+        
+        // Calcular total de assistências da sessão atual (não carreira)
+        const assistenciasKey = `assistencias_${sessao.id}`;
+        const assistenciasStr = localStorage.getItem(assistenciasKey);
+        if (assistenciasStr) {
+          assistenciasReais = JSON.parse(assistenciasStr).length;
         }
       }
       
@@ -1959,19 +1974,43 @@ export default function FilaPage() {
       const jogadoresKey = `jogadores_${peladaId}`;
       const jogadoresStr = localStorage.getItem(jogadoresKey);
       const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+
+      // Separar gols/assists que casam por ID dos que não casam (IDs antigos "jogo_xxx")
+      const idsJogos = new Set(jogos.map((j: any) => j.id));
+      const golsOrdenados = [...todosGols].sort((a: any, b: any) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      const assistsOrdenadas = [...todasAssistencias].sort((a: any, b: any) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      const golsSemMatch = golsOrdenados.filter((g: any) => !idsJogos.has(g.jogo_id));
+      const assistsSemMatch = assistsOrdenadas.filter((a: any) => !idsJogos.has(a.jogo_id));
+
+      // Distribuir gols/assists sem match para jogos por ordem (fallback IDs antigos)
+      let golsPoolIdx = 0;
+      let assistsPoolIdx = 0;
+      const golsPorJogo: Record<string, any[]> = {};
+      const assistsPorJogo: Record<string, any[]> = {};
+      jogos.forEach((j: any) => {
+        const diretos = golsOrdenados.filter((g: any) => g.jogo_id === j.id);
+        const esperados = (j.placar_a || 0) + (j.placar_b || 0);
+        const faltam = Math.max(0, esperados - diretos.length);
+        const pool = golsSemMatch.slice(golsPoolIdx, golsPoolIdx + faltam);
+        golsPoolIdx += pool.length;
+        golsPorJogo[j.id] = [...diretos, ...pool];
+
+        const diretosA = assistsOrdenadas.filter((a: any) => a.jogo_id === j.id);
+        const poolA = assistsSemMatch.slice(assistsPoolIdx, assistsPoolIdx + pool.length);
+        assistsPoolIdx += poolA.length;
+        assistsPorJogo[j.id] = [...diretosA, ...poolA];
+      });
       
       // Formatar jogos com gols e assistências
       const partidasComEstatisticas = jogos.map((jogo: any) => {
-        // Filtrar gols deste jogo
-        const golsDoJogo = todosGols.filter((g: any) => g.jogo_id === jogo.id);
-        
-        // Filtrar assistências deste jogo
-        const assistenciasDoJogo = todasAssistencias.filter((a: any) => a.jogo_id === jogo.id);
-        
         return {
           ...jogo,
-          gols: golsDoJogo,
-          assistencias: assistenciasDoJogo,
+          gols: golsPorJogo[jogo.id] || [],
+          assistencias: assistsPorJogo[jogo.id] || [],
           jogadores: todosJogadores
         };
       });
@@ -2540,6 +2579,8 @@ export default function FilaPage() {
                   time_b: jogo.time_b.map((j: any) => j.nome || j),
                   placar_a: jogo.placar_a,
                   placar_b: jogo.placar_b,
+                  cor_time_a: jogo.cor_time_a || null,
+                  cor_time_b: jogo.cor_time_b || null,
                   status: jogo.status,
                   time_vencedor: jogo.time_vencedor === 'A' || jogo.time_vencedor === 'B' ? jogo.time_vencedor : null,
                   tempo_decorrido: jogo.tempo_decorrido,
@@ -2621,6 +2662,7 @@ export default function FilaPage() {
                   id: assist.id,
                   jogo_id: assist.jogo_id,
                   jogador_id: assist.jogador_id,
+                  gol_id: assist.gol_id || null,
                   time: assist.time,
                   created_at: assist.created_at,
                 }, { onConflict: 'id' });
@@ -3132,7 +3174,10 @@ export default function FilaPage() {
       
       // 7. Criar estado inicial da partida
       const agora = Date.now();
-      const novoJogoId = `jogo_${agora}`;
+      const novoJogoId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
       
       const estadoPartida = {
         jogoId: novoJogoId,
@@ -3185,6 +3230,7 @@ export default function FilaPage() {
       setVitoriaConsecutiva(vitoriasConsecutivasAtual); // Atualizar o state com as vitórias atuais
       setRegraEmpateConfig(regrasData?.regra_empate || 'ambos_saem'); // Carregar regra de empate
       setEmpateContaVitoriaConfig(regrasData?.empate_conta_vitoria || false); // Carregar se empate conta como vitória
+      setShowModalTutorialCores(true); // Mostrar tutorial de cores dos coletes
       
       // Carregar regrasEmpate completo para o modal
       setRegrasEmpate({
@@ -4341,19 +4387,23 @@ export default function FilaPage() {
         // Buscar substituições da partida (se houver)
         const partidaSalva = localStorage.getItem('partida_em_andamento');
         let substituicoesPartida = [];
+        let jogoIdFromPartida: string | null = null;
         if (partidaSalva) {
           const estadoPartida = JSON.parse(partidaSalva);
           substituicoesPartida = estadoPartida.substituicoes || [];
+          jogoIdFromPartida = estadoPartida.jogoId || null;
         }
       
         novoJogo = {
-          id: gerarUUID(),
+          id: jogoIdFromPartida || gerarUUID(),
           sessao_id: sessaoId,
           numero_jogo: numeroJogo,
           time_a: timeACompleto,
           time_b: timeBCompleto,
           placar_a: placarTimeA,
           placar_b: placarTimeB,
+          cor_time_a: obterNomeCor(corTimeA),
+          cor_time_b: obterNomeCor(corTimeB),
           status: 'finalizado',
           time_vencedor: timeVencedorRegistro,
           tempo_decorrido: cronometro,
@@ -4379,20 +4429,14 @@ export default function FilaPage() {
         console.log('📋 Modo prancheta ativo - jogo NÃO será salvo');
       }
       
-      // ============================================
-      // SALVAR GOLS NA TABELA GOLS (Premium apenas, EXCETO modo prancheta)
-      // ============================================
-      console.log('⚽ DEBUG GOLS: Plano:', plano);
-      console.log('⚽ DEBUG GOLS: golsJogadores:', golsJogadores);
-      console.log('⚽ DEBUG GOLS: Quantidade de keys:', Object.keys(golsJogadores).length);
-      console.log('⚽ DEBUG GOLS: modoPrancheta:', modoPrancheta);
-      
+      // Gols e assistências já são salvos individualmente em registrarGol/registrarAssistencia
+      // Bloco abaixo desativado pois causava contagem em dobro
       const planoUpper2 = plano?.toUpperCase() || '';
-      if (!modoPrancheta && planoUpper2 === 'PREMIUM' && Object.keys(golsJogadores).length > 0) {
+      if (false) {
         console.log('⚽ Entrando no bloco de salvar gols...');
         const golsKey = `gols_${sessaoId}`;
         const golsStr = localStorage.getItem(golsKey);
-        const gols = golsStr ? JSON.parse(golsStr) : [];
+        const gols = golsStr ? JSON.parse(golsStr!) : [];
         
         console.log('⚽ DEBUG: Gols já salvos anteriormente:', gols.length);
         
@@ -4459,19 +4503,12 @@ export default function FilaPage() {
         console.log('   Tem gols marcados?', Object.keys(golsJogadores).length > 0);
       }
       
-      // ============================================
-      // SALVAR ASSISTÊNCIAS NA TABELA ASSISTENCIAS (Premium apenas, EXCETO modo prancheta)
-      // ============================================
-      console.log('👟 DEBUG ASSISTÊNCIAS: Plano:', plano);
-      console.log('👟 DEBUG ASSISTÊNCIAS: assistenciasJogadores:', assistenciasJogadores);
-      console.log('👟 DEBUG ASSISTÊNCIAS: Quantidade de keys:', Object.keys(assistenciasJogadores).length);
-      console.log('👟 DEBUG ASSISTÊNCIAS: modoPrancheta:', modoPrancheta);
-      
-      if (!modoPrancheta && planoUpper2 === 'PREMIUM' && Object.keys(assistenciasJogadores).length > 0) {
+      // Bloco abaixo desativado pois causava contagem em dobro de assistências
+      if (false) {
         console.log('👟 Entrando no bloco de salvar assistências...');
         const assistenciasKey = `assistencias_${sessaoId}`;
         const assistenciasStr = localStorage.getItem(assistenciasKey);
-        const assistencias = assistenciasStr ? JSON.parse(assistenciasStr) : [];
+        const assistencias = assistenciasStr ? JSON.parse(assistenciasStr!) : [];
         
         console.log('👟 DEBUG: Assistências já salvas anteriormente:', assistencias.length);
         
@@ -4725,11 +4762,17 @@ export default function FilaPage() {
         @keyframes pulse {
           0%, 100% {
             transform: scale(1);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.7);
+            background: #f3f4f6;
           }
-          50% {
-            transform: scale(1.08);
-            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+          40% {
+            transform: scale(1.22);
+            box-shadow: 0 0 0 12px rgba(234, 88, 12, 0);
+            background: #f97316;
+          }
+          60% {
+            transform: scale(1.18);
+            background: #ea580c;
           }
         }
         
@@ -4907,6 +4950,12 @@ export default function FilaPage() {
           width: 100%;
           position: relative;
           overflow: hidden;
+          animation: pulse-green 1.8s ease-in-out infinite;
+        }
+
+        @keyframes pulse-green {
+          0%, 100% { box-shadow: 0 4px 12px rgba(45, 143, 45, 0.3); transform: scale(1); }
+          50% { box-shadow: 0 6px 24px rgba(45, 143, 45, 0.6); transform: scale(1.03); }
         }
 
         .start-match-btn:disabled {
@@ -4914,6 +4963,7 @@ export default function FilaPage() {
           cursor: not-allowed;
           transform: none;
           box-shadow: none;
+          animation: none;
         }
 
         .start-match-btn:hover:not(:disabled) {
@@ -5169,6 +5219,64 @@ export default function FilaPage() {
           )}
 
           {/* Cronômetro e Placar no modo partida */}
+          {modoPartida && showModalTutorialCores && (
+            <div
+              style={{
+                position: 'fixed', inset: 0,
+                backgroundColor: 'rgba(0,0,0,0.65)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: 9999, padding: '20px'
+              }}
+              onClick={() => setShowModalTutorialCores(false)}
+            >
+              <div
+                style={{
+                  backgroundColor: 'white', borderRadius: '20px',
+                  padding: '24px', maxWidth: '320px', width: '100%',
+                  boxShadow: '0 20px 60px rgba(0,0,0,0.3)', textAlign: 'center'
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div style={{ fontSize: '48px', marginBottom: '12px' }}></div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1f2937', marginBottom: '8px' }}>
+                  Confirme as cores dos coletes!
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '16px', lineHeight: 1.5 }}>
+                  Verifique se as cores exibidas correspondem aos coletes dos times em campo.
+                  Toque nas cores para alterá-las se necessário.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                    <svg width="40" height="40" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M14 8C14 8 16 6 18 6C20 6 20 8 24 8C28 8 28 6 30 6C32 6 34 8 34 8L38 14V16L36 18V38C36 40 34 42 32 42H16C14 42 12 40 12 38V18L10 16V14L14 8Z"
+                        fill={corTimeA} stroke={corTimeA === '#FFFFFF' ? '#d1d5db' : corTimeA} strokeWidth="1.5"/>
+                    </svg>
+                    <span style={{ fontSize: '0.75rem', color: '#374151', fontWeight: 600 }}>Time A</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                    <svg width="40" height="40" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M14 8C14 8 16 6 18 6C20 6 20 8 24 8C28 8 28 6 30 6C32 6 34 8 34 8L38 14V16L36 18V38C36 40 34 42 32 42H16C14 42 12 40 12 38V18L10 16V14L14 8Z"
+                        fill={corTimeB} stroke={corTimeB === '#FFFFFF' ? '#d1d5db' : corTimeB} strokeWidth="1.5"/>
+                    </svg>
+                    <span style={{ fontSize: '0.75rem', color: '#374151', fontWeight: 600 }}>Time B</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowModalTutorialCores(false)}
+                  style={{
+                    width: '100%', padding: '12px',
+                    backgroundColor: '#16a34a', color: 'white',
+                    border: 'none', borderRadius: '12px',
+                    fontSize: '0.95rem', fontWeight: 600, cursor: 'pointer'
+                  }}
+                >
+                  ✅ Entendido, começar!
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Cronômetro e Placar no modo partida */}
           {modoPartida && (
             <div style={{
               background: 'white',
@@ -5196,6 +5304,44 @@ export default function FilaPage() {
                   onClick={() => setCronometroAtivo(!cronometroAtivo)}
                   disabled={modoEdicao}
                   style={{
+                    background: !cronometroAtivo && !modoEdicao ? '#f97316' : '#f3f4f6',
+                    border: !cronometroAtivo && !modoEdicao ? '2px solid #ea580c' : '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    fontSize: '20px',
+                    cursor: modoEdicao ? 'not-allowed' : 'pointer',
+                    padding: '6px 10px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                    minWidth: '40px',
+                    transition: 'background 0.2s, border 0.2s',
+                    animation: !cronometroAtivo && !modoEdicao ? 'pulse 0.9s ease-in-out infinite' : 'none',
+                    opacity: modoEdicao ? 0.5 : 1,
+                    color: !cronometroAtivo && !modoEdicao ? 'white' : 'inherit'
+                  }}
+                  onMouseOver={(e) => {
+                    if (!modoEdicao) e.currentTarget.style.background = '#e5e7eb';
+                  }}
+                  onMouseOut={(e) => {
+                    if (!modoEdicao) e.currentTarget.style.background = !cronometroAtivo ? '#f97316' : '#f3f4f6';
+                  }}
+                >
+                  {cronometroAtivo ? '⏸' : '▷'}
+                </button>
+                
+                <div style={{
+                  fontSize: '36px',
+                  fontWeight: '700',
+                  fontFamily: 'monospace',
+                  color: '#000000',
+                  letterSpacing: '1px',
+                  lineHeight: '1'
+                }}>
+                  {formatarTempo(cronometro)}
+                </div>
+                
+                <button
+                  onClick={() => setCronometro((regras.tempo_partida || 10) * 60)}
+                  disabled={modoEdicao}
+                  style={{
                     background: '#f3f4f6',
                     border: '1px solid #e5e7eb',
                     borderRadius: '6px',
@@ -5205,7 +5351,6 @@ export default function FilaPage() {
                     boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                     minWidth: '40px',
                     transition: 'all 0.2s',
-                    animation: !cronometroAtivo && !modoEdicao ? 'pulse 1.5s ease-in-out infinite' : 'none',
                     opacity: modoEdicao ? 0.5 : 1
                   }}
                   onMouseOver={(e) => {
@@ -5213,6 +5358,164 @@ export default function FilaPage() {
                   }}
                   onMouseOut={(e) => {
                     if (!modoEdicao) e.currentTarget.style.background = '#f3f4f6';
+                  }}
+                >
+                  ↺
+                </button>
+              </div>
+
+
+              {/* Placar */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                paddingLeft: '8px',
+                paddingRight: '8px'
+              }}>
+                <button
+                  onClick={alternarCorTimeA}
+                  disabled={modoEdicao}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: modoEdicao ? 'not-allowed' : 'pointer',
+                    padding: '2px',
+                    transition: 'all 0.2s',
+                    opacity: modoEdicao ? 0.5 : 1
+                  }}
+                  onMouseOver={(e) => {
+                    if (!modoEdicao) e.currentTarget.style.transform = 'scale(1.15)';
+                  }}
+                  onMouseOut={(e) => {
+                    if (!modoEdicao) e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                  title="Clique para trocar cor do colete"
+                >
+                  <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M14 8C14 8 16 6 18 6C20 6 20 8 24 8C28 8 28 6 30 6C32 6 34 8 34 8L38 14V16L36 18V38C36 40 34 42 32 42H16C14 42 12 40 12 38V18L10 16V14L14 8Z" 
+                      fill={corTimeA} 
+                      stroke={corTimeA === '#FFFFFF' ? '#d1d5db' : corTimeA} 
+                      strokeWidth="1.5"/>
+                    <circle cx="20" cy="22" r="1.5" fill={corTimeA === '#000000' ? 'white' : 'rgba(0,0,0,0.15)'}/>
+                    <circle cx="28" cy="22" r="1.5" fill={corTimeA === '#000000' ? 'white' : 'rgba(0,0,0,0.15)'}/>
+                  </svg>
+                </button>
+                
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}>
+                  <div style={{
+                    fontSize: '36px',
+                    fontWeight: '800',
+                    color: '#1f2937',
+                    minWidth: '42px',
+                    textAlign: 'center',
+                    lineHeight: '1'
+                  }}>
+                    {placarTimeA}
+                  </div>
+                  
+                  <span style={{ 
+                    fontSize: '20px', 
+                    color: '#9ca3af', 
+                    fontWeight: '600',
+                    lineHeight: '1'
+                  }}>×</span>
+                  
+                  <div style={{
+                    fontSize: '36px',
+                    fontWeight: '800',
+                    color: '#1f2937',
+                    minWidth: '42px',
+                    textAlign: 'center',
+                    lineHeight: '1'
+                  }}>
+                    {placarTimeB}
+                  </div>
+                </div>
+                
+                <button
+                  onClick={alternarCorTimeB}
+                  disabled={modoEdicao}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: modoEdicao ? 'not-allowed' : 'pointer',
+                    padding: '2px',
+                    transition: 'all 0.2s',
+                    opacity: modoEdicao ? 0.5 : 1
+                  }}
+                  onMouseOver={(e) => {
+                    if (!modoEdicao) e.currentTarget.style.transform = 'scale(1.15)';
+                  }}
+                  onMouseOut={(e) => {
+                    if (!modoEdicao) e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                  title="Clique para trocar cor do colete"
+                >
+                  <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M14 8C14 8 16 6 18 6C20 6 20 8 24 8C28 8 28 6 30 6C32 6 34 8 34 8L38 14V16L36 18V38C36 40 34 42 32 42H16C14 42 12 40 12 38V18L10 16V14L14 8Z" 
+                      fill={corTimeB} 
+                      stroke={corTimeB === '#FFFFFF' ? '#d1d5db' : corTimeB} 
+                      strokeWidth="1.5"/>
+                    <circle cx="20" cy="22" r="1.5" fill={corTimeB === '#000000' ? 'white' : 'rgba(0,0,0,0.15)'}/>
+                    <circle cx="28" cy="22" r="1.5" fill={corTimeB === '#000000' ? 'white' : 'rgba(0,0,0,0.15)'}/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Cronômetro e Placar no modo prancheta */}
+          {modoPrancheta && (
+            <div style={{
+              background: 'white',
+              borderRadius: '12px',
+              padding: '8px 12px',
+              marginTop: '2px',
+              border: '2px solid #e5e7eb',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              alignItems: 'center',
+              animation: 'slideInFromTop 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards',
+              overflow: 'hidden'
+            }}>
+              {/* Cronômetro */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                padding: '4px'
+              }}>
+                <button
+                  onClick={() => setCronometroAtivo(!cronometroAtivo)}
+                  disabled={modoEdicao}
+                  style={{
+                    background: !cronometroAtivo && !modoEdicao ? '#f97316' : '#f3f4f6',
+                    border: !cronometroAtivo && !modoEdicao ? '2px solid #ea580c' : '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    fontSize: '20px',
+                    cursor: modoEdicao ? 'not-allowed' : 'pointer',
+                    padding: '6px 10px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                    minWidth: '40px',
+                    transition: 'background 0.2s, border 0.2s',
+                    animation: !cronometroAtivo && !modoEdicao ? 'pulse 0.9s ease-in-out infinite' : 'none',
+                    opacity: modoEdicao ? 0.5 : 1,
+                    color: !cronometroAtivo && !modoEdicao ? 'white' : 'inherit'
+                  }}
+                  onMouseOver={(e) => {
+                    if (!modoEdicao) e.currentTarget.style.background = '#e5e7eb';
+                  }}
+                  onMouseOut={(e) => {
+                    if (!modoEdicao) e.currentTarget.style.background = !cronometroAtivo ? '#f97316' : '#f3f4f6';
                   }}
                 >
                   {cronometroAtivo ? '⏸' : '▷'}
@@ -5360,195 +5663,25 @@ export default function FilaPage() {
             </div>
           )}
 
-          {/* Cronômetro e Placar no modo prancheta */}
-          {modoPrancheta && (
+          {/* Banner de instrução de gol/assistência */}
+          {(selecionandoGolPara || selecionandoAssistenciaPara) && (
             <div style={{
-              background: 'white',
-              borderRadius: '12px',
-              padding: '8px 12px',
-              marginTop: '2px',
-              border: '2px solid #e5e7eb',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-              alignItems: 'center',
-              animation: 'slideInFromTop 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards',
-              overflow: 'hidden'
+              width: '100%',
+              backgroundColor: selecionandoAssistenciaPara ? '#f0fdf4' : '#eff6ff',
+              border: `2px solid ${selecionandoAssistenciaPara ? '#16a34a' : '#3b82f6'}`,
+              borderRadius: '10px',
+              padding: '10px 14px',
+              textAlign: 'center',
+              fontSize: '0.9rem',
+              fontWeight: 700,
+              color: selecionandoAssistenciaPara ? '#15803d' : '#1d4ed8',
+              animation: 'slideInFromTop 0.3s ease forwards',
+              position: 'relative',
+              zIndex: 600
             }}>
-              {/* Cronômetro */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                padding: '4px'
-              }}>
-                <button
-                  onClick={() => setCronometroAtivo(!cronometroAtivo)}
-                  disabled={modoEdicao}
-                  style={{
-                    background: '#f3f4f6',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '20px',
-                    cursor: modoEdicao ? 'not-allowed' : 'pointer',
-                    padding: '6px 10px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                    minWidth: '40px',
-                    transition: 'all 0.2s',
-                    animation: !cronometroAtivo && !modoEdicao ? 'pulse 1.5s ease-in-out infinite' : 'none',
-                    opacity: modoEdicao ? 0.5 : 1
-                  }}
-                  onMouseOver={(e) => {
-                    if (!modoEdicao) e.currentTarget.style.background = '#e5e7eb';
-                  }}
-                  onMouseOut={(e) => {
-                    if (!modoEdicao) e.currentTarget.style.background = '#f3f4f6';
-                  }}
-                >
-                  {cronometroAtivo ? '⏸' : '▷'}
-                </button>
-                
-                <div style={{
-                  fontSize: '36px',
-                  fontWeight: '700',
-                  fontFamily: 'monospace',
-                  color: '#000000',
-                  letterSpacing: '1px',
-                  lineHeight: '1'
-                }}>
-                  {formatarTempo(cronometro)}
-                </div>
-                
-                <button
-                  onClick={() => setCronometro((regras.tempo_partida || 10) * 60)}
-                  disabled={modoEdicao}
-                  style={{
-                    background: '#f3f4f6',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '20px',
-                    cursor: modoEdicao ? 'not-allowed' : 'pointer',
-                    padding: '6px 10px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                    minWidth: '40px',
-                    transition: 'all 0.2s',
-                    opacity: modoEdicao ? 0.5 : 1
-                  }}
-                  onMouseOver={(e) => {
-                    if (!modoEdicao) e.currentTarget.style.background = '#e5e7eb';
-                  }}
-                  onMouseOut={(e) => {
-                    if (!modoEdicao) e.currentTarget.style.background = '#f3f4f6';
-                  }}
-                >
-                  ↺
-                </button>
-              </div>
-
-              {/* Placar */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                paddingLeft: '8px',
-                paddingRight: '8px'
-              }}>
-                <button
-                  onClick={alternarCorTimeA}
-                  disabled={modoEdicao}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: modoEdicao ? 'not-allowed' : 'pointer',
-                    padding: '2px',
-                    transition: 'all 0.2s',
-                    opacity: modoEdicao ? 0.5 : 1
-                  }}
-                  onMouseOver={(e) => {
-                    if (!modoEdicao) e.currentTarget.style.transform = 'scale(1.15)';
-                  }}
-                  onMouseOut={(e) => {
-                    if (!modoEdicao) e.currentTarget.style.transform = 'scale(1)';
-                  }}
-                  title="Clique para trocar cor do colete"
-                >
-                  <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M14 8C14 8 16 6 18 6C20 6 20 8 24 8C28 8 28 6 30 6C32 6 34 8 34 8L38 14V16L36 18V38C36 40 34 42 32 42H16C14 42 12 40 12 38V18L10 16V14L14 8Z" 
-                      fill={corTimeA} 
-                      stroke={corTimeA === '#FFFFFF' ? '#d1d5db' : corTimeA} 
-                      strokeWidth="1.5"/>
-                    <circle cx="20" cy="22" r="1.5" fill={corTimeA === '#000000' ? 'white' : 'rgba(0,0,0,0.15)'}/>
-                    <circle cx="28" cy="22" r="1.5" fill={corTimeA === '#000000' ? 'white' : 'rgba(0,0,0,0.15)'}/>
-                  </svg>
-                </button>
-                
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}>
-                  <div style={{
-                    fontSize: '36px',
-                    fontWeight: '800',
-                    color: '#1f2937',
-                    minWidth: '42px',
-                    textAlign: 'center',
-                    lineHeight: '1'
-                  }}>
-                    {placarTimeA}
-                  </div>
-                  
-                  <span style={{ 
-                    fontSize: '20px', 
-                    color: '#9ca3af', 
-                    fontWeight: '600',
-                    lineHeight: '1'
-                  }}>×</span>
-                  
-                  <div style={{
-                    fontSize: '36px',
-                    fontWeight: '800',
-                    color: '#1f2937',
-                    minWidth: '42px',
-                    textAlign: 'center',
-                    lineHeight: '1'
-                  }}>
-                    {placarTimeB}
-                  </div>
-                </div>
-                
-                <button
-                  onClick={alternarCorTimeB}
-                  disabled={modoEdicao}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: modoEdicao ? 'not-allowed' : 'pointer',
-                    padding: '2px',
-                    transition: 'all 0.2s',
-                    opacity: modoEdicao ? 0.5 : 1
-                  }}
-                  onMouseOver={(e) => {
-                    if (!modoEdicao) e.currentTarget.style.transform = 'scale(1.15)';
-                  }}
-                  onMouseOut={(e) => {
-                    if (!modoEdicao) e.currentTarget.style.transform = 'scale(1)';
-                  }}
-                  title="Clique para trocar cor do colete"
-                >
-                  <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M14 8C14 8 16 6 18 6C20 6 20 8 24 8C28 8 28 6 30 6C32 6 34 8 34 8L38 14V16L36 18V38C36 40 34 42 32 42H16C14 42 12 40 12 38V18L10 16V14L14 8Z" 
-                      fill={corTimeB} 
-                      stroke={corTimeB === '#FFFFFF' ? '#d1d5db' : corTimeB} 
-                      strokeWidth="1.5"/>
-                    <circle cx="20" cy="22" r="1.5" fill={corTimeB === '#000000' ? 'white' : 'rgba(0,0,0,0.15)'}/>
-                    <circle cx="28" cy="22" r="1.5" fill={corTimeB === '#000000' ? 'white' : 'rgba(0,0,0,0.15)'}/>
-                  </svg>
-                </button>
-              </div>
+              {selecionandoAssistenciaPara
+                ? '👟 Selecione quem deu a assistência (passe)'
+                : '⚽ Selecione o jogador que marcou o gol'}
             </div>
           )}
 
@@ -5905,6 +6038,101 @@ export default function FilaPage() {
                 </button>
               </div>
 
+              {/* Eventos da Partida - colapsável */}
+              {historicoAcoes.length > 0 && (() => {
+                // Agrupar gols com suas assistências
+                const eventos: Array<{gol: {time: 'A'|'B', jogadorId: string}, assist: {jogadorId: string}|null}> = [];
+                let golPendente: {time: 'A'|'B', jogadorId: string} | null = null;
+                for (const acao of historicoAcoes) {
+                  if (acao.tipo === 'gol') {
+                    if (golPendente) eventos.push({ gol: golPendente, assist: null });
+                    golPendente = { time: acao.time, jogadorId: acao.jogadorId };
+                  } else if (acao.tipo === 'assistencia') {
+                    if (golPendente) {
+                      eventos.push({ gol: golPendente, assist: { jogadorId: acao.jogadorId } });
+                      golPendente = null;
+                    }
+                  }
+                }
+                if (golPendente) eventos.push({ gol: golPendente, assist: null });
+
+                // Helper: nome por ID real
+                const getNome = (id: string) => {
+                  const todos = [...time1, ...time2];
+                  const peladaId = buscar_pelada_id();
+                  const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
+                  const jogadoresLS = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+                  const jogadorReal = jogadoresLS.find((j: any) => j.id === id);
+                  if (jogadorReal) return jogadorReal.nome;
+                  return todos.find(j => j.id === id)?.nome || '?';
+                };
+
+                return (
+                  <div style={{ marginBottom: '12px' }}>
+                    <button
+                      onClick={() => setShowEventos(prev => !prev)}
+                      style={{
+                        width: '100%',
+                        background: '#f9fafb',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: showEventos ? '8px 8px 0 0' : '8px',
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: '#374151'
+                      }}
+                    >
+                      <span>📋 Eventos da Partida ({eventos.length} {eventos.length === 1 ? 'gol' : 'gols'})</span>
+                      <span style={{ fontSize: '11px', color: '#9ca3af' }}>{showEventos ? '▲ ocultar' : '▼ ver'}</span>
+                    </button>
+                    {showEventos && (
+                      <div style={{
+                        border: '1px solid #e5e7eb',
+                        borderTop: 'none',
+                        borderRadius: '0 0 8px 8px',
+                        overflow: 'hidden',
+                        background: 'white'
+                      }}>
+                        {eventos.map((ev, idx) => {
+                          const corTime = ev.gol.time === 'A' ? corTimeA : corTimeB;
+                          const nomeTime = obterNomeCor(corTime);
+                          return (
+                            <div key={idx} style={{
+                              padding: '8px 12px',
+                              borderBottom: idx < eventos.length - 1 ? '1px solid #f3f4f6' : 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '8px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, color: '#1f2937', flexWrap: 'wrap' }}>
+                                <span>⚽ {getNome(ev.gol.jogadorId)}</span>
+                                {ev.assist && (
+                                  <span style={{ fontWeight: 400, color: '#6b7280' }}>👟 {getNome(ev.assist.jogadorId)}</span>
+                                )}
+                              </div>
+                              <span style={{
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                color: corTime === '#FFFFFF' ? '#374151' : corTime,
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0
+                              }}>
+                                {nomeTime.toUpperCase()}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <button
                 onClick={async () => {
                   // Carregar regras ao abrir modal (caso não tenha sido carregado antes)
@@ -6177,7 +6405,7 @@ export default function FilaPage() {
                 onClick={iniciarPartida}
                 disabled={todosJogadoresNaFila.length < (regras.jogadores_por_time * 2)}
               >
-                ⚽ Iniciar Pelada ⚽
+                ⚽ Iniciar Jogo ⚽
               </button>
             </section>
           ) : null}
@@ -9799,13 +10027,26 @@ export default function FilaPage() {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    {partidasDoDia.map((jogo, idx) => {
+                    {[...partidasDoDia].sort((a: any, b: any) => (a.numero_jogo || 0) - (b.numero_jogo || 0)).map((jogo, idx) => {
                       const buscarJogador = (jogadorId: any): string => {
                         if (typeof jogadorId === 'object' && jogadorId?.nome) {
                           return jogadorId.nome;
                         }
                         const jogador = jogo.jogadores?.find((j: any) => j.id === jogadorId);
                         return jogador?.nome || 'Jogador';
+                      };
+
+                      // Mapa de assistências por gol_id
+                      const assistsMap = new Map(
+                        (jogo.assistencias || []).filter((a: any) => a.gol_id).map((a: any) => [a.gol_id, a])
+                      );
+                      // Helper nome por ID
+                      const getNomeById = (id: string) => {
+                        const todos = [...(jogo.time_a || []), ...(jogo.time_b || [])];
+                        const found = todos.find((j: any) => (j.id || j) === id);
+                        if (found) return found.nome || found;
+                        const real = (jogo.jogadores || []).find((j: any) => j.id === id);
+                        return real?.nome || id;
                       };
 
                       return (
@@ -9893,6 +10134,57 @@ export default function FilaPage() {
                               })}
                             </div>
                           </div>
+
+                          {/* Eventos colapsáveis */}
+                          {(jogo.gols || []).length > 0 && (() => {
+                            const jogoEventosAberto = eventosAbertosPartidas.has(jogo.id);
+                            return (
+                              <div style={{ borderTop: '1px solid #e5e7eb' }}>
+                                <button
+                                  onClick={() => setEventosAbertosPartidas(prev => {
+                                    const next = new Set(prev);
+                                    jogoEventosAberto ? next.delete(jogo.id) : next.add(jogo.id);
+                                    return next;
+                                  })}
+                                  style={{
+                                    width: '100%', background: '#f9fafb', border: 'none',
+                                    padding: '8px 12px', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    fontSize: '12px', fontWeight: 600, color: '#6b7280'
+                                  }}
+                                >
+                                  <span>📋 Eventos ({(jogo.gols || []).length} {(jogo.gols || []).length === 1 ? 'gol' : 'gols'})</span>
+                                  <span>{jogoEventosAberto ? '▲' : '▼'}</span>
+                                </button>
+                                {jogoEventosAberto && (
+                                  <div style={{ background: 'white', padding: '4px 0' }}>
+                                    {(jogo.gols || []).map((gol: any, gi: number) => {
+                                      const assist = assistsMap.get(gol.id) as any;
+                                      return (
+                                        <div key={gi} style={{
+                                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                          padding: '5px 12px', fontSize: '13px',
+                                          borderBottom: gi < (jogo.gols || []).length - 1 ? '1px solid #f3f4f6' : 'none'
+                                        }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span>⚽</span>
+                                            <span style={{ fontWeight: 600, color: '#1f2937' }}>{getNomeById(gol.jogador_id)}</span>
+                                            {assist && <span style={{ color: '#6b7280' }}>👟 {getNomeById(assist.jogador_id)}</span>}
+                                          </div>
+                                          <span style={{
+                                            fontSize: '11px', fontWeight: 700,
+                                            color: gol.time === 'A' ? '#16a34a' : '#374151'
+                                          }}>
+                                            TIME {gol.time === 'A' ? '1' : '2'}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}

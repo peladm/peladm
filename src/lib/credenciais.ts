@@ -5,22 +5,36 @@
 export interface Credenciais {
   pelada_id: string;
   username: string;
-  senha: string;
+  senha: string; // armazenado como hash SHA-256, nunca em plaintext
   plano: string;
   supabase_url: string | null;
   supabase_anon_key: string | null;
+  is_master?: boolean;
 }
 
 const CHAVE_CREDENCIAIS = 'credenciais';
 
 /**
- * Salvar credenciais no localStorage após login
+ * Gera hash SHA-256 da senha usando Web Crypto API
  */
-export const salvarCredenciais = (credenciais: Credenciais): void => {
+export const hashSenha = async (senha: string): Promise<string> => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(senha);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+/**
+ * Salvar credenciais no localStorage após login
+ * A senha é armazenada como hash SHA-256
+ */
+export const salvarCredenciais = async (credenciais: Credenciais): Promise<void> => {
   if (typeof window === 'undefined') return;
   
   try {
-    localStorage.setItem(CHAVE_CREDENCIAIS, JSON.stringify(credenciais));
+    const senhaHash = await hashSenha(credenciais.senha);
+    localStorage.setItem(CHAVE_CREDENCIAIS, JSON.stringify({ ...credenciais, senha: senhaHash }));
   } catch (error) {
     console.error('Erro ao salvar credenciais:', error);
   }

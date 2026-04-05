@@ -38,6 +38,7 @@ interface Jogo {
 }
 
 export default function ClassificacaoPage() {
+  const STORAGE_KEY = 'peladm:classificacao:state:v1';
   const router = useRouter();
   const { possuiPermissao, nomePlano, loading: loadingPermissoes } = usePermissions();
   const [jogos, setJogos] = useState<Jogo[]>([]);
@@ -55,6 +56,29 @@ export default function ClassificacaoPage() {
   const [periodoSelecionado, setPeriodoSelecionado] = useState('');
   const [quantidadePeladas, setQuantidadePeladas] = useState('');
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved.filtro) setFiltro(saved.filtro);
+      if (typeof saved.dataSelecionada === 'string') setDataSelecionada(saved.dataSelecionada);
+      if (typeof saved.periodoSelecionado === 'string') setPeriodoSelecionado(saved.periodoSelecionado);
+      if (typeof saved.quantidadePeladas === 'string') setQuantidadePeladas(saved.quantidadePeladas);
+    } catch {
+      // ignore invalid persisted state
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      filtro,
+      dataSelecionada,
+      periodoSelecionado,
+      quantidadePeladas,
+    }));
+  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas]);
+
   // Bloquear acesso para plano FREE
   useEffect(() => {
     if (!loadingPermissoes && !possuiPermissao('verResultados')) {
@@ -69,7 +93,7 @@ export default function ClassificacaoPage() {
 
   useEffect(() => {
     aplicarFiltro();
-  }, [filtro, dataSelecionada, periodoSelecionado, jogos]);
+  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas, jogos]);
 
   const aplicarFiltro = () => {
     let filtered = [...jogos];
@@ -327,7 +351,7 @@ export default function ClassificacaoPage() {
                   setFiltro('ultimas');
                   setDataSelecionada('');
                   setPeriodoSelecionado('');
-                  setQuantidadePeladas('10');
+                  setQuantidadePeladas('3');
                 }}
                 className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
                   filtro === 'ultimas'
@@ -402,10 +426,10 @@ export default function ClassificacaoPage() {
                 onChange={(e) => setQuantidadePeladas(e.target.value)}
                 className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
+                <option value="2">📊 Últimas 2 peladas</option>
+                <option value="3">📊 Últimas 3 peladas</option>
+                <option value="4">📊 Últimas 4 peladas</option>
                 <option value="5">📊 Últimas 5 peladas</option>
-                <option value="10">📊 Últimas 10 peladas</option>
-                <option value="15">📊 Últimas 15 peladas</option>
-                <option value="20">📊 Últimas 20 peladas</option>
               </select>
             )}
             
@@ -423,6 +447,26 @@ export default function ClassificacaoPage() {
             )}
           </div>
         </section>
+
+        {/* Badge do filtro ativo */}
+        {(() => {
+          let label = '';
+          if (filtro === 'atual') label = 'Pelada mais recente';
+          else if (filtro === 'ultimas') label = `Últimas ${quantidadePeladas} peladas`;
+          else if (filtro === 'historia') label = 'Histórico completo';
+          else if (filtro === 'mes') label = periodoSelecionado ? periodoSelecionado : 'Todos os meses';
+          else if (filtro === 'ano') label = periodoSelecionado ? periodoSelecionado : 'Todos os anos';
+          if (dataSelecionada) label = `Pelada: ${dataSelecionada}`;
+
+          return (
+            <div className="flex items-center justify-center mb-3">
+              <div className="w-full bg-green-500 rounded-lg px-4 py-1.5 flex items-center justify-center gap-2 shadow-sm">
+                <span className="text-white text-xs font-medium">Filtro:</span>
+                <span className="text-white text-xs font-bold">{label}</span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Tabela de Classificação Dinâmica */}
         {(() => {
@@ -489,55 +533,55 @@ export default function ClassificacaoPage() {
 
           return jogadoresOrdenados.length > 0 ? (
             <div className="w-full">
-              <table className="w-full border-collapse text-xs sm:text-sm">
+              <table className="w-full border-separate border-spacing-0 text-xs sm:text-sm">
                 <thead>
                   <tr className="bg-gray-100 border-b-2 border-gray-300">
-                    <th className="px-1 py-2 sm:px-2 sm:py-3 text-left font-bold text-gray-700 text-xs">Pos</th>
-                    <th className="px-2 py-2 sm:px-3 sm:py-3 text-left font-bold text-gray-700 text-xs">Jogador</th>
+                    <th className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-left font-bold text-gray-700 text-xs shadow-sm">Pos</th>
+                    <th className="sticky top-16 z-20 bg-gray-100 px-2 py-2 sm:px-3 sm:py-3 text-left font-bold text-gray-700 text-xs shadow-sm">Jogador</th>
                     <th 
-                      className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
                       onClick={() => setOrdenarPor('pontos')}
                       title="Pontos"
                     >
                       <span className={ordenarPor === 'pontos' ? 'text-base sm:text-xl' : 'text-sm'}>💎</span>
                     </th>
                     <th 
-                      className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
                       onClick={() => setOrdenarPor('gols')}
                       title="Gols"
                     >
                       <span className={ordenarPor === 'gols' ? 'text-base sm:text-xl' : 'text-sm'}>⚽</span>
                     </th>
                     <th 
-                      className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
                       onClick={() => setOrdenarPor('assistencias')}
                       title="Assistências"
                     >
                       <span className={ordenarPor === 'assistencias' ? 'text-base sm:text-xl' : 'text-sm'}>👟</span>
                     </th>
                     <th 
-                      className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
                       onClick={() => setOrdenarPor('vitorias')}
                       title="Vitórias"
                     >
                       <span className={ordenarPor === 'vitorias' ? 'text-base sm:text-xl' : 'text-sm'}>🏆</span>
                     </th>
                     <th 
-                      className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
                       onClick={() => setOrdenarPor('empates')}
                       title="Empates"
                     >
                       <span className={ordenarPor === 'empates' ? 'text-base sm:text-xl' : 'text-sm'}>🤝</span>
                     </th>
                     <th 
-                      className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
                       onClick={() => setOrdenarPor('derrotas')}
                       title="Derrotas"
                     >
                       <span className={ordenarPor === 'derrotas' ? 'text-base sm:text-xl' : 'text-sm'}>❌</span>
                     </th>
                     <th 
-                      className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
+                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
                       onClick={() => setOrdenarPor('jogos')}
                       title="Jogos"
                     >

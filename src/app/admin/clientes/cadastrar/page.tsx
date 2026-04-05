@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { validarAcessoMaster } from '../../../../lib/adminAuth';
 
 // Configuração Supabase
 const supabase = createClient(
@@ -86,6 +87,7 @@ function CadastrarClienteContent() {
   const isEdicao = !!clienteId;
   
   const [loading, setLoading] = useState(false);
+  const [acessoValidado, setAcessoValidado] = useState(false);
   const [carregandoCliente, setCarregandoCliente] = useState(isEdicao);
   const [mostrarModalCredenciais, setMostrarModalCredenciais] = useState(false);
   const [loadingUsage, setLoadingUsage] = useState(false);
@@ -110,12 +112,30 @@ function CadastrarClienteContent() {
     data_vencimento: null as string | null
   });
 
+  useEffect(() => {
+    const validarAcesso = async () => {
+      const autorizado = await validarAcessoMaster();
+      if (!autorizado) {
+        alert('🚫 Acesso restrito ao perfil master.');
+        router.push('/');
+        return;
+      }
+      setAcessoValidado(true);
+    };
+
+    validarAcesso();
+  }, [router]);
+
   // Carregar dados do cliente para edição
   useEffect(() => {
-    if (isEdicao && clienteId) {
+    if (acessoValidado && isEdicao && clienteId) {
       carregarCliente(clienteId);
     }
-  }, [isEdicao, clienteId]);
+
+    if (acessoValidado && !isEdicao) {
+      setCarregandoCliente(false);
+    }
+  }, [acessoValidado, isEdicao, clienteId]);
 
   const carregarCliente = async (id: string) => {
     setCarregandoCliente(true);
@@ -445,6 +465,28 @@ function CadastrarClienteContent() {
 
         // Se cliente criado com sucesso, salvar credenciais
         if (!result.error && result.data && result.data.length > 0) {
+          const { error: regrasError } = await supabase
+            .from('regras')
+            .upsert({
+              pelada_id: peladaId,
+              jogadores_por_time: 5,
+              modelo_sorteio: 'equilibrado',
+              duracao: 10,
+              vitorias_consecutivas: 0,
+              prioridade_retorno: 'prioridade',
+              regra_empate: 'ambos_saem',
+              regra_apos_empate: 'desempate_decide',
+              empate_conta_vitoria: false,
+              tipo_fila: 'modo_prancheta',
+              modo_sincronizacao: 'tempo_real',
+              cores_coletes: ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981']
+            }, { onConflict: 'pelada_id' });
+
+          if (regrasError) {
+            console.error('⚠️ Cliente criado, mas falhou ao criar regras padrão:', regrasError);
+            alert('⚠️ Cliente criado, mas não foi possível inicializar as regras padrão.');
+          }
+
           // Salvar credenciais para exibir no modal
           setCredenciaisGeradas({
             peladaId: peladaId,

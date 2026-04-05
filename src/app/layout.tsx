@@ -14,17 +14,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PelADM - Gerenciador de Peladas",
+  title: "PeladaPLAY - Gerenciador de Peladas",
   description: "Sistema completo para gerenciar suas peladas de futebol",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "PelADM",
+    title: "PeladaPLAY",
   },
   icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
+    icon: "/icon-512.png",
+    apple: "/apple-touch-icon.png",
   },
 };
 
@@ -34,6 +34,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: '#16a34a',
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -45,10 +46,11 @@ export default function RootLayout({
     <html lang="pt-BR">
       <head>
         <link rel="manifest" href="/manifest.json" />
-        <link rel="apple-touch-icon" href="/logo.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="PelADM" />
+        <meta name="apple-mobile-web-app-title" content="PeladaPLAY" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
         
         {/* Google AdSense */}
         <script 

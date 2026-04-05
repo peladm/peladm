@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from './logger';
-import { buscar_pelada_id, buscar_senha, buscar_plano, buscar_supabase_url, buscar_supabase_anon_key } from './credenciais';
+import { buscar_pelada_id, buscar_senha, buscar_plano, buscar_supabase_url, buscar_supabase_anon_key, hashSenha } from './credenciais';
 
 // Configurações do Supabase PRINCIPAL (para autenticação e clientes)
 const supabaseUrl = 'https://ewcswczqvelhlwpbraea.supabase.co';
@@ -62,36 +62,6 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
     return clienteSupabase;
   }
   
-  // FALLBACK: Busca credenciais do banco principal
-  logger.log('🔍 Buscando credenciais no banco principal para:', peladaId);
-  const { data: clienteData, error } = await supabase
-    .from('clientes')
-    .select('supabase_url, supabase_anon_key, plano')
-    .eq('pelada_id', peladaId)
-    .single();
-
-  if (error) {
-    console.error('❌ Erro ao buscar cliente:', error);
-  }
-
-  // Se cliente Premium com banco dedicado, cria e cacheia conexão
-  if (clienteData?.supabase_url && clienteData?.supabase_anon_key) {
-    logger.log('✅ Cliente com banco dedicado encontrado no banco!');
-    logger.log('🔗 URL:', clienteData.supabase_url);
-    logger.log('🔑 Key:', clienteData.supabase_anon_key.substring(0, 20) + '...');
-    
-    const clienteSupabase = createClient(
-      clienteData.supabase_url,
-      clienteData.supabase_anon_key,
-      {
-        auth: { persistSession: false },
-        db: { schema: 'public' },
-      }
-    );
-    clienteSupabaseCache[peladaId] = clienteSupabase;
-    return clienteSupabase;
-  }
-
   // Cliente Free ou sem banco dedicado: usa banco principal
   logger.log('ℹ️ Usando banco principal para:', peladaId);
   return supabase;
@@ -105,10 +75,11 @@ export interface Jogador {
   status: 'ativo' | 'inativo';
   pelada_id?: string; // Campo opcional pois é definido automaticamente
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
   jogos?: number;
   vitorias?: number;
   gols?: number;
+  foto_url?: string;
 }
 
 // Função para obter pelada_id do usuário logado (código do cliente)
@@ -132,10 +103,11 @@ const isPlanoFree = (): boolean => {
 export const validarSenhaPelada = async (senhaDigitada: string): Promise<boolean> => {
   if (typeof window === 'undefined') return false;
   
-  const senhaCorreta = buscar_senha();
-  if (!senhaCorreta) return false;
+  const senhaHashArmazenada = buscar_senha();
+  if (!senhaHashArmazenada) return false;
   
-  return senhaDigitada === senhaCorreta;
+  const hashDigitada = await hashSenha(senhaDigitada);
+  return hashDigitada === senhaHashArmazenada;
 };
 
 // Funções de interação com a tabela jogadores (usa localStorage se Free, Supabase se Gold/Premium)
@@ -176,7 +148,7 @@ export const jogadoresService = {
   },
 
   // Criar novo jogador
-  async criar(nome: string, nivel: number) {
+  async criar(nome: string, nivel: number, fotoUrl?: string | null) {
     const peladaId = getPeladaId();
     if (!peladaId) {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
@@ -201,7 +173,8 @@ export const jogadoresService = {
         status: 'ativo',
         pelada_id: peladaId,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        foto_url: fotoUrl ?? undefined
       };
       jogadores.push(novoJogador);
       localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
@@ -218,7 +191,8 @@ export const jogadoresService = {
           nome: nome.trim(),
           nivel,
           status: 'ativo',
-          pelada_id: peladaId
+          pelada_id: peladaId,
+          ...(fotoUrl ? { foto_url: fotoUrl } : {})
         }
       ])
       .select()
@@ -233,7 +207,7 @@ export const jogadoresService = {
   },
 
   // Atualizar jogador
-  async atualizar(id: string, nome: string, nivel: number) {
+  async atualizar(id: string, nome: string, nivel: number, fotoUrl?: string | null) {
     const peladaId = getPeladaId();
     if (!peladaId) {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
@@ -249,7 +223,8 @@ export const jogadoresService = {
         ...jogadores[index],
         nome: nome.trim(),
         nivel,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        foto_url: fotoUrl !== undefined ? (fotoUrl ?? undefined) : jogadores[index].foto_url
       };
       localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
       return jogadores[index];
@@ -262,7 +237,8 @@ export const jogadoresService = {
       .from('jogadores')
       .update({
         nome: nome.trim(),
-        nivel
+        nivel,
+        ...(fotoUrl !== undefined ? { foto_url: fotoUrl } : {})
       })
       .eq('id', id)
       .eq('pelada_id', peladaId)
@@ -292,8 +268,7 @@ export const jogadoresService = {
       
       jogadores[index] = {
         ...jogadores[index],
-        status,
-        updated_at: new Date().toISOString()
+        status
       };
       localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
       return jogadores[index];
@@ -304,10 +279,7 @@ export const jogadoresService = {
     
     const { data, error } = await clienteDb
       .from('jogadores')
-      .update({
-        status,
-        updated_at: new Date().toISOString()
-      })
+      .update({ status })
       .eq('id', id)
       .eq('pelada_id', peladaId)
       .select()

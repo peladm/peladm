@@ -29,7 +29,7 @@ export default function Login() {
       // Buscar cliente na tabela clientes
       const { data, error } = await supabase
         .from('clientes')
-        .select('*')
+        .select('pelada_id, username, senha, plano, supabase_url, supabase_anon_key, status, is_master')
         .eq('username', usuario)
         .eq('senha', senha)
         .single();
@@ -41,13 +41,14 @@ export default function Login() {
       }
 
       // Salvar credenciais no localStorage
-      salvarCredenciais({
+      await salvarCredenciais({
         pelada_id: data.pelada_id,
         username: data.username,
         senha: data.senha,
         plano: (data.plano || 'free').toLowerCase(),
         supabase_url: data.supabase_url,
-        supabase_anon_key: data.supabase_anon_key
+        supabase_anon_key: data.supabase_anon_key,
+        is_master: data.is_master === true
       });
       
       // Redirecionar

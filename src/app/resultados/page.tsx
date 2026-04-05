@@ -3,9 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '../../components/Layout';
-import { getClienteSupabase } from '../../lib/supabase';
+import { getClienteSupabase, validarSenhaPelada } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
-import { buscar_pelada_id, obterCredenciais } from '../../lib/credenciais';
+import { buscar_pelada_id } from '../../lib/credenciais';
 
 interface Jogador {
   id: string;
@@ -21,15 +21,28 @@ interface Substituicao {
 }
 
 interface Gol {
+  id?: string;
   jogo_id: string;
   jogador_id: string;
   time: 'A' | 'B';
 }
 
 interface Assistencia {
+  id?: string;
   jogo_id: string;
   jogador_id: string;
   time: 'A' | 'B';
+  gol_id?: string;
+}
+
+interface EventoEditavel {
+  golId: string;
+  jogadorGolId: string;
+  timeGol: 'A' | 'B';
+  assistId?: string;
+  jogadorAssistId: string;
+  timeAssist?: 'A' | 'B';
+  isNew?: boolean;
 }
 
 interface GolDB {
@@ -51,6 +64,8 @@ interface Jogo {
   sessao_id: string;
   time_a: string[];
   time_b: string[];
+  cor_time_a?: string | null;
+  cor_time_b?: string | null;
   placar_a: number;
   placar_b: number;
   created_at: string;
@@ -63,6 +78,8 @@ interface Jogo {
 }
 
 export default function ResultadosPage() {
+  const DEBUG = false;
+  const STORAGE_KEY = 'peladm:resultados:state:v1';
   const router = useRouter();
   const { possuiPermissao, nomePlano, loading: loadingPermissoes } = usePermissions();
   const [jogos, setJogos] = useState<Jogo[]>([]);
@@ -98,6 +115,18 @@ export default function ResultadosPage() {
   const [mostrarModalGerenciarTime, setMostrarModalGerenciarTime] = useState(false);
   const [jogoParaEditar, setJogoParaEditar] = useState<Jogo | null>(null);
   const [timeParaGerenciar, setTimeParaGerenciar] = useState<'A' | 'B'>('A');
+
+  // Estados para eventos colapsáveis e modal de edição de eventos
+  const [eventosAbertos, setEventosAbertos] = useState<Set<string>>(new Set());
+  const [mostrarModalEditarEventos, setMostrarModalEditarEventos] = useState(false);
+  const [jogoEditarEventos, setJogoEditarEventos] = useState<Jogo | null>(null);
+  const [eventosEditaveis, setEventosEditaveis] = useState<EventoEditavel[]>([]);
+  const [eventosExcluidos, setEventosExcluidos] = useState<string[]>([]);
+  // Senha antes de abrir editor de eventos
+  const [mostrarSenhaEventos, setMostrarSenhaEventos] = useState(false);
+  const [senhaEventos, setSenhaEventos] = useState('');
+  const [erroSenhaEventos, setErroSenhaEventos] = useState('');
+  const [jogoSenhaEventosPendente, setJogoSenhaEventosPendente] = useState<Jogo | null>(null);
   
   // Estados para alterações pendentes (antes de salvar)
   const [alteracoesPendentes, setAlteracoesPendentes] = useState<{
@@ -107,10 +136,161 @@ export default function ResultadosPage() {
     assistsRemover: { jogadorId: string; time: 'A' | 'B' }[];
   }>({ golsAdicionar: [], golsRemover: [], assistsAdicionar: [], assistsRemover: [] });
 
+  const normalizarNomeCor = (cor?: string | null): string | null => {
+    if (!cor) return null;
+    const hexMap: Record<string, string> = {
+      '#dc3545': 'Vermelho',
+      '#000000': 'Preto',
+      '#ffffff': 'Branco',
+      '#FFFFFF': 'Branco',
+      '#fbbf24': 'Amarelo',
+      '#3b82f6': 'Azul',
+      '#10b981': 'Verde',
+      '#f97316': 'Laranja',
+      '#ec4899': 'Rosa',
+      '#8b5cf6': 'Roxo',
+      '#6b7280': 'Cinza',
+    };
+    const hex = String(cor).trim();
+    if (hexMap[hex]) return hexMap[hex];
+    if (hexMap[hex.toLowerCase()]) return hexMap[hex.toLowerCase()];
+    // fallback: se já for nome de cor, capitalizar
+    const nome = hex.toLowerCase();
+    if (!nome || nome.startsWith('#')) return null;
+    return nome.charAt(0).toUpperCase() + nome.slice(1);
+  };
+
+  const getNomeTime = (cor?: string | null, fallback?: string): string => {
+    const nomeCor = normalizarNomeCor(cor);
+    return nomeCor ? `Time ${nomeCor}` : (fallback || 'Time');
+  };
+
+  const getEstiloTime = (
+    cor: string | null | undefined,
+    lado: 'A' | 'B'
+  ): {
+    container: string;
+    titulo: string;
+    botao: string;
+    botaoHover: string;
+    canvasBg: string;
+    canvasText: string;
+  } => {
+    const corNormalizada = (cor || '').trim().toLowerCase();
+
+    const estilosPorCor: {
+      [key: string]: {
+        container: string;
+        titulo: string;
+        botao: string;
+        botaoHover: string;
+        canvasBg: string;
+        canvasText: string;
+      };
+    } = {
+      preto: {
+        container: 'bg-slate-100 border-slate-300',
+        titulo: 'text-slate-900',
+        botao: 'bg-slate-700',
+        botaoHover: 'hover:bg-slate-800',
+        canvasBg: '#e5e7eb',
+        canvasText: '#111827',
+      },
+      vermelho: {
+        container: 'bg-red-50 border-red-200',
+        titulo: 'text-red-700',
+        botao: 'bg-red-600',
+        botaoHover: 'hover:bg-red-700',
+        canvasBg: '#fee2e2',
+        canvasText: '#b91c1c',
+      },
+      azul: {
+        container: 'bg-blue-50 border-blue-200',
+        titulo: 'text-blue-700',
+        botao: 'bg-blue-600',
+        botaoHover: 'hover:bg-blue-700',
+        canvasBg: '#dbeafe',
+        canvasText: '#1d4ed8',
+      },
+      amarelo: {
+        container: 'bg-amber-50 border-amber-200',
+        titulo: 'text-amber-700',
+        botao: 'bg-amber-600',
+        botaoHover: 'hover:bg-amber-700',
+        canvasBg: '#fef3c7',
+        canvasText: '#b45309',
+      },
+      branco: {
+        container: 'bg-gray-50 border-gray-300',
+        titulo: 'text-gray-700',
+        botao: 'bg-gray-600',
+        botaoHover: 'hover:bg-gray-700',
+        canvasBg: '#f9fafb',
+        canvasText: '#374151',
+      },
+      verde: {
+        container: 'bg-green-50 border-green-200',
+        titulo: 'text-green-700',
+        botao: 'bg-green-600',
+        botaoHover: 'hover:bg-green-700',
+        canvasBg: '#dcfce7',
+        canvasText: '#15803d',
+      },
+    };
+
+    if (estilosPorCor[corNormalizada]) {
+      return estilosPorCor[corNormalizada];
+    }
+
+    // Fallback: manter estilo atual para não bagunçar quando não houver cor.
+    if (lado === 'A') {
+      return {
+        container: 'bg-green-50 border-green-200',
+        titulo: 'text-green-700',
+        botao: 'bg-green-600',
+        botaoHover: 'hover:bg-green-700',
+        canvasBg: '#dcfce7',
+        canvasText: '#15803d',
+      };
+    }
+
+    return {
+      container: 'bg-gray-100 border-gray-300',
+      titulo: 'text-gray-800',
+      botao: 'bg-gray-600',
+      botaoHover: 'hover:bg-gray-700',
+      canvasBg: '#f3f4f6',
+      canvasText: '#374151',
+    };
+  };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved.filtro) setFiltro(saved.filtro);
+      if (typeof saved.dataSelecionada === 'string') setDataSelecionada(saved.dataSelecionada);
+      if (typeof saved.periodoSelecionado === 'string') setPeriodoSelecionado(saved.periodoSelecionado);
+      if (typeof saved.quantidadePeladas === 'string') setQuantidadePeladas(saved.quantidadePeladas);
+    } catch {
+      // ignore invalid persisted state
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      filtro,
+      dataSelecionada,
+      periodoSelecionado,
+      quantidadePeladas,
+    }));
+  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas]);
+
   // Bloquear acesso para plano FREE
   useEffect(() => {
     if (!loadingPermissoes && !possuiPermissao('verResultados')) {
-      alert(`🚫 Resultados não disponíveis no plano ${nomePlano}. Faça upgrade para Gold ou Premium!`);
+      alert(`🚫 Resultados não disponíveis no plano ${nomePlano}. Faça upgrade para Premium!`);
       router.push('/');
     }
   }, [loadingPermissoes, possuiPermissao, nomePlano, router]);
@@ -137,7 +317,7 @@ export default function ResultadosPage() {
 
   useEffect(() => {
     aplicarFiltro();
-  }, [filtro, dataSelecionada, periodoSelecionado, jogos]);
+  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas, jogos]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -169,7 +349,7 @@ export default function ResultadosPage() {
     }
     
     // Fallback: retornar os primeiros 8 caracteres do ID
-    console.log('⚠️ Jogador não encontrado:', jogadorId);
+    if (DEBUG) console.log('⚠️ Jogador não encontrado:', jogadorId);
     return idStr.substring(0, 8);
   };
 
@@ -216,16 +396,9 @@ export default function ResultadosPage() {
 
   const validarSenhaAdmin = async () => {
     try {
-      // Buscar credenciais locais
-      const credenciais = obterCredenciais();
-      
-      if (!credenciais) {
-        setErroSenha('Usuário não está logado');
-        return;
-      }
+      const senhaValida = await validarSenhaPelada(senhaAdmin);
 
-      // Comparar senha digitada com senha das credenciais locais
-      if (credenciais.senha === senhaAdmin) {
+      if (senhaValida) {
         setModoAdmin(true);
         setMostrarModalSenha(false);
         setSenhaAdmin('');
@@ -454,6 +627,150 @@ export default function ResultadosPage() {
     setJogoParaEditar(null);
   };
 
+  // Solicita senha antes de abrir editor de eventos
+  const solicitarSenhaEventos = (jogo: Jogo) => {
+    setJogoSenhaEventosPendente(jogo);
+    setSenhaEventos('');
+    setErroSenhaEventos('');
+    setMostrarSenhaEventos(true);
+  };
+
+  const confirmarSenhaEventos = async () => {
+    try {
+      const valida = await validarSenhaPelada(senhaEventos);
+      if (!valida) { setErroSenhaEventos('Senha incorreta'); return; }
+      setMostrarSenhaEventos(false);
+      setSenhaEventos('');
+      setErroSenhaEventos('');
+      if (jogoSenhaEventosPendente) abrirEditarEventos(jogoSenhaEventosPendente);
+      setJogoSenhaEventosPendente(null);
+    } catch {
+      setErroSenhaEventos('Erro ao validar senha');
+    }
+  };
+
+  // Abre modal de edição de eventos de uma partida
+  const abrirEditarEventos = (jogo: Jogo) => {
+    const assistsMap = new Map(
+      (jogo.assistencias || []).filter(a => a.gol_id).map(a => [a.gol_id!, a])
+    );
+    const eventos: EventoEditavel[] = (jogo.gols || [])
+      .filter(g => g.id)
+      .map(g => {
+        const assist = assistsMap.get(g.id!);
+        return {
+          golId: g.id!,
+          jogadorGolId: g.jogador_id,
+          timeGol: g.time,
+          assistId: assist?.id,
+          jogadorAssistId: assist?.jogador_id ?? '',
+          timeAssist: assist?.time,
+        };
+      });
+    setEventosEditaveis(eventos);
+    setEventosExcluidos([]);
+    setJogoEditarEventos(jogo);
+    setMostrarModalEditarEventos(true);
+  };
+
+  // Salva alterações do modal de edição de eventos
+  const salvarEditarEventos = async () => {
+    if (!jogoEditarEventos) return;
+    try {
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) return;
+      const supabase = await getClienteSupabase(peladaId);
+      const golsOriginais = jogoEditarEventos.gols || [];
+      const assistsOriginais = jogoEditarEventos.assistencias || [];
+      let placarA = jogoEditarEventos.placar_a;
+      let placarB = jogoEditarEventos.placar_b;
+      let placarChanged = false;
+
+      // Excluir eventos removidos pelo usuário
+      for (const golIdExcluir of eventosExcluidos) {
+        const golOriginal = golsOriginais.find(g => g.id === golIdExcluir);
+        if (golOriginal) {
+          // Deletar assist vinculada
+          const assistVinculada = assistsOriginais.find(a => a.gol_id === golIdExcluir);
+          if (assistVinculada?.id) {
+            await supabase.from('assistencias').delete().eq('id', assistVinculada.id);
+          }
+          await supabase.from('gols').delete().eq('id', golIdExcluir);
+          if (golOriginal.time === 'A' && placarA > 0) placarA--;
+          else if (golOriginal.time === 'B' && placarB > 0) placarB--;
+          placarChanged = true;
+        }
+      }
+
+      // Inserir novos eventos
+      for (const evento of eventosEditaveis.filter(e => e.isNew)) {
+        const { data: golInserido } = await supabase.from('gols').insert({
+          jogo_id: jogoEditarEventos.id,
+          jogador_id: evento.jogadorGolId,
+          time: evento.timeGol,
+        }).select('id').single();
+        if (evento.timeGol === 'A') placarA++; else placarB++;
+        placarChanged = true;
+        if (evento.jogadorAssistId && golInserido?.id) {
+          await supabase.from('assistencias').insert({
+            jogo_id: jogoEditarEventos.id,
+            jogador_id: evento.jogadorAssistId,
+            time: evento.timeAssist ?? evento.timeGol,
+            gol_id: golInserido.id,
+          });
+        }
+      }
+
+      // Atualizar eventos existentes (não novos)
+      for (const evento of eventosEditaveis.filter(e => !e.isNew)) {
+        const golOriginal = golsOriginais.find(g => g.id === evento.golId);
+        if (!golOriginal) continue;
+
+        if (golOriginal.jogador_id !== evento.jogadorGolId || golOriginal.time !== evento.timeGol) {
+          await supabase.from('gols').update({
+            jogador_id: evento.jogadorGolId,
+            time: evento.timeGol,
+          }).eq('id', evento.golId);
+          if (golOriginal.time !== evento.timeGol) {
+            if (golOriginal.time === 'A') { placarA--; placarB++; }
+            else { placarB--; placarA++; }
+            placarChanged = true;
+          }
+        }
+
+        const assistOriginal = assistsOriginais.find(a => a.id === evento.assistId);
+        if (evento.jogadorAssistId && !assistOriginal) {
+          await supabase.from('assistencias').insert({
+            jogo_id: jogoEditarEventos.id,
+            jogador_id: evento.jogadorAssistId,
+            time: evento.timeAssist ?? evento.timeGol,
+            gol_id: evento.golId,
+          });
+        } else if (!evento.jogadorAssistId && assistOriginal?.id) {
+          await supabase.from('assistencias').delete().eq('id', assistOriginal.id);
+        } else if (evento.jogadorAssistId && assistOriginal?.id &&
+          (assistOriginal.jogador_id !== evento.jogadorAssistId || assistOriginal.time !== evento.timeAssist)) {
+          await supabase.from('assistencias').update({
+            jogador_id: evento.jogadorAssistId,
+            time: evento.timeAssist ?? evento.timeGol,
+          }).eq('id', assistOriginal.id);
+        }
+      }
+
+      if (placarChanged) {
+        await supabase.from('jogos').update({ placar_a: placarA, placar_b: placarB }).eq('id', jogoEditarEventos.id);
+      }
+
+      setMostrarModalEditarEventos(false);
+      setJogoEditarEventos(null);
+      setEventosExcluidos([]);
+      await carregarDados();
+    } catch (error) {
+      console.error('Erro ao salvar eventos:', error);
+      alert('Erro ao salvar eventos');
+    }
+  };
+
   const compartilharTodosResultados = async () => {
     try {
       if (jogosFiltrados.length === 0) return;
@@ -484,7 +801,11 @@ export default function ResultadosPage() {
       let yOffset = alturaHeader;
 
       jogosFiltrados.forEach((jogo, index) => {
-        const numeroPartida = jogosFiltrados.length - index;
+        const numeroPartida = (jogo as any).numero_jogo || index + 1;
+        const estiloTimeA = getEstiloTime(jogo.cor_time_a, 'A');
+        const estiloTimeB = getEstiloTime(jogo.cor_time_b, 'B');
+        const nomeTimeA = getNomeTime(jogo.cor_time_a, 'Time 1');
+        const nomeTimeB = getNomeTime(jogo.cor_time_b, 'Time 2');
 
         // Fundo do card
         ctx.fillStyle = '#f9fafb';
@@ -530,13 +851,13 @@ export default function ResultadosPage() {
         // Times
         const yTime = yOffset + 110;
 
-        // Time 1
-        ctx.fillStyle = '#dcfce7';
+        // Time A
+        ctx.fillStyle = estiloTimeA.canvasBg;
         ctx.fillRect(40, yTime, 240, 30);
-        ctx.fillStyle = '#15803d';
+        ctx.fillStyle = estiloTimeA.canvasText;
         ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Time 1', 160, yTime + 20);
+        ctx.fillText(nomeTimeA, 160, yTime + 20);
 
         ctx.fillStyle = '#374151';
         ctx.font = '12px Arial';
@@ -549,12 +870,12 @@ export default function ResultadosPage() {
           yPosTime1 += 18;
         });
 
-        // Time 2
-        ctx.fillStyle = '#f3f4f6';
+        // Time B
+        ctx.fillStyle = estiloTimeB.canvasBg;
         ctx.fillRect(320, yTime, 240, 30);
-        ctx.fillStyle = '#374151';
+        ctx.fillStyle = estiloTimeB.canvasText;
         ctx.font = 'bold 14px Arial';
-        ctx.fillText('Time 2', 440, yTime + 20);
+        ctx.fillText(nomeTimeB, 440, yTime + 20);
 
         ctx.fillStyle = '#374151';
         ctx.font = '12px Arial';
@@ -624,8 +945,8 @@ export default function ResultadosPage() {
         console.error('❌ Erro ao buscar jogadores:', erroJogadores);
       }
       
-      console.log('👥 Jogadores carregados:', jogadoresData?.length);
-      console.log('📋 Amostra de jogadores:', jogadoresData?.slice(0, 3));
+      if (DEBUG) console.log('👥 Jogadores carregados:', jogadoresData?.length);
+      if (DEBUG) console.log('📋 Amostra de jogadores:', jogadoresData?.slice(0, 3));
       
       if (jogadoresData) {
         const jogadoresMap: { [id: string]: Jogador } = {};
@@ -634,7 +955,7 @@ export default function ResultadosPage() {
           jogadoresMap[j.nome] = j; // Indexar também pelo nome para busca
         });
         setJogadores(jogadoresMap);
-        console.log('📋 Map de jogadores:', Object.keys(jogadoresMap).length);
+        if (DEBUG) console.log('📋 Map de jogadores:', Object.keys(jogadoresMap).length);
       }
 
       // Buscar todos os jogos finalizados (banco dedicado premium)
@@ -679,7 +1000,7 @@ export default function ResultadosPage() {
             }
           }
           
-          console.log('🔍 DEBUG Jogo:', jogo.id.substring(0, 8), {
+          if (DEBUG) console.log('🔍 DEBUG Jogo:', jogo.id.substring(0, 8), {
             substituicoesRaw: jogo.substituicoes,
             tipo: typeof jogo.substituicoes,
             substituicoesParsed: subs,
@@ -723,10 +1044,10 @@ export default function ResultadosPage() {
         return data.getFullYear().toString();
       }))].sort().reverse();
       
-      console.log('📅 Datas disponíveis:', datas);
-      console.log('📅 Meses disponíveis:', meses);
-      console.log('📅 Anos disponíveis:', anos);
-      console.log('📊 Total de jogos:', jogosData?.length);
+      if (DEBUG) console.log('📅 Datas disponíveis:', datas);
+      if (DEBUG) console.log('📅 Meses disponíveis:', meses);
+      if (DEBUG) console.log('📅 Anos disponíveis:', anos);
+      if (DEBUG) console.log('📊 Total de jogos:', jogosData?.length);
       setDatasDisponiveis(datas);
       setMesesDisponiveis(meses);
       setAnosDisponiveis(anos);
@@ -810,6 +1131,13 @@ export default function ResultadosPage() {
       }
     }
 
+    // Ordenar por número de partida (crescente: Partida #1 primeiro)
+    filtered.sort((a: any, b: any) => {
+      const numA = a.numero_jogo ?? 0;
+      const numB = b.numero_jogo ?? 0;
+      if (numA !== numB) return numA - numB;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
     setJogosFiltrados(filtered);
 
     // Calcular estatísticas
@@ -882,7 +1210,7 @@ export default function ResultadosPage() {
                   setFiltro('ultimas');
                   setDataSelecionada('');
                   setPeriodoSelecionado('');
-                  setQuantidadePeladas('10');
+                  setQuantidadePeladas('3');
                 }}
                 className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
                   filtro === 'ultimas'
@@ -957,10 +1285,10 @@ export default function ResultadosPage() {
                 onChange={(e) => setQuantidadePeladas(e.target.value)}
                 className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
+                <option value="2">📊 Últimas 2 peladas</option>
+                <option value="3">📊 Últimas 3 peladas</option>
+                <option value="4">📊 Últimas 4 peladas</option>
                 <option value="5">📊 Últimas 5 peladas</option>
-                <option value="10">📊 Últimas 10 peladas</option>
-                <option value="15">📊 Últimas 15 peladas</option>
-                <option value="20">📊 Últimas 20 peladas</option>
               </select>
             )}
             
@@ -1051,9 +1379,17 @@ export default function ResultadosPage() {
           <section className="space-y-6">
             {jogosFiltrados.map((jogo, index) => (
               <div key={jogo.id} className="pb-6 border-b-2 border-gray-300">
+                {(() => {
+                  const estiloTimeA = getEstiloTime(jogo.cor_time_a, 'A');
+                  const estiloTimeB = getEstiloTime(jogo.cor_time_b, 'B');
+                  const nomeTimeA = getNomeTime(jogo.cor_time_a, 'Time 1');
+                  const nomeTimeB = getNomeTime(jogo.cor_time_b, 'Time 2');
+
+                  return (
+                    <>
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-sm font-semibold text-gray-500">
-                    Partida #{jogosFiltrados.length - index}
+                    Partida #{(jogo as any).numero_jogo || index + 1}
                   </div>
                   <div className="text-right">
                     {jogo.tempo_decorrido !== undefined && (
@@ -1106,9 +1442,9 @@ export default function ResultadosPage() {
 
                 {/* Times */}
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div className="bg-green-50 rounded-lg p-2 border border-green-200">
-                    <div className="font-semibold text-green-700 mb-2 text-center flex items-center justify-center gap-2">
-                      <span>Time 1</span>
+                  <div className={`${estiloTimeA.container} rounded-lg p-2 border`}>
+                    <div className={`font-semibold ${estiloTimeA.titulo} mb-2 text-center flex items-center justify-center gap-2`}>
+                      <span>{nomeTimeA}</span>
                       {modoAdmin && (
                         <button
                           onClick={() => {
@@ -1117,8 +1453,8 @@ export default function ResultadosPage() {
                             setAlteracoesPendentes({ golsAdicionar: [], golsRemover: [], assistsAdicionar: [], assistsRemover: [] });
                             setMostrarModalGerenciarTime(true);
                           }}
-                          className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700"
-                          title="Gerenciar Time 1"
+                          className={`${estiloTimeA.botao} text-white px-2 py-0.5 rounded text-xs ${estiloTimeA.botaoHover}`}
+                          title={`Gerenciar ${nomeTimeA}`}
                         >
                           ✏️
                         </button>
@@ -1194,9 +1530,9 @@ export default function ResultadosPage() {
                       );
                     })}
                   </div>
-                  <div className="bg-gray-100 rounded-lg p-2 border border-gray-300">
-                    <div className="font-semibold text-gray-800 mb-2 text-center flex items-center justify-center gap-2">
-                      <span>Time 2</span>
+                  <div className={`${estiloTimeB.container} rounded-lg p-2 border`}>
+                    <div className={`font-semibold ${estiloTimeB.titulo} mb-2 text-center flex items-center justify-center gap-2`}>
+                      <span>{nomeTimeB}</span>
                       {modoAdmin && (
                         <button
                           onClick={() => {
@@ -1205,8 +1541,8 @@ export default function ResultadosPage() {
                             setAlteracoesPendentes({ golsAdicionar: [], golsRemover: [], assistsAdicionar: [], assistsRemover: [] });
                             setMostrarModalGerenciarTime(true);
                           }}
-                          className="bg-gray-600 text-white px-2 py-0.5 rounded text-xs hover:bg-gray-700"
-                          title="Gerenciar Time 2"
+                          className={`${estiloTimeB.botao} text-white px-2 py-0.5 rounded text-xs ${estiloTimeB.botaoHover}`}
+                          title={`Gerenciar ${nomeTimeB}`}
                         >
                           ✏️
                         </button>
@@ -1284,6 +1620,57 @@ export default function ResultadosPage() {
                   </div>
                 </div>
 
+                {/* Eventos da partida */}
+                {(jogo.gols || []).length > 0 && (() => {
+                  const assistsMap = new Map(
+                    (jogo.assistencias || []).filter(a => a.gol_id).map(a => [a.gol_id!, a])
+                  );
+                  const aberto = eventosAbertos.has(jogo.id);
+                  const numeroPartida = (jogo as any).numero_jogo || index + 1;
+                  return (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <button
+                        onClick={() => setEventosAbertos(prev => {
+                          const next = new Set(prev);
+                          aberto ? next.delete(jogo.id) : next.add(jogo.id);
+                          return next;
+                        })}
+                        className="flex items-center justify-between w-full"
+                      >
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>
+                          Eventos da Partida #{numeroPartida}
+                        </span>
+                        <span style={{ fontSize: 13, color: '#9ca3af', fontWeight: 700 }}>{aberto ? '−' : '+'}</span>
+                      </button>
+                      {aberto && (
+                        <>
+                          <div className="mt-2">
+                            {(jogo.gols || []).map((gol, i) => {
+                              const assist = assistsMap.get(gol.id ?? '');
+                              const estiloGol = gol.time === 'A' ? estiloTimeA : estiloTimeB;
+                              const nomeTime = gol.time === 'A' ? nomeTimeA : nomeTimeB;
+                              return (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 13 }}>
+                                  <span>⚽</span>
+                                  <span style={{ fontWeight: 600, color: '#1f2937' }}>{buscarJogador(gol.jogador_id)}</span>
+                                  {assist && <span style={{ color: '#9ca3af' }}>👟 {buscarJogador(assist.jogador_id)}</span>}
+                                  <span className={`ml-auto text-xs font-semibold px-1.5 py-0.5 rounded border ${estiloGol.container} ${estiloGol.titulo}`}>{nomeTime}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <button
+                            onClick={() => solicitarSenhaEventos(jogo)}
+                            className="mt-2 w-full text-center text-xs font-semibold text-indigo-600 hover:text-indigo-800 py-1.5 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors"
+                          >
+                            ✏️ Editar Eventos
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Botão Excluir Partida (apenas no modo admin) */}
                 {modoAdmin && (
                   <div className="mt-4 pt-4 border-t border-gray-200">
@@ -1298,6 +1685,9 @@ export default function ResultadosPage() {
                     </button>
                   </div>
                 )}
+                    </>
+                  );
+                })()}
               </div>
             ))}
             
@@ -1344,7 +1734,7 @@ export default function ResultadosPage() {
                     {jogosFiltrados.map((jogo, index) => (
                       <div key={jogo.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold text-gray-500">Partida #{jogosFiltrados.length - index}</span>
+                          <span className="text-xs font-bold text-gray-500">Partida #{(jogo as any).numero_jogo || index + 1}</span>
                           {jogo.data_inicio && (
                             <span className="text-xs text-gray-500">
                               {new Date(jogo.data_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
@@ -1676,6 +2066,166 @@ export default function ResultadosPage() {
         )}
 
         {/* Modal Gerenciar Time */}
+        {/* Modal Senha Editar Eventos */}
+        {mostrarSenhaEventos && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 p-4">
+                <h3 className="text-lg font-bold text-white">🔒 Confirmar identidade</h3>
+                <p className="text-indigo-100 text-xs mt-0.5">Para editar eventos, confirme sua senha.</p>
+              </div>
+              <div className="p-5">
+                <input
+                  type="password"
+                  value={senhaEventos}
+                  onChange={(e) => { setSenhaEventos(e.target.value); setErroSenhaEventos(''); }}
+                  onKeyDown={(e) => e.key === 'Enter' && confirmarSenhaEventos()}
+                  placeholder="Senha"
+                  className="w-full p-3 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  autoFocus
+                />
+                {erroSenhaEventos && <p className="text-red-600 text-xs mb-3">❌ {erroSenhaEventos}</p>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setMostrarSenhaEventos(false); setJogoSenhaEventosPendente(null); setSenhaEventos(''); setErroSenhaEventos(''); }}
+                    className="flex-1 bg-gray-500 text-white py-2 px-4 rounded-lg text-sm font-semibold hover:bg-gray-600 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={confirmarSenhaEventos}
+                    className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors"
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Editar Eventos */}
+        {mostrarModalEditarEventos && jogoEditarEventos && (() => {
+          const nomeTimeAModal = getNomeTime(jogoEditarEventos.cor_time_a, 'Time 1');
+          const nomeTimeBModal = getNomeTime(jogoEditarEventos.cor_time_b, 'Time 2');
+          const numeroPartidaModal = jogosFiltrados.findIndex(j => j.id === jogoEditarEventos.id);
+          const numPartidaLabel = numeroPartidaModal !== -1 ? jogosFiltrados.length - numeroPartidaModal : '';
+          const todoJogadores = [
+            ...(jogoEditarEventos.time_a || []),
+            ...(jogoEditarEventos.time_b || []),
+          ];
+          const primeiroDaTimeA = jogoEditarEventos.time_a[0] ?? todoJogadores[0] ?? '';
+          return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 p-3 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">✏️ Editar Eventos</h3>
+                    <p className="text-white text-xs mt-0.5">Partida #{numPartidaLabel}</p>
+                  </div>
+                  <button onClick={() => { setMostrarModalEditarEventos(false); setJogoEditarEventos(null); setEventosExcluidos([]); }} className="text-white text-xl font-bold leading-none">✕</button>
+                </div>
+                <div className="p-3 overflow-y-auto max-h-[calc(90vh-140px)]">
+                  {eventosEditaveis.length === 0 && eventosExcluidos.length === (jogoEditarEventos.gols || []).length ? (
+                    <p className="text-gray-400 text-sm text-center py-4">Nenhum evento. Use o botão abaixo para adicionar.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {eventosEditaveis.map((evento, i) => (
+                        <div key={evento.golId} className={`border rounded-lg p-3 ${evento.isNew ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-gray-400 uppercase">{evento.isNew ? '+ Novo Gol' : `Gol ${i + 1}`}</span>
+                            <button
+                              onClick={() => {
+                                if (!evento.isNew) setEventosExcluidos(prev => [...prev, evento.golId]);
+                                setEventosEditaveis(prev => prev.filter((_, idx) => idx !== i));
+                              }}
+                              className="text-red-500 hover:text-red-700 text-xs font-semibold px-2 py-0.5 rounded border border-red-200 hover:bg-red-50 transition-colors"
+                              title="Excluir este evento"
+                            >
+                              🗑️ Excluir
+                            </button>
+                          </div>
+                          <div className="mb-2">
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">⚽ Artilheiro</label>
+                            <select
+                              value={evento.jogadorGolId}
+                              onChange={(e) => {
+                                const newId = e.target.value;
+                                const newTime: 'A' | 'B' = jogoEditarEventos.time_a.includes(newId) ? 'A' : 'B';
+                                setEventosEditaveis(prev => prev.map((ev, idx) =>
+                                  idx === i ? { ...ev, jogadorGolId: newId, timeGol: newTime } : ev
+                                ));
+                              }}
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                            >
+                              {todoJogadores.map(jId => (
+                                <option key={jId} value={jId}>
+                                  {buscarJogador(jId)} ({jogoEditarEventos.time_a.includes(jId) ? nomeTimeAModal : nomeTimeBModal})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">👟 Assistência</label>
+                            <select
+                              value={evento.jogadorAssistId}
+                              onChange={(e) => {
+                                const newId = e.target.value;
+                                const newTime: 'A' | 'B' | undefined = newId ? (jogoEditarEventos.time_a.includes(newId) ? 'A' : 'B') : undefined;
+                                setEventosEditaveis(prev => prev.map((ev, idx) =>
+                                  idx === i ? { ...ev, jogadorAssistId: newId, timeAssist: newTime } : ev
+                                ));
+                              }}
+                              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                            >
+                              <option value="">— Nenhum —</option>
+                              {todoJogadores.map(jId => (
+                                <option key={jId} value={jId}>
+                                  {buscarJogador(jId)} ({jogoEditarEventos.time_a.includes(jId) ? nomeTimeAModal : nomeTimeBModal})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Adicionar novo evento */}
+                  <button
+                    onClick={() => {
+                      const novoId = `new_${Date.now()}`;
+                      setEventosEditaveis(prev => [...prev, {
+                        golId: novoId,
+                        jogadorGolId: primeiroDaTimeA,
+                        timeGol: 'A',
+                        jogadorAssistId: '',
+                        isNew: true,
+                      }]);
+                    }}
+                    className="mt-4 w-full py-2 border-2 border-dashed border-indigo-300 rounded-lg text-indigo-600 text-sm font-semibold hover:bg-indigo-50 hover:border-indigo-400 transition-colors"
+                  >
+                    + Adicionar Gol/Evento
+                  </button>
+                </div>
+                <div className="p-3 border-t border-gray-200 flex gap-2">
+                  <button
+                    onClick={salvarEditarEventos}
+                    className="flex-1 bg-indigo-600 text-white py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-md"
+                  >
+                    ✓ Salvar
+                  </button>
+                  <button
+                    onClick={() => { setMostrarModalEditarEventos(false); setJogoEditarEventos(null); setEventosExcluidos([]); }}
+                    className="flex-1 bg-gray-500 text-white py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-gray-600 transition-colors"
+                  >
+                    ✕ Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {mostrarModalGerenciarTime && jogoParaEditar && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>

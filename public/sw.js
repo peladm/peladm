@@ -1,5 +1,5 @@
 // Service Worker para PWA - PelADM
-const APP_VERSION = '2.1.1';
+const APP_VERSION = '2.2.0';
 const CACHE_NAME = `peladm-v${APP_VERSION}`;
 const CACHE_ASSETS = `peladm-assets-v${APP_VERSION}`;
 

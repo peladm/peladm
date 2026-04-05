@@ -5,5 +5,5 @@ export const CONTATO = {
   whatsapp: '5522981278226',
   
   // Mensagem padrão para contato Gold/Premium
-  mensagemGoldPremium: 'Olá! Quero contratar o plano Gold ou Premium do PelADM',
+  mensagemGoldPremium: 'Olá! Quero contratar o plano Gold ou Premium do PeladaPLAY',
 };

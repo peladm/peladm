@@ -41,7 +41,6 @@ export interface Permissoes {
   removerAnuncios: boolean;
   
   // Admin
-  gerenciarUsuarios: boolean;
   multipalasPeladas: boolean;
   
   // Deploy/Sincronização
@@ -147,7 +146,6 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     removerAnuncios: false, // FREE tem anúncios
     
     // Admin
-    gerenciarUsuarios: false,
     multipalasPeladas: false,
     
     // Deploy/Sincronização
@@ -194,7 +192,6 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     removerAnuncios: false, // Gold tem anúncios limitados
     
     // Admin
-    gerenciarUsuarios: true,
     multipalasPeladas: false, // Só 1 pelada
     
     // Deploy/Sincronização
@@ -241,7 +238,6 @@ export const PERMISSOES_POR_PLANO: Record<Plano, Permissoes> = {
     removerAnuncios: true, // Premium sem anúncios
     
     // Admin
-    gerenciarUsuarios: true,
     multipalasPeladas: true, // Múltiplas peladas
     
     // Deploy/Sincronização

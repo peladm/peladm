@@ -1,8 +1,8 @@
 {
-  "name": "PelADM - Gerenciador de Peladas",
-  "short_name": "PelADM",
+  "name": "PeladaPLAY - Gerenciador de Peladas",
+  "short_name": "PeladaPLAY",
   "description": "Sistema completo para gerenciar suas peladas de futebol",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

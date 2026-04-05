@@ -115,8 +115,7 @@ export function clearAllCache(): void {
   const keys = Object.keys(localStorage);
   keys.forEach(key => {
     if (key.startsWith('jogadores_') || 
-        key.startsWith('regras_') || 
-        key.startsWith('usuarios_')) {
+        key.startsWith('regras_')) {
       localStorage.removeItem(key);
     }
   });

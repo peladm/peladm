@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { supabase } from '../../lib/supabase';
 import { CONTATO } from '../../config/contato';
 import { salvarCredenciais } from '../../lib/credenciais';
 
@@ -31,41 +30,39 @@ export default function Login() {
 
     try {
       
-      const { data, error: dbError } = await supabase
-        .from('clientes')
-        .select('*')
-        .eq('pelada_id', peladaId.toUpperCase())
-        .eq('username', usuario)
-        .eq('senha', senha)
-        .single();
-      
-      if (dbError || !data) {
-        console.error('❌ Erro:', dbError);
-        setError('Código, usuário ou senha inválidos');
-        setLoading(false);
-        return;
-      }
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pelada_id: peladaId, username: usuario, senha }),
+      });
 
-      if (data.status === 'bloqueado') {
-        setShowBlockedModal(true);
-        setPeladaId(data.pelada_id);
-        setLoading(false);
-        return;
-      }
+      const data = await res.json();
 
-      if (data.status === 'inativo') {
-        setError('⏸️ Pelada inativa');
+      if (!res.ok) {
+        if (data.error === 'bloqueado') {
+          setShowBlockedModal(true);
+          setPeladaId(data.pelada_id);
+          setLoading(false);
+          return;
+        }
+        if (data.error === 'inativo') {
+          setError('⏸️ Pelada inativa');
+          setLoading(false);
+          return;
+        }
+        setError(data.error || 'Código, usuário ou senha inválidos');
         setLoading(false);
         return;
       }
       
-      salvarCredenciais({
+      await salvarCredenciais({
         pelada_id: data.pelada_id,
         username: data.username,
         senha: data.senha,
-        plano: (data.plano || 'free').toLowerCase(),
+        plano: data.plano,
         supabase_url: data.supabase_url,
-        supabase_anon_key: data.supabase_anon_key
+        supabase_anon_key: data.supabase_anon_key,
+        is_master: data.is_master === true
       });
       
       setLoading(false);
@@ -90,77 +87,56 @@ export default function Login() {
     }
 
     try {
-      // Buscar cliente no banco
-      const { data, error: dbError } = await supabase
-        .from('clientes')
-        .select('*')
-        .eq('pelada_id', peladaId.toUpperCase())
-        .maybeSingle();
-      
-      // Se houve erro na busca
-      if (dbError) {
-        setError('❌ Erro ao conectar ao banco');
+      const res = await fetch('/api/auth/visitante', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pelada_id: peladaId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.error === 'somente_premium') {
+          setError('❌ Apenas plano Premium tem acesso às estatísticas');
+          setLoading(false);
+          setTimeout(() => router.push('/login'), 3000);
+          return;
+        }
+        if (data.error === 'bloqueado') {
+          setShowBlockedModal(true);
+          setLoading(false);
+          return;
+        }
+        if (data.error === 'inativo') {
+          setError('⏸️ Pelada inativa');
+          setLoading(false);
+          setTimeout(() => router.push('/login'), 2000);
+          return;
+        }
+        setError(`❌ ${data.error || 'Código inválido'}`);
         setLoading(false);
         setTimeout(() => router.push('/login'), 2000);
         return;
       }
 
-      // Se não encontrou o código
-      if (!data) {
-        setError('❌ Código inválido');
-        setLoading(false);
-        setTimeout(() => router.push('/login'), 2000);
-        return;
-      }
-
-      // Validar se é plano Premium
-      const planoCliente = String(data.plano || '').trim().toLowerCase();
-      if (planoCliente !== 'premium') {
-        setError('❌ Apenas plano Premium tem acesso às estatísticas');
-        setLoading(false);
-        setTimeout(() => router.push('/login'), 3000);
-        return;
-      }
-
-      // Validar status
-      if (data.status === 'bloqueado') {
-        setShowBlockedModal(true);
-        setLoading(false);
-        setTimeout(() => router.push('/login'), 3000);
-        return;
-      }
-
-      if (data.status === 'inativo') {
-        setError('⏸️ Pelada inativa');
-        setLoading(false);
-        setTimeout(() => router.push('/login'), 2000);
-        return;
-      }
-
-      // Criar sessão visitante COM credenciais do banco dedicado
-      const userSession = {
+      localStorage.setItem('user', JSON.stringify({
         id: data.pelada_id,
         nome: data.nome,
-        plano: planoCliente,
+        plano: data.plano,
         tipo_acesso: 'visitante',
         status: true,
         is_master: false
-      };
-
-      // Criar credenciais com dados do banco dedicado (necessário para acessar dados)
-      const credenciais = {
+      }));
+      localStorage.setItem('credenciais', JSON.stringify({
         pelada_id: data.pelada_id,
         username: 'visitante',
         senha: '',
-        plano: planoCliente,
+        plano: data.plano,
         supabase_url: data.supabase_url || null,
-        supabase_anon_key: data.supabase_anon_key || null
-      };
-
-      localStorage.setItem('user', JSON.stringify(userSession));
-      localStorage.setItem('credenciais', JSON.stringify(credenciais));
+        supabase_anon_key: data.supabase_anon_key || null,
+        is_master: false
+      }));
       
-      // Redirecionar para estatísticas
       setLoading(false);
       router.push('/resultados');
       
@@ -349,11 +325,11 @@ export default function Login() {
 
         <div className="text-center mt-8 space-y-4">
           <div>
-            <Image src="/logo.png" alt="PelADM Logo" width={90} height={90} className="mx-auto mb-3" />
+            <Image src="/logo.png" alt="PeladaPLAY Logo" width={90} height={90} className="mx-auto mb-3" />
           </div>
           
           <div>
-            <p className="text-sm font-medium text-gray-700">PelADM - Gestão Inteligente de Peladas</p>
+            <p className="text-sm font-medium text-gray-700">PeladaPLAY - Gestão Inteligente de Peladas</p>
             <p className="text-xs text-gray-500 mt-1">Versão 2.1.0</p>
           </div>
         </div>

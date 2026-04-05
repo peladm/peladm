@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { validarAcessoMaster } from '../../../lib/adminAuth';
 
 // Configuração Supabase
 const supabase = createClient(
@@ -61,8 +62,18 @@ export default function AdminClientes() {
   const [mostrarFiltro, setMostrarFiltro] = useState(false);
 
   useEffect(() => {
-    carregarClientes();
-  }, []);
+    const validarECarregar = async () => {
+      const autorizado = await validarAcessoMaster();
+      if (!autorizado) {
+        alert('🚫 Acesso restrito ao perfil master.');
+        router.push('/');
+        return;
+      }
+      carregarClientes();
+    };
+
+    validarECarregar();
+  }, [router]);
 
   useEffect(() => {
     if (modalAvisosSistema) {

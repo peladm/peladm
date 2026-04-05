@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
-import { supabase } from '../lib/supabase';
-import { obterCredenciais } from '../lib/credenciais';
-import { obterUsuario, temAcessoCompleto, ehVisitante, ehAdmin } from '../lib/verificarAcesso';
+import { obterCredenciais, buscar_pelada_id } from '../lib/credenciais';
+import { obterUsuario, temAcessoCompleto, ehVisitante, ehAdmin, redirecionarSeNaoTemAcesso } from '../lib/verificarAcesso';
 import AdBanner from './AdBanner';
 import AdInterstitial from './AdInterstitial';
 import { useAdInterstitial } from '../lib/useAdInterstitial';
@@ -15,13 +14,16 @@ interface LayoutProps {
   children: React.ReactNode;
   title?: string;
   onAdminClick?: () => void;
+  hideFooter?: boolean;
 }
 
-export default function Layout({ children, title = 'PeladM', onAdminClick }: LayoutProps) {
+export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, hideFooter = false }: LayoutProps) {
+  const MOBILE_FOOTER_PREF_KEY = 'peladm:mobileFooterCollapsed:stats';
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [versionInfo, setVersionInfo] = useState<any>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [mobileFooterCollapsed, setMobileFooterCollapsed] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   
@@ -37,6 +39,46 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
   const [tipoAcesso, setTipoAcesso] = useState<'completo' | 'visitante' | null>(null);
   const [isClient, setIsClient] = useState(false); // Evitar hydration mismatch
   const [isCheckingAuth, setIsCheckingAuth] = useState(true); // Estado de verificação de autenticação
+  const [torneioSteps, setTorneioSteps] = useState({
+    regras: false,
+    participantes: false,
+    sortearTimes: false,
+    chaveamento: false,
+  });
+  const telasEstatisticas = ['/resultados', '/estatisticas', '/classificacao', '/individual', '/x1'];
+  const menuRapidoHabilitado = telasEstatisticas.some((rota) => pathname?.startsWith(rota));
+
+  useEffect(() => {
+    if (!isClient) return;
+    try {
+      const saved = localStorage.getItem(MOBILE_FOOTER_PREF_KEY);
+      setMobileFooterCollapsed(saved === '1');
+    } catch {
+      setMobileFooterCollapsed(false);
+    }
+  }, [isClient]);
+
+  const toggleMobileFooter = () => {
+    const next = !mobileFooterCollapsed;
+    setMobileFooterCollapsed(next);
+    try {
+      localStorage.setItem(MOBILE_FOOTER_PREF_KEY, next ? '1' : '0');
+    } catch {
+      // Ignora falhas de storage sem impactar a navegação
+    }
+  };
+
+  const mainPaddingBottom = (() => {
+    const base = userPlan === 'Free' ? 224 : 164;
+    const reduced = menuRapidoHabilitado && mobileFooterCollapsed ? 88 : 0;
+    return `calc(${Math.max(base - reduced, 80)}px + var(--safe-area-bottom))`;
+  })();
+
+  const toggleButtonBottom = menuRapidoHabilitado
+    ? (mobileFooterCollapsed
+      ? (userPlan === 'Free' ? 'calc(68px + var(--safe-area-bottom))' : 'calc(10px + var(--safe-area-bottom))')
+      : (userPlan === 'Free' ? 'calc(128px + var(--safe-area-bottom))' : 'calc(78px + var(--safe-area-bottom))'))
+    : 'calc(10px + var(--safe-area-bottom))';
 
   // Função para normalizar o plano do banco (lowercase) para o formato de exibição (capitalizado)
   const normalizarPlano = (plano: string): string => {
@@ -57,7 +99,7 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
     if (!isClient) return; // Espera o cliente carregar
     
     const usuario = obterUsuario();
-    const isPublicRoute = pathname === '/login' || pathname === '/cadastro-free';
+    const isPublicRoute = pathname === '/login' || pathname === '/cadastro-free' || pathname === '/resgate';
     
     if (!usuario && !isPublicRoute) {
       // Usuário não logado tentando acessar rota protegida - redirecionar para login
@@ -70,9 +112,67 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
       router.push('/');
       return;
     }
+
+    const redirecionamento = redirecionarSeNaoTemAcesso(pathname);
+    if (redirecionamento && redirecionamento !== pathname) {
+      router.push(redirecionamento);
+      return;
+    }
     
     setIsCheckingAuth(false);
   }, [isClient, pathname, router]);
+
+  // Verificar progresso do torneio para rodapé do modo torneio
+  useEffect(() => {
+    if (!isClient || !pathname?.startsWith('/modo-torneio')) return;
+
+    const verificarSteps = () => {
+      try {
+        const pid = buscar_pelada_id() || 'default';
+        const setupRaw = localStorage.getItem(`setup_competicao_${pid}`);
+        const torneioRaw = localStorage.getItem(`torneio_ativo_${pid}`);
+        const regrasEnabled = !!(setupRaw || torneioRaw);
+
+        if (!torneioRaw) {
+          setTorneioSteps({ regras: regrasEnabled, participantes: false, sortearTimes: false, chaveamento: false });
+          return;
+        }
+
+        const torneio = JSON.parse(torneioRaw);
+        if (torneio.status !== 'ativo') {
+          setTorneioSteps({ regras: regrasEnabled, participantes: false, sortearTimes: false, chaveamento: false });
+          return;
+        }
+
+        const torneioId = torneio.id;
+
+        const regrasRaw = localStorage.getItem(`regras_competicao_${pid}_${torneioId}`);
+        const participantesEnabled = !!regrasRaw;
+
+        const participantesRaw = localStorage.getItem(`participantes_torneio_${pid}_${torneioId}`);
+        let sortearEnabled = false;
+        if (participantesRaw) {
+          const parts = JSON.parse(participantesRaw);
+          sortearEnabled = parts.some((p: { status: string }) => p.status === 'confirmado');
+        }
+
+        const equipesRaw = localStorage.getItem(`equipes_torneio_${pid}_${torneioId}`);
+        let chaveamentoEnabled = false;
+        if (equipesRaw) {
+          const equipes = JSON.parse(equipesRaw);
+          chaveamentoEnabled = equipes.length > 0;
+        }
+
+        setTorneioSteps({ regras: regrasEnabled, participantes: participantesEnabled, sortearTimes: sortearEnabled, chaveamento: chaveamentoEnabled });
+      } catch {
+        // mantém estado atual
+      }
+    };
+
+    verificarSteps();
+    window.addEventListener('torneio-steps-changed', verificarSteps);
+    return () => window.removeEventListener('torneio-steps-changed', verificarSteps);
+  }, [isClient, pathname]);
 
   // Verificar se há usuário logado e buscar dados completos do Supabase
   useEffect(() => {
@@ -85,6 +185,8 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
         
         // Se tem credenciais, usar elas (novo sistema)
         if (credenciais) {
+          const tipoAcessoCredenciais = credenciais.username === 'visitante' ? 'visitante' : 'completo';
+          setTipoAcesso(tipoAcessoCredenciais);
           setUserName(credenciais.username);
           setUserPlan(normalizarPlano(credenciais.plano || 'free'));
           setClienteData({
@@ -92,7 +194,8 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             username: credenciais.username,
             plano: credenciais.plano,
             supabase_url: credenciais.supabase_url,
-            supabase_anon_key: credenciais.supabase_anon_key
+            supabase_anon_key: credenciais.supabase_anon_key,
+            is_master: credenciais.is_master === true
           });
           return;
         }
@@ -110,33 +213,11 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             return;
           }
           
-          // Acesso completo - buscar dados do Supabase (sistema antigo)
-          try {
-            const { data: cliente, error } = await supabase
-              .from('clientes')
-              .select('*')
-              .eq('pelada_id', usuario.id)
-              .single();
-
-            if (error) {
-              console.error('Erro ao buscar dados do cliente:', error);
-              setUserEmail(usuario.email || '');
-              setUserName(usuario.usuario_pelada || usuario.nome);
-              setUserPlan(normalizarPlano(usuario.plano || 'Free'));
-              setClienteData(usuario);
-            } else {
-              setUserEmail(cliente.email);
-              setUserName(usuario.usuario_pelada || cliente.nome);
-              setUserPlan(normalizarPlano(cliente.plano || 'Free'));
-              setClienteData(cliente);
-            }
-          } catch (err) {
-            console.error('Erro na consulta:', err);
-            setUserEmail(usuario.email || '');
-            setUserName(usuario.usuario_pelada || usuario.nome);
-            setUserPlan(normalizarPlano(usuario.plano || 'Free'));
-            setClienteData(usuario);
-          }
+          // Acesso completo - usar dados locais para evitar leitura sensível no cliente
+          setUserEmail(usuario.email || '');
+          setUserName(usuario.usuario_pelada || usuario.nome);
+          setUserPlan(normalizarPlano(usuario.plano || 'Free'));
+          setClienteData(usuario);
         }
       }
     };
@@ -164,8 +245,7 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
     keys.forEach(key => {
       if (key.startsWith('regras_') || 
           key.startsWith('jogadores_') || 
-          key.startsWith('fila_') || 
-          key.startsWith('usuarios_')) {
+          key.startsWith('fila_')) {
         localStorage.removeItem(key);
         console.log('🧹 Cache removido:', key);
       }
@@ -195,53 +275,23 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
     setIsSidebarOpen(false);
   };
 
-  // Função para relembrar senha via WhatsApp
-  const handleRelembrarSenha = async () => {
-    try {
-      const peladaId = clienteData?.pelada_id;
-      
-      if (!peladaId) {
-        alert('❌ Erro: Pelada ID não encontrado.');
-        return;
-      }
+  // Solicita atendimento manual para troca de senha via suporte no WhatsApp
+  const handleEsqueciSenha = () => {
+    const peladaId = clienteData?.pelada_id || 'não informado';
+    const username = userName || clienteData?.username || 'não informado';
+    const plano = userPlan || 'não informado';
 
-      // Buscar dados do cliente no banco
-      const { data: cliente, error } = await supabase
-        .from('clientes')
-        .select('username, senha, telefone, nome')
-        .eq('pelada_id', peladaId)
-        .single();
+    const mensagem =
+      `Olá! Esqueci minha senha no PeladaPLAY e preciso de ajuda.\n\n` +
+      `Dados para validação:\n` +
+      `Pelada ID: ${peladaId}\n` +
+      `Usuário: ${username}\n` +
+      `Plano: ${plano}\n\n` +
+      `Por favor, validar meu cadastro e enviar uma nova senha.`;
 
-      if (error || !cliente) {
-        alert('❌ Erro ao buscar dados. Tente novamente.');
-        console.error('Erro ao buscar cliente:', error);
-        return;
-      }
-
-      // Montar mensagem de credenciais
-      const mensagem = `🔐 *Suas Credenciais - PelADM*\n\n` +
-        `Olá *${cliente.nome}*!\n\n` +
-        `Aqui estão suas credenciais de acesso:\n\n` +
-        `📋 *Pelada ID:* ${peladaId}\n` +
-        `👤 *Usuário:* ${cliente.username}\n` +
-        `🔑 *Senha:* ${cliente.senha}\n\n` +
-        `Guarde essas informações em local seguro! 🔒`;
-
-      // Remover caracteres especiais do telefone
-      const telefone = cliente.telefone.replace(/\D/g, '');
-      
-      // Abrir WhatsApp do próprio cliente com a mensagem pronta
-      const urlWhatsApp = `https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`;
-      window.open(urlWhatsApp, '_blank');
-      
-      alert('✅ WhatsApp aberto! Clique em "Enviar" para receber suas credenciais.');
-      
-      setIsSidebarOpen(false);
-      
-    } catch (error) {
-      console.error('Erro ao relembrar senha:', error);
-      alert('❌ Erro ao processar. Tente novamente.');
-    }
+    const urlWhatsApp = `https://wa.me/${CONTATO.whatsapp}?text=${encodeURIComponent(mensagem)}`;
+    window.open(urlWhatsApp, '_blank');
+    setIsSidebarOpen(false);
   };
 
   // Função para verificar atualizações manualmente
@@ -323,11 +373,11 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <Image src="/logo.png" alt="PeladM Logo" width={56} height={56} />
+                <img src="/logo.png?v=2" alt="PeladaPLAY Logo" width={56} height={56} style={{width:56,height:56,objectFit:'contain'}} />
                 <div>
                   <h2 className="text-2xl font-bold">
-                    <span className="text-green-600">Pel</span>
-                    <span className="text-gray-800">ADM</span>
+                    <span className="text-green-600">Pelada</span>
+                    <span className="text-gray-800">PLAY</span>
                   </h2>
                 </div>
               </div>
@@ -358,23 +408,50 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                 </div>
                 
                 {/* Botão de Logout */}
-                <button 
-                  onClick={handleLogout}
-                  className="w-full bg-red-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-red-700 transition-colors"
-                >
-                  🚪 Fazer Logoff
-                </button>
+                <div className="w-full h-1"></div>
               </>
             ) : (
-              /* Botão de Login */
-              <button 
-                onClick={() => navigateTo('login')}
-                className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors"
-              >
-                🔑 Fazer Login
-              </button>
+              <div>
+                <button 
+                  onClick={() => navigateTo('login')}
+                  className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                >
+                  🔑 Fazer Login
+                </button>
+              </div>
             )}
           </div>
+
+          {/* Navegação rápida */}
+          {isLoggedIn && (
+            <div className="px-6 py-3 border-b border-gray-200 flex gap-2">
+              <button
+                onClick={() => { navigateTo(''); toggleSidebar(); }}
+                className="flex-1 flex flex-col items-center justify-center py-3 rounded-lg transition-colors text-gray-600 hover:bg-green-50 hover:text-green-700"
+              >
+                <span className="text-2xl">🏠</span>
+                <span className="text-xs font-medium mt-1">Home</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (!menuRapidoHabilitado) return;
+                  toggleSidebar();
+                  if (onAdminClick) {
+                    onAdminClick();
+                  } else {
+                    alert('🔒 Área administrativa - Em desenvolvimento');
+                  }
+                }}
+                disabled={!menuRapidoHabilitado}
+                className={`flex-1 flex flex-col items-center justify-center py-3 rounded-lg transition-colors ${
+                  !menuRapidoHabilitado ? 'text-gray-300 opacity-30 cursor-not-allowed' : 'text-gray-600 hover:bg-red-50 hover:text-red-700'
+                }`}
+              >
+                <span className="text-2xl">🔒</span>
+                <span className="text-xs font-medium mt-1">Admin</span>
+              </button>
+            </div>
+          )}
 
           {/* Espaço flexível para empurrar botões para baixo */}
           <div className="flex-1"></div>
@@ -392,15 +469,15 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             </div>
           )}
 
-          {/* Botão Relembrar Senha */}
+          {/* Botão Esqueci a Senha */}
           {isLoggedIn && (
             <div className="px-6 pb-4">
               <button
-                onClick={handleRelembrarSenha}
+                onClick={handleEsqueciSenha}
                 className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 shadow-md"
               >
                 <span>🔑</span>
-                <span>Relembrar Senha</span>
+                <span>Esqueci a Senha</span>
               </button>
             </div>
           )}
@@ -425,7 +502,7 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
           {/* Botão de Suporte WhatsApp */}
           <div className="px-6 pb-4">
             <button
-              onClick={() => window.open(`https://wa.me/${CONTATO.whatsapp}?text=${encodeURIComponent('Olá! Preciso de suporte no PelADM.')}`, '_blank')}
+              onClick={() => window.open(`https://wa.me/${CONTATO.whatsapp}?text=${encodeURIComponent('Olá! Preciso de suporte no PeladaPLAY.')}`, '_blank')}
               className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 shadow-md"
             >
               <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
@@ -435,10 +512,22 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
             </button>
           </div>
 
+          {/* Botão de Logout no final do menu */}
+          {isLoggedIn && (
+            <div className="px-6 pb-4">
+              <button
+                onClick={handleLogout}
+                className="w-full bg-red-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-red-700 transition-colors"
+              >
+                🚪 Fazer Logoff
+              </button>
+            </div>
+          )}
+
           {/* Footer do menu - fixo embaixo */}
           <div className="p-6 border-t border-gray-200 mt-auto">
             <p className="text-xs text-gray-500 text-center">
-              PeladM v1.0.0<br />
+              PeladaPLAY v1.0.0<br />
               Sistema de gestão de peladas
             </p>
           </div>
@@ -468,29 +557,273 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   </div>
                 </button>
                 <h1 className="text-lg sm:text-xl font-bold">
-                  <span className="text-green-600">Pel</span>
-                  <span className="text-gray-800">ADM</span>
+                  <span className="text-green-600">Pelada</span>
+                  <span className="text-gray-800">PLAY</span>
                 </h1>
               </div>
               
               {/* Logo no canto direito */}
               <div className="flex items-center">
-                <Image src="/logo.png" alt="PeladM Logo" width={48} height={48} className="sm:w-14 sm:h-14" />
+                <img src="/logo.png?v=2" alt="PeladaPLAY Logo" width={48} height={48} style={{width:48,height:48,objectFit:'contain'}} className="sm:w-14 sm:h-14" />
               </div>
             </div>
           </div>
         </header>
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 pb-20 md:pb-8" style={{ paddingBottom: userPlan === 'Free' ? '224px' : '164px' }}>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 pb-20 md:pb-8" style={{ paddingBottom: mainPaddingBottom }}>
           {children}
         </main>
 
+        {/* Botão para recolher/exibir rodapé mobile nas telas de estatísticas */}
+        {menuRapidoHabilitado && (
+          <button
+            onClick={toggleMobileFooter}
+            className="md:hidden fixed right-1 z-40 bg-white border border-gray-300 rounded-full w-8 h-8 p-0 text-sm font-semibold text-gray-700 shadow-sm flex items-center justify-center"
+            style={{ bottom: toggleButtonBottom }}
+            aria-label={mobileFooterCollapsed ? 'Mostrar rodapé' : 'Recolher rodapé'}
+          >
+            {mobileFooterCollapsed ? '⬆' : '⬇'}
+          </button>
+        )}
+
         {/* Footer Mobile */}
-        <footer className="fixed left-0 right-0 bg-white border-t border-gray-200 md:hidden z-30 safe-area-padding" style={{ bottom: userPlan === 'Free' ? '60px' : '0' }}>
-          <nav className="flex py-2 px-4" style={{ minHeight: '84px' }}>
+        {!hideFooter && <footer
+          className={`fixed left-0 right-0 bg-white border-t border-gray-200 md:hidden z-30 mobile-footer-shell transition-transform duration-300 ${menuRapidoHabilitado && mobileFooterCollapsed ? 'translate-y-full pointer-events-none' : 'translate-y-0'}`}
+          style={{ bottom: userPlan === 'Free' ? 'calc(60px + var(--safe-area-bottom))' : '0' }}
+        >
+          <nav className="flex py-2 px-4 mobile-footer-nav">
             {/* Rodapé varia baseado na página atual */}
-            {title === 'Home' || title === 'PeladM' ? (
+            {pathname === '/modo-torneio/painel' ? (
+              // Rodapé do PAINEL DO TORNEIO — 5 abas com ⚽ central
+              <>
+                {(() => {
+                  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+                  const abaAtual = params?.get('aba') || 'times';
+                  const partidaAtiva = (() => {
+                    try {
+                      if (typeof window === 'undefined') return null;
+                      const pid = buscar_pelada_id() || 'default';
+                      const raw = localStorage.getItem(`partida_ativa_torneio_${pid}`);
+                      return raw ? JSON.parse(raw) : null;
+                    } catch { return null; }
+                  })();
+                  const abas = [
+                    { id: 'painel', emoji: '⚙️', label: 'Painel' },
+                    { id: 'jogos', emoji: '📅', label: 'Jogos' },
+                    { id: '_partida', emoji: '⚽', label: 'Jogar', partida: true },
+                    { id: 'classificacao', emoji: '📊', label: 'Tabela' },
+                    { id: 'estatisticas', emoji: '🌟', label: 'Stats' },
+                  ];
+                  return abas.map((aba) => {
+                    const ativo = !aba.partida && abaAtual === aba.id;
+                    const isPartida = !!aba.partida;
+                    const habilitado = !isPartida || !!partidaAtiva;
+                    return (
+                      <button
+                        key={aba.id}
+                        disabled={isPartida && !habilitado}
+                        onClick={() => {
+                          if (isPartida && partidaAtiva) {
+                            router.push(`/modo-torneio/partida?id=${partidaAtiva.partidaId}`);
+                          } else if (!isPartida) {
+                            const p = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+                            const ro = p?.get('readonly');
+                            const tid = p?.get('torneioId');
+                            const extra = ro && tid ? `&readonly=${ro}&torneioId=${tid}` : '';
+                            router.push(`/modo-torneio/painel?aba=${aba.id}${extra}`);
+                          }
+                        }}
+                        className={`flex flex-col items-center justify-center py-2 rounded-lg transition-all ${
+                          isPartida
+                            ? habilitado
+                              ? 'text-white bg-emerald-500 shadow-md shadow-emerald-200 scale-110'
+                              : 'text-gray-300 opacity-40 cursor-not-allowed'
+                            : ativo
+                            ? 'text-sky-600 bg-sky-50'
+                            : 'text-gray-500 hover:bg-gray-50'
+                        }`}
+                        style={{ flex: 1 }}
+                      >
+                        <span className={`${isPartida ? 'text-2xl' : 'text-2xl'}`}>{aba.emoji}</span>
+                        <span className={`text-xs font-${isPartida ? 'bold' : 'medium'} mt-1`}>{aba.label}</span>
+                      </button>
+                    );
+                  });
+                })()}
+              </>
+            ) : pathname?.startsWith('/modo-torneio/partida') || pathname?.startsWith('/modo-torneio/penaltis') ? (
+              // Na tela de partida do torneio — mesmos 5 tabs do painel, ⚽ destacado
+              <>
+                {(() => {
+                  const partidaAtiva = (() => {
+                    try {
+                      if (typeof window === 'undefined') return null;
+                      const pid = buscar_pelada_id() || 'default';
+                      const raw = localStorage.getItem(`partida_ativa_torneio_${pid}`);
+                      return raw ? JSON.parse(raw) : null;
+                    } catch { return null; }
+                  })();
+                  const abas = [
+                    { id: 'painel', emoji: '⚙️', label: 'Painel' },
+                    { id: 'jogos', emoji: '📅', label: 'Jogos' },
+                    { id: '_partida', emoji: '⚽', label: 'Jogar', partida: true },
+                    { id: 'classificacao', emoji: '📊', label: 'Tabela' },
+                    { id: 'estatisticas', emoji: '🌟', label: 'Stats' },
+                  ];
+                  return abas.map((aba) => {
+                    const isPartida = !!aba.partida;
+                    return (
+                      <button
+                        key={aba.id}
+                        onClick={() => {
+                          if (isPartida) return; // já está na partida
+                          router.push(`/modo-torneio/painel?aba=${aba.id}`);
+                        }}
+                        className={`flex flex-col items-center justify-center py-2 rounded-lg transition-all ${
+                          isPartida
+                            ? 'text-white bg-emerald-500 shadow-md shadow-emerald-200 scale-110'
+                            : 'text-gray-500 hover:bg-gray-50'
+                        }`}
+                        style={{ flex: 1 }}
+                      >
+                        <span className="text-2xl">{aba.emoji}</span>
+                        <span className={`text-xs font-${isPartida ? 'bold' : 'medium'} mt-1`}>{aba.label}</span>
+                      </button>
+                    );
+                  });
+                })()}
+              </>
+            ) : pathname === '/modo-torneio/partida' ? (
+              // fallback (nunca chega aqui em prática)
+              <button
+                onClick={() => router.push('/modo-torneio/painel?aba=jogos')}
+                className="flex flex-col items-center justify-center py-2 rounded-lg text-gray-500 hover:bg-gray-50"
+                style={{ flex: 1 }}
+              >
+                <span className="text-2xl">←</span>
+                <span className="text-xs font-medium mt-1">Voltar</span>
+              </button>
+            ) : pathname === '/modo-torneio' ? (
+              // Rodapé da HOME do Modo Torneio
+              <>
+                {/* Home geral */}
+                <button
+                  onClick={() => router.push('/')}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-500 hover:bg-gray-50"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">🏠</span>
+                  <span className="text-xs font-medium mt-1">Home</span>
+                </button>
+                {/* Home do torneio */}
+                <button
+                  onClick={() => router.push('/modo-torneio')}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-sky-600 bg-sky-50"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">🏆</span>
+                  <span className="text-xs font-medium mt-1">Torneios</span>
+                </button>
+                {/* Museu do Futebol */}
+                <button
+                  disabled
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-300 opacity-50 cursor-not-allowed"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">👑</span>
+                  <span className="text-xs font-medium mt-1">Museu</span>
+                </button>
+              </>
+            ) : pathname?.startsWith('/modo-torneio') ? (
+              // Rodapé do MODO TORNEIO — passos sequenciais (a partir de /regras)
+              <>
+                {/* Passo 1: Início */}
+                <button
+                  onClick={() => router.push('/modo-torneio')}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    pathname === '/modo-torneio' ? 'text-sky-600 bg-sky-50' : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">🏠</span>
+                  <span className="text-xs font-medium mt-1">Início</span>
+                </button>
+                {/* Passo 2: Regras */}
+                <button
+                  onClick={() => (torneioSteps.regras || pathname === '/modo-torneio/regras') && router.push('/modo-torneio/regras')}
+                  disabled={!torneioSteps.regras && pathname !== '/modo-torneio/regras'}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    pathname === '/modo-torneio/regras'
+                      ? 'text-sky-600 bg-sky-50'
+                      : torneioSteps.regras
+                      ? 'text-gray-500 hover:bg-gray-50'
+                      : 'text-gray-300 opacity-40 cursor-not-allowed'
+                  }`}
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">📋</span>
+                  <span className="text-xs font-medium mt-1">Regras</span>
+                </button>
+                {/* Passo 3: Participantes */}
+                <button
+                  onClick={() => (torneioSteps.participantes || pathname === '/modo-torneio/participantes') && router.push('/modo-torneio/participantes')}
+                  disabled={!torneioSteps.participantes && pathname !== '/modo-torneio/participantes'}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    pathname === '/modo-torneio/participantes'
+                      ? 'text-sky-600 bg-sky-50'
+                      : torneioSteps.participantes
+                      ? 'text-gray-500 hover:bg-gray-50'
+                      : 'text-gray-300 opacity-40 cursor-not-allowed'
+                  }`}
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">👥</span>
+                  <span className="text-xs font-medium mt-1">Participantes</span>
+                </button>
+                {/* Passo 4: Sortear */}
+                <button
+                  onClick={() => (torneioSteps.sortearTimes || pathname === '/modo-torneio/sortear-times') && router.push('/modo-torneio/sortear-times')}
+                  disabled={!torneioSteps.sortearTimes && pathname !== '/modo-torneio/sortear-times'}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
+                    pathname === '/modo-torneio/sortear-times'
+                      ? 'text-sky-600 bg-sky-50'
+                      : torneioSteps.sortearTimes
+                      ? 'text-gray-500 hover:bg-gray-50'
+                      : 'text-gray-300 opacity-40 cursor-not-allowed'
+                  }`}
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">🎲</span>
+                  <span className="text-xs font-medium mt-1">Sortear</span>
+                </button>
+                {/* Passo 5: Painel / Iniciar Torneio */}
+                {(() => {
+                  const isPainelCtaAtivo = torneioSteps.chaveamento && pathname === '/modo-torneio/sortear-times';
+                  return (
+                    <button
+                      onClick={() => (torneioSteps.chaveamento || pathname === '/modo-torneio/painel') && router.push('/modo-torneio/painel')}
+                      disabled={!torneioSteps.chaveamento && pathname !== '/modo-torneio/painel'}
+                      className={`flex flex-col items-center justify-center py-2 rounded-lg transition-all duration-300 ${
+                        isPainelCtaAtivo
+                          ? 'text-white bg-gradient-to-r from-yellow-500 to-amber-500 shadow-lg shadow-amber-300/50 animate-bounce'
+                          : pathname === '/modo-torneio/painel' || pathname === '/modo-torneio/chaveamento'
+                          ? 'text-sky-600 bg-sky-50'
+                          : torneioSteps.chaveamento
+                          ? 'text-gray-500 hover:bg-gray-50'
+                          : 'text-gray-300 opacity-40 cursor-not-allowed'
+                      }`}
+                      style={{ flex: 1 }}
+                    >
+                      <span className="text-2xl">🏆</span>
+                      <span className={`text-xs font-bold mt-1 ${isPainelCtaAtivo ? 'text-white' : ''}`}>
+                        {isPainelCtaAtivo ? 'Iniciar!' : 'Painel'}
+                      </span>
+                    </button>
+                  );
+                })()}
+              </>
+            ) : title === 'Home' || title === 'PeladaPLAY' || pathname === '/atividade' || pathname === '/pelada-tradicional' ? (
               // Rodapé da HOME
               <>
                 <button
@@ -505,6 +838,14 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Home</span>
                 </button>
                 <button
+                  onClick={() => navigateTo('pelada-tradicional')}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${pathname === '/pelada-tradicional' ? 'text-green-600 bg-green-50' : 'text-gray-400'}`}
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">⚽</span>
+                  <span className="text-xs font-medium mt-1">Tradicional</span>
+                </button>
+                <button
                   onClick={() => navigateTo('cadastro')}
                   className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
                   style={{ flex: 1 }}
@@ -513,20 +854,20 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Cadastro</span>
                 </button>
                 <button
-                  onClick={() => navigateTo('sorteio')}
-                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
-                  style={{ flex: 1 }}
-                >
-                  <span className="text-2xl">🎲</span>
-                  <span className="text-xs font-medium mt-1">Sorteio</span>
-                </button>
-                <button
                   onClick={() => navigateTo('regras')}
                   className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
                   style={{ flex: 1 }}
                 >
                   <span className="text-2xl">⚙️</span>
                   <span className="text-xs font-medium mt-1">Regras</span>
+                </button>
+                <button
+                  onClick={() => navigateTo('sorteio')}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">🎲</span>
+                  <span className="text-xs font-medium mt-1">Sorteio</span>
                 </button>
               </>
             ) : title === 'Cadastro' ? (
@@ -544,6 +885,14 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Home</span>
                 </button>
                 <button
+                  onClick={() => navigateTo('pelada-tradicional')}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">⚽</span>
+                  <span className="text-xs font-medium mt-1">Tradicional</span>
+                </button>
+                <button
                   onClick={() => navigateTo('cadastro')}
                   className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-green-600 bg-green-50"
                   style={{ flex: 1 }}
@@ -552,20 +901,20 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Cadastro</span>
                 </button>
                 <button
-                  onClick={() => navigateTo('sorteio')}
-                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
-                  style={{ flex: 1 }}
-                >
-                  <span className="text-2xl">🎲</span>
-                  <span className="text-xs font-medium mt-1">Sorteio</span>
-                </button>
-                <button
                   onClick={() => navigateTo('regras')}
                   className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
                   style={{ flex: 1 }}
                 >
                   <span className="text-2xl">⚙️</span>
                   <span className="text-xs font-medium mt-1">Regras</span>
+                </button>
+                <button
+                  onClick={() => navigateTo('sorteio')}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">🎲</span>
+                  <span className="text-xs font-medium mt-1">Sorteio</span>
                 </button>
               </>
             ) : title === 'Sorteio' ? (
@@ -583,6 +932,14 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Home</span>
                 </button>
                 <button
+                  onClick={() => navigateTo('pelada-tradicional')}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">⚽</span>
+                  <span className="text-xs font-medium mt-1">Tradicional</span>
+                </button>
+                <button
                   onClick={() => navigateTo('cadastro')}
                   className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
                   style={{ flex: 1 }}
@@ -591,20 +948,20 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Cadastro</span>
                 </button>
                 <button
-                  onClick={() => navigateTo('sorteio')}
-                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-green-600 bg-green-50"
-                  style={{ flex: 1 }}
-                >
-                  <span className="text-2xl">🎲</span>
-                  <span className="text-xs font-medium mt-1">Sorteio</span>
-                </button>
-                <button
                   onClick={() => navigateTo('regras')}
                   className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
                   style={{ flex: 1 }}
                 >
                   <span className="text-2xl">⚙️</span>
                   <span className="text-xs font-medium mt-1">Regras</span>
+                </button>
+                <button
+                  onClick={() => navigateTo('sorteio')}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-green-600 bg-green-50"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">🎲</span>
+                  <span className="text-xs font-medium mt-1">Sorteio</span>
                 </button>
               </>
             ) : title === 'Regras' ? (
@@ -622,6 +979,14 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Home</span>
                 </button>
                 <button
+                  onClick={() => navigateTo('pelada-tradicional')}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">⚽</span>
+                  <span className="text-xs font-medium mt-1">Tradicional</span>
+                </button>
+                <button
                   onClick={() => navigateTo('cadastro')}
                   className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
                   style={{ flex: 1 }}
@@ -630,20 +995,20 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-xs font-medium mt-1">Cadastro</span>
                 </button>
                 <button
-                  onClick={() => navigateTo('sorteio')}
-                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
-                  style={{ flex: 1 }}
-                >
-                  <span className="text-2xl">🎲</span>
-                  <span className="text-xs font-medium mt-1">Sorteio</span>
-                </button>
-                <button
                   onClick={() => navigateTo('regras')}
                   className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-green-600 bg-green-50"
                   style={{ flex: 1 }}
                 >
                   <span className="text-2xl">⚙️</span>
                   <span className="text-xs font-medium mt-1">Regras</span>
+                </button>
+                <button
+                  onClick={() => navigateTo('sorteio')}
+                  className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-400"
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">🎲</span>
+                  <span className="text-xs font-medium mt-1">Sorteio</span>
                 </button>
               </>
             ) : false ? (
@@ -686,24 +1051,28 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
               // Rodapé padrão (Estatísticas, Resultados, etc)
               <>
                 <button
-                  onClick={() => !ehVisitante() && navigateTo('')}
-                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
-                    ehVisitante() ? 'text-gray-300 opacity-30 cursor-not-allowed' :
-                    title === 'Home' ? 'text-green-600 bg-green-50' : 'text-gray-400'
-                  }`}
-                  style={{ flex: 1, pointerEvents: ehVisitante() ? 'none' : 'auto' }}
-                  disabled={ehVisitante()}
-                >
-                  <span className="text-2xl">🏠</span>
-                  <span className="text-xs font-medium mt-1">Home</span>
-                </button>
-                <button
                   onClick={() => navigateTo('estatisticas')}
                   className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${title === 'Estatísticas' ? 'text-green-600 bg-green-50' : 'text-gray-400'}`}
                   style={{ flex: 1 }}
                 >
                   <span className="text-2xl">🏆</span>
                   <span className="text-xs font-medium mt-1">Estatísticas</span>
+                </button>
+                <button
+                  onClick={() => navigateTo('individual')}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${title === 'Individual' ? 'text-green-600 bg-green-50' : 'text-gray-400'}`}
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">👤</span>
+                  <span className="text-xs font-medium mt-1">Individual</span>
+                </button>
+                <button
+                  onClick={() => navigateTo('x1')}
+                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${title === 'X1' ? 'text-green-600 bg-green-50' : 'text-gray-400'}`}
+                  style={{ flex: 1 }}
+                >
+                  <span className="text-2xl">⚔️</span>
+                  <span className="text-xs font-medium mt-1">X1</span>
                 </button>
                 <button
                   onClick={() => navigateTo('resultados')}
@@ -721,30 +1090,10 @@ export default function Layout({ children, title = 'PeladM', onAdminClick }: Lay
                   <span className="text-2xl">🥇</span>
                   <span className="text-xs font-medium mt-1">Classificação</span>
                 </button>
-                <button
-                  onClick={() => {
-                    if (ehVisitante()) return;
-                    if (onAdminClick) {
-                      onAdminClick();
-                    } else {
-                      alert('🔒 Área administrativa - Em desenvolvimento');
-                    }
-                  }}
-                  className={`flex flex-col items-center justify-center py-2 rounded-lg transition-colors ${
-                    ehVisitante() ? 'text-gray-300 opacity-30 cursor-not-allowed' :
-                    'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                  }`}
-                  style={{ flex: 1, pointerEvents: ehVisitante() ? 'none' : 'auto' }}
-                  title={ehVisitante() ? 'Admin indisponível para visitantes' : 'Área administrativa'}
-                  disabled={ehVisitante()}
-                >
-                  <span className="text-2xl">🔒</span>
-                  <span className="text-xs font-medium mt-1">Admin</span>
-                </button>
               </>
             )}
           </nav>
-        </footer>
+        </footer>}
 
         {/* Banner de Anúncio Fixo (apenas FREE) */}
         <AdBanner position="bottom" />

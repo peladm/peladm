@@ -19,6 +19,8 @@ export default function CadastroPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [jogadorParaExcluir, setJogadorParaExcluir] = useState<{id: string, nome: string} | null>(null);
+  const [fotoFile, setFotoFile] = useState<File | null>(null);
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
 
   useEffect(() => {
     testarConexaoECarregar();
@@ -165,7 +167,16 @@ export default function CadastroPage() {
         logger.log('⚠️ Chave procurada:', `regras_${peladaId}`);
         logger.log('⚠️ Todas as chaves no localStorage:', Object.keys(localStorage));
       }
-      
+
+      // Upload da foto (se selecionada)
+      let fotoUrlFinal: string | null = null;
+      if (fotoFile) {
+        fotoUrlFinal = await uploadFoto(fotoFile);
+        if (!fotoUrlFinal) mostrarMensagem('⚠️ Foto não enviada, salvando sem foto', 'info');
+      } else if (fotoPreview && fotoPreview.startsWith('http')) {
+        fotoUrlFinal = fotoPreview;
+      }
+
       if (editandoId) {
         // Atualizar jogador existente
         logger.log('🔄 Atualizando jogador:', { id: editandoId, nome, nivel });
@@ -182,7 +193,8 @@ export default function CadastroPage() {
               jogadoresArray[index] = {
                 ...jogadoresArray[index],
                 nome: nome.trim(),
-                nivel
+                nivel,
+                foto_url: fotoUrlFinal !== null ? fotoUrlFinal : jogadoresArray[index].foto_url
               };
               localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresArray));
             }
@@ -193,13 +205,13 @@ export default function CadastroPage() {
             tipo: 'atualizar_jogador',
             jogador_id: editandoId,
             pelada_id: peladaId,
-            dados: { nome: nome.trim(), nivel }
+            dados: { nome: nome.trim(), nivel, ...(fotoUrlFinal !== null ? { foto_url: fotoUrlFinal } : {}) }
           });
           
           mostrarMensagem('✅ Jogador atualizado (sync pendente)', 'success');
         } else {
           // MODO TEMPO REAL: Salvar direto
-          await jogadoresService.atualizar(editandoId, nome, nivel);
+          await jogadoresService.atualizar(editandoId, nome, nivel, fotoUrlFinal);
           mostrarMensagem('✅ Jogador atualizado com sucesso!', 'success');
         }
       } else {
@@ -216,10 +228,12 @@ export default function CadastroPage() {
             nivel,
             status: 'ativo',
             pelada_id: peladaId,
+            created_at: new Date().toISOString(),
             jogos: 0,
             vitorias: 0,
             derrotas: 0,
-            gols: 0
+            gols: 0,
+            ...(fotoUrlFinal ? { foto_url: fotoUrlFinal } : {})
           };
           
           // Salvar no localStorage
@@ -238,7 +252,7 @@ export default function CadastroPage() {
           mostrarMensagem('✅ Jogador cadastrado (sync pendente)', 'success');
         } else {
           // MODO TEMPO REAL: Salvar direto
-          await jogadoresService.criar(nome, nivel);
+          await jogadoresService.criar(nome, nivel, fotoUrlFinal ?? undefined);
           mostrarMensagem('✅ Jogador cadastrado com sucesso!', 'success');
         }
       }
@@ -247,6 +261,8 @@ export default function CadastroPage() {
       setNome('');
       setNivel(3);
       setEditandoId(null);
+      setFotoFile(null);
+      setFotoPreview(null);
       await carregarJogadores();
       
     } catch (error: any) {
@@ -277,6 +293,8 @@ export default function CadastroPage() {
       setNome(jogador.nome);
       setNivel(jogador.nivel);
       setEditandoId(id);
+      setFotoPreview(jogador.foto_url ?? null);
+      setFotoFile(null);
       mostrarMensagem('✏️ Modo edição ativado', 'info');
       
       // Scroll para o formulário
@@ -288,6 +306,8 @@ export default function CadastroPage() {
     setNome('');
     setNivel(3);
     setEditandoId(null);
+    setFotoFile(null);
+    setFotoPreview(null);
   };
 
   const alternarStatus = async (id: string) => {
@@ -416,6 +436,34 @@ export default function CadastroPage() {
     setTimeout(() => setMessage(''), 3000);
   };
 
+  const uploadFoto = async (file: File): Promise<string | null> => {
+    try {
+      const peladaId = buscar_pelada_id();
+      if (!peladaId) return null;
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${peladaId}/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { error } = await clienteDb.storage
+        .from('fotos-jogadores')
+        .upload(fileName, file, { upsert: true });
+      if (error) throw error;
+      const { data: urlData } = clienteDb.storage
+        .from('fotos-jogadores')
+        .getPublicUrl(fileName);
+      return urlData.publicUrl;
+    } catch (err) {
+      logger.error('Erro ao fazer upload da foto:', err);
+      return null;
+    }
+  };
+
+  const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFotoFile(file);
+    setFotoPreview(URL.createObjectURL(file));
+  };
+
   const renderStars = (nivel: number) => {
     return Array.from({ length: 5 }, (_, i) => {
       const nivelEstrela = i + 1;
@@ -469,26 +517,50 @@ export default function CadastroPage() {
         <section className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
           <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
             
-            {/* Input Nome */}
-            <div className="flex flex-col">
-              <input
-                type="text"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                placeholder="Nome do jogador"
-                className="p-2.5 border-2 border-gray-100 rounded-xl text-base text-center bg-gray-50 focus:outline-none focus:border-green-600 focus:bg-white transition-colors"
-                required
-              />
-            </div>
-
-            {/* Selector de Estrelas - Apenas para Gold e Premium */}
-            {possuiPermissao('cadastrarNivel') && (
-              <div className="flex flex-col items-center gap-1 p-2 bg-gray-50 rounded-xl">
-                <div className="flex gap-1 justify-center">
-                  {renderStars(nivel)}
-                </div>
+            {/* Linha principal: Nome+Nível à esquerda, Foto à direita */}
+            <div className="flex gap-2 items-stretch">
+              {/* Esquerda: nome + estrelas */}
+              <div className="flex-1 flex flex-col gap-1.5">
+                <input
+                  type="text"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  placeholder="Nome do jogador"
+                  className="p-2.5 border-2 border-gray-100 rounded-xl text-base text-center bg-gray-50 focus:outline-none focus:border-green-600 focus:bg-white transition-colors"
+                  required
+                />
+                {possuiPermissao('cadastrarNivel') && (
+                  <div className="flex flex-col items-center gap-1 p-2 bg-gray-50 rounded-xl">
+                    <div className="flex gap-1 justify-center">
+                      {renderStars(nivel)}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Direita: foto (opcional) */}
+              <label
+                htmlFor="foto-input"
+                className="relative w-20 flex-shrink-0 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 hover:border-green-400 hover:bg-green-50 transition-colors cursor-pointer overflow-hidden flex items-center justify-center"
+                title="Clique para adicionar foto (opcional)"
+              >
+                {fotoPreview ? (
+                  <img src={fotoPreview} alt="Foto do jogador" className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  <div className="flex flex-col items-center gap-0.5 text-gray-400 select-none">
+                    <span className="text-2xl">📷</span>
+                    <span className="text-xs text-center leading-tight">Foto</span>
+                  </div>
+                )}
+                <input
+                  id="foto-input"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFotoChange}
+                />
+              </label>
+            </div>
 
             {/* Botão Submit */}
             <div className="mt-0.5">
@@ -561,14 +633,22 @@ export default function CadastroPage() {
                         : 'bg-gray-50 border-l-green-600'
                     }`}
                   >
-                    <div className="flex flex-col gap-0.5">
-                      <div className={`text-sm font-semibold ${
-                        isInativo ? 'text-gray-500 line-through' : 'text-gray-800'
-                      }`}>
-                        {jogador.nome}
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-sm font-bold text-blue-700">
+                        {jogador.foto_url
+                          ? <img src={jogador.foto_url} alt={jogador.nome} className="w-full h-full object-cover" />
+                          : jogador.nome.charAt(0).toUpperCase()
+                        }
                       </div>
-                      <div className="text-xs text-gray-600 opacity-70 leading-none">
-                        {estrelas}
+                      <div className="flex flex-col gap-0.5">
+                        <div className={`text-sm font-semibold ${
+                          isInativo ? 'text-gray-500 line-through' : 'text-gray-800'
+                        }`}>
+                          {jogador.nome}
+                        </div>
+                        <div className="text-xs text-gray-600 opacity-70 leading-none">
+                          {estrelas}
+                        </div>
                       </div>
                     </div>
                     

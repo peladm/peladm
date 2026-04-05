@@ -4,8 +4,24 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
 import { supabase, validarSenhaPelada } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
-import { buscar_pelada_id, buscar_plano } from '../../lib/credenciais';
+import { buscar_pelada_id } from '../../lib/credenciais';
 import { createClient } from '@supabase/supabase-js';
+
+const BANCO_PRINCIPAL_URL = 'https://ewcswczqvelhlwpbraea.supabase.co';
+const BANCO_PRINCIPAL_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks';
+
+const REGRAS_PADRAO: Regras = {
+  jogadores_por_time: 5,
+  modelo_sorteio: 'equilibrado',
+  duracao: 10,
+  vitorias_consecutivas: 0,
+  prioridade_retorno: 'prioridade',
+  regra_empate: 'ambos_saem',
+  regra_apos_empate: 'desempate_decide',
+  empate_conta_vitoria: false,
+  tipo_fila: 'modo_prancheta',
+  cores_coletes: ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981']
+};
 
 interface Regras {
   jogadores_por_time: number;
@@ -17,22 +33,13 @@ interface Regras {
   regra_apos_empate: 'desempate_decide' | 'mesclar_times';
   empate_conta_vitoria: boolean;
   tipo_fila: 'modo_partida' | 'modo_prancheta';
+  cores_coletes: string[];
 }
 
 export default function RegrasPage() {
-  const { possuiPermissao, plano } = usePermissions();
+  const { possuiPermissao } = usePermissions();
   
-  const [regras, setRegras] = useState<Regras>({
-    jogadores_por_time: 5,
-    modelo_sorteio: 'equilibrado',
-    duracao: 10,
-    vitorias_consecutivas: 0,
-    prioridade_retorno: 'prioridade',
-    regra_empate: 'ambos_saem',
-    regra_apos_empate: 'desempate_decide',
-    empate_conta_vitoria: false,
-    tipo_fila: 'modo_prancheta'
-  });
+  const [regras, setRegras] = useState<Regras>(REGRAS_PADRAO);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -47,61 +54,65 @@ export default function RegrasPage() {
 
   const carregarRegras = async () => {
     try {
-      // Buscar pelada_id e plano das credenciais
       const peladaId = buscar_pelada_id();
-      const plano = buscar_plano(); // 'free', 'gold' ou 'premium'
       
       if (!peladaId) {
         console.log('⚠️ Usuário não logado, usando configurações padrão');
         return;
       }
       
-      console.log('🔍 Carregando regras...');
-      console.log('💳 Plano:', plano);
+      console.log('🔍 Carregando regras (master + cache local)...');
       console.log('🆔 Pelada ID:', peladaId);
-      
-      // PLANO FREE: Carregar apenas do localStorage
-      if (plano === 'free') {
-        console.log('📦 Plano FREE: carregando do localStorage');
-        const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
-        
-        if (regrasLocal) {
-          const regrasCarregadas = JSON.parse(regrasLocal);
-          setRegras({
-            jogadores_por_time: regrasCarregadas.jogadores_por_time || 5,
-            modelo_sorteio: regrasCarregadas.modelo_sorteio || 'aleatorio',
-            duracao: regrasCarregadas.duracao || 10,
-            vitorias_consecutivas: regrasCarregadas.vitorias_consecutivas || 0,
-            prioridade_retorno: regrasCarregadas.prioridade_retorno || 'mesclar',
-            regra_empate: regrasCarregadas.regra_empate || 'desempate',
-            regra_apos_empate: regrasCarregadas.regra_apos_empate || 'desempate_decide',
-            empate_conta_vitoria: regrasCarregadas.empate_conta_vitoria || false,
-            tipo_fila: regrasCarregadas.tipo_fila || 'modo_prancheta'
-          });
-          console.log('✅ Regras carregadas do localStorage');
-        }
-        return;
-      }
-      
-      // PLANO GOLD/PREMIUM: Carregar do localStorage (cache local)
-      // Salva no Supabase principal mas mantém cache local para performance
-      console.log('📦 Plano GOLD/PREMIUM: carregando do cache local');
+
+      // 1) Cache local primeiro para renderização rápida
       const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
-      
       if (regrasLocal) {
         const regrasCarregadas = JSON.parse(regrasLocal);
         setRegras({
-          jogadores_por_time: regrasCarregadas.jogadores_por_time || 5,
-          modelo_sorteio: regrasCarregadas.modelo_sorteio || 'equilibrado',
-          duracao: regrasCarregadas.duracao || 10,
-          vitorias_consecutivas: regrasCarregadas.vitorias_consecutivas || 0,
-          prioridade_retorno: regrasCarregadas.prioridade_retorno || 'prioridade',
-          regra_empate: regrasCarregadas.regra_empate || 'ambos_saem',
-          regra_apos_empate: regrasCarregadas.regra_apos_empate || 'desempate_decide',
-          empate_conta_vitoria: regrasCarregadas.empate_conta_vitoria || false,
-          tipo_fila: regrasCarregadas.tipo_fila || 'modo_prancheta'
+          jogadores_por_time: regrasCarregadas.jogadores_por_time || REGRAS_PADRAO.jogadores_por_time,
+          modelo_sorteio: regrasCarregadas.modelo_sorteio || REGRAS_PADRAO.modelo_sorteio,
+          duracao: regrasCarregadas.duracao || REGRAS_PADRAO.duracao,
+          vitorias_consecutivas: regrasCarregadas.vitorias_consecutivas || REGRAS_PADRAO.vitorias_consecutivas,
+          prioridade_retorno: regrasCarregadas.prioridade_retorno || REGRAS_PADRAO.prioridade_retorno,
+          regra_empate: regrasCarregadas.regra_empate || REGRAS_PADRAO.regra_empate,
+          regra_apos_empate: regrasCarregadas.regra_apos_empate || REGRAS_PADRAO.regra_apos_empate,
+          empate_conta_vitoria: regrasCarregadas.empate_conta_vitoria || REGRAS_PADRAO.empate_conta_vitoria,
+          tipo_fila: regrasCarregadas.tipo_fila || REGRAS_PADRAO.tipo_fila,
+          cores_coletes: regrasCarregadas.cores_coletes || REGRAS_PADRAO.cores_coletes
         });
-        console.log('✅ Regras carregadas do cache local');
+        console.log('✅ Regras carregadas do cache local (rápido)');
+      }
+
+      // 2) Sincronizar com master e atualizar cache local
+      const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
+      const { data: regrasMaster, error } = await supabasePrincipal
+        .from('regras')
+        .select('jogadores_por_time, modelo_sorteio, duracao, vitorias_consecutivas, prioridade_retorno, regra_empate, regra_apos_empate, empate_conta_vitoria, tipo_fila, cores_coletes')
+        .eq('pelada_id', peladaId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('⚠️ Erro ao sincronizar regras do master, mantendo cache local:', error.message);
+        return;
+      }
+
+      if (regrasMaster) {
+        const regrasSincronizadas: Regras = {
+          jogadores_por_time: regrasMaster.jogadores_por_time || REGRAS_PADRAO.jogadores_por_time,
+          modelo_sorteio: regrasMaster.modelo_sorteio || REGRAS_PADRAO.modelo_sorteio,
+          duracao: regrasMaster.duracao || REGRAS_PADRAO.duracao,
+          vitorias_consecutivas: regrasMaster.vitorias_consecutivas || REGRAS_PADRAO.vitorias_consecutivas,
+          prioridade_retorno: regrasMaster.prioridade_retorno || REGRAS_PADRAO.prioridade_retorno,
+          regra_empate: regrasMaster.regra_empate || REGRAS_PADRAO.regra_empate,
+          regra_apos_empate: regrasMaster.regra_apos_empate || REGRAS_PADRAO.regra_apos_empate,
+          empate_conta_vitoria: regrasMaster.empate_conta_vitoria || REGRAS_PADRAO.empate_conta_vitoria,
+          tipo_fila: regrasMaster.tipo_fila || REGRAS_PADRAO.tipo_fila,
+          cores_coletes: regrasMaster.cores_coletes || REGRAS_PADRAO.cores_coletes
+        };
+
+        setRegras(regrasSincronizadas);
+        localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regrasSincronizadas));
+        console.log('✅ Regras sincronizadas do master e cache local atualizado');
       }
       
     } catch (error) {
@@ -168,31 +179,12 @@ export default function RegrasPage() {
 
     try {
       const peladaId = buscar_pelada_id();
-      const plano = buscar_plano(); // 'free', 'gold' ou 'premium'
       
       if (!peladaId) {
         throw new Error('Usuário não encontrado');
       }
-      
-      // Plano FREE: salvar apenas no localStorage
-      if (plano === 'free') {
-        console.log('📦 Plano FREE: salvando no localStorage');
-        localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
-        console.log('✅ Regras salvas com sucesso');
-        setMessage('💾 Regras salvas com sucesso!');
-        setTimeout(() => setMessage(''), 3000);
-        setIsLoading(false);
-        return;
-      }
 
-      // Plano GOLD/PREMIUM: salvar no Supabase Principal E no localStorage
-      console.log('☁️ Plano GOLD/PREMIUM: salvando no Supabase Principal');
-      
-      // Constantes do banco principal
-      const BANCO_PRINCIPAL_URL = 'https://ewcswczqvelhlwpbraea.supabase.co';
-      const BANCO_PRINCIPAL_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks';
-      
-      // Cliente do banco principal
+      console.log('☁️ Salvando regras no Supabase master (todos os planos)...');
       const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
       
       const dadosRegras = {
@@ -205,7 +197,8 @@ export default function RegrasPage() {
         prioridade_retorno: regras.prioridade_retorno,
         regra_empate: regras.regra_empate,
         regra_apos_empate: regras.regra_apos_empate,
-        empate_conta_vitoria: regras.empate_conta_vitoria
+        empate_conta_vitoria: regras.empate_conta_vitoria,
+        cores_coletes: regras.cores_coletes
       };
       
       // Tentar atualizar (upsert usando pelada_id como chave)
@@ -220,7 +213,7 @@ export default function RegrasPage() {
       // Salvar também no localStorage (cache local)
       localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
       
-      console.log('✅ Regras salvas no Supabase Principal e cache local');
+      console.log('✅ Regras salvas no master e cache local');
       setMessage('💾 Regras salvas com sucesso!');
       setTimeout(() => setMessage(''), 3000);
       
@@ -249,7 +242,8 @@ export default function RegrasPage() {
       regra_empate: 'ambos_saem',
       regra_apos_empate: 'desempate_decide',
       empate_conta_vitoria: false,
-      tipo_fila: 'modo_prancheta'
+      tipo_fila: 'modo_prancheta',
+      cores_coletes: ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981']
     });
     setMessage('🔄 Configurações restauradas para o padrão');
     setTimeout(() => setMessage(''), 3000);
@@ -622,6 +616,62 @@ export default function RegrasPage() {
                     Modo Prancheta (simplificado)
                   </button>
                 </div>
+              </div>
+
+              {/* Cores dos Coletes */}
+              <div className="bg-gray-50 p-4 rounded-lg border">
+                <label className="block text-sm font-bold text-gray-800 mb-1">
+                  🎽 Coletes / Cores dos Times
+                </label>
+                <p className="text-xs text-gray-500 mb-4">
+                  Selecione as cores dos coletes que você tem. Apenas essas aparecerao na tela da partida.
+                </p>
+                <div className="grid grid-cols-5 gap-2">
+                  {[
+                    { hex: '#dc3545', nome: 'Vermelho' },
+                    { hex: '#000000', nome: 'Preto' },
+                    { hex: '#FFFFFF', nome: 'Branco' },
+                    { hex: '#fbbf24', nome: 'Amarelo' },
+                    { hex: '#3b82f6', nome: 'Azul' },
+                    { hex: '#10b981', nome: 'Verde' },
+                    { hex: '#f97316', nome: 'Laranja' },
+                    { hex: '#ec4899', nome: 'Rosa' },
+                    { hex: '#8b5cf6', nome: 'Roxo' },
+                    { hex: '#6b7280', nome: 'Cinza' },
+                  ].map(({ hex, nome }) => {
+                    const selecionado = (regras.cores_coletes ?? []).includes(hex);
+                    return (
+                      <button
+                        key={hex}
+                        type="button"
+                        title={nome}
+                        onClick={() => {
+                          const novas = selecionado
+                            ? regras.cores_coletes.filter(c => c !== hex)
+                            : [...regras.cores_coletes, hex];
+                          if (novas.length === 0) return;
+                          setRegras({ ...regras, cores_coletes: novas });
+                        }}
+                        className={`relative w-full aspect-square rounded-lg border-2 transition-all ${
+                          selecionado ? 'border-blue-500 scale-105 shadow-md' : 'border-gray-300'
+                        }`}
+                        style={{ backgroundColor: hex }}
+                      >
+                        {selecionado && (
+                          <span className="absolute inset-0 flex items-center justify-center text-lg font-bold"
+                            style={{ color: hex === '#FFFFFF' || hex === '#fbbf24' ? '#374151' : 'white', textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>
+                            ✓
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {regras.cores_coletes.length < 2 && (
+                  <p className="text-xs text-amber-600 mt-2 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                    ⚠️ Selecione ao menos 2 cores (uma para cada time).
+                  </p>
+                )}
               </div>
 
               {/* Botões de Ação */}

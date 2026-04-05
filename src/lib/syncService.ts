@@ -268,7 +268,7 @@ async function syncItem(item: SyncQueueItem): Promise<void> {
  */
 async function syncCriarJogadorComRetorno(item: SyncQueueItem, peladaId: string): Promise<{ id: string }> {
   const { dados } = item;
-  const { id, _tempId, _pendente_sync, ...jogadorData } = dados;
+  const { id, _tempId, _pendente_sync, created_at, updated_at, ...jogadorData } = dados;
   
   // Remover id se for local (começa com 'local_')
   const insertData = id && id.startsWith('local_') 
@@ -311,7 +311,7 @@ async function syncInserirJogoComRetorno(item: SyncQueueItem, peladaId: string):
  */
 async function syncCriarJogador(item: SyncQueueItem): Promise<void> {
   const { pelada_id, dados } = item;
-  const { id, _tempId, _pendente_sync, ...jogadorData } = dados;
+  const { id, _tempId, _pendente_sync, created_at, updated_at, ...jogadorData } = dados;
   
   // Remover id se for local (começa com 'local_')
   const insertData = id && id.startsWith('local_') 

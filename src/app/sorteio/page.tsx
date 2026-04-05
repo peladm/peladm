@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from '../../components/Layout';
-import { jogadoresService, supabase, getClienteSupabase, getSupabaseParaUsuarioLogado } from '../../lib/supabase';
+import { jogadoresService, supabase, getClienteSupabase, getSupabaseParaUsuarioLogado, validarSenhaPelada } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { useAdInterstitial } from '../../lib/useAdInterstitial';
 import AdInterstitial from '../../components/AdInterstitial';
@@ -43,6 +43,11 @@ export default function SorteioPage() {
   const [mostrarResultado, setMostrarResultado] = useState(false);
   const [todosSelecionados, setTodosSelecionados] = useState(false);
   const [modalSorteioAberto, setModalSorteioAberto] = useState(false);
+  const [modalConfirmandoAberto, setModalConfirmandoAberto] = useState(false);
+  const [showModalSenhaConfirmar, setShowModalSenhaConfirmar] = useState(false);
+  const [senhaConfirmar, setSenhaConfirmar] = useState('');
+  const [erroSenhaConfirmar, setErroSenhaConfirmar] = useState('');
+  const [isValidandoSenha, setIsValidandoSenha] = useState(false);
   
   // Estados para controle do sticky behavior
   const [botaoSortearSticky, setBotaoSortearSticky] = useState(false);
@@ -533,7 +538,7 @@ export default function SorteioPage() {
   };
 
 
-  const confirmarTimes = async () => {
+  const confirmarTimes = () => {
     // VALIDAÇÃO OBRIGATÓRIA: Verificar se as regras foram configuradas
     const peladaId = buscar_pelada_id();
     if (!peladaId) {
@@ -550,7 +555,35 @@ export default function SorteioPage() {
       return;
     }
 
-    await iniciarPelada();
+    // Abrir modal de confirmação de senha
+    setSenhaConfirmar('');
+    setErroSenhaConfirmar('');
+    setShowModalSenhaConfirmar(true);
+  };
+
+  const handleConfirmarComSenha = async () => {
+    if (!senhaConfirmar.trim()) {
+      setErroSenhaConfirmar('Digite sua senha para confirmar.');
+      return;
+    }
+    setIsValidandoSenha(true);
+    setErroSenhaConfirmar('');
+    try {
+      const senhaValida = await validarSenhaPelada(senhaConfirmar);
+      if (!senhaValida) {
+        setErroSenhaConfirmar('Senha incorreta. Tente novamente.');
+        return;
+      }
+      setShowModalSenhaConfirmar(false);
+      setSenhaConfirmar('');
+      setModalSorteioAberto(false);
+      setModalConfirmandoAberto(true);
+      await iniciarPelada();
+    } catch {
+      setErroSenhaConfirmar('Erro ao validar senha. Tente novamente.');
+    } finally {
+      setIsValidandoSenha(false);
+    }
   };
 
   // Função para compartilhar times no WhatsApp
@@ -943,25 +976,13 @@ export default function SorteioPage() {
 
       <div className="max-w-2xl mx-auto space-y-5">
         {/* Header */}
-        <section className="bg-gray-50 border-2 border-gray-100 rounded-3xl p-3 text-center">
-          <h2 className="text-lg font-semibold text-gray-800 mb-2">🎲 Sorteio Inicial 🎲</h2>
-          <div className="flex justify-center">
-            <button
-              onClick={toggleSelectAll}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                todosSelecionados
-                  ? 'bg-green-600 text-white border-2 border-green-600'
-                  : 'bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-green-600 hover:bg-green-50 hover:text-green-600'
-              }`}
-            >
-              <span className="text-base">{todosSelecionados ? '❌' : '✅'}</span>
-              <span>{todosSelecionados ? 'Desselecionar Todos' : 'Selecionar Todos'}</span>
-            </button>
-          </div>
+        <section className="text-center py-1">
+          <h2 className="text-sm font-semibold text-gray-500 tracking-wide">🎲 Sorteio Inicial 🎲</h2>
+          <p className="text-xs text-gray-400 mt-1">Clique no nome do jogador para selecioná-lo para o sorteio</p>
         </section>
 
         {/* Lista de Jogadores */}
-        <section className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+        <section>
 
           {jogadoresDisponiveis.length === 0 ? (
             <div className="text-center py-10 text-gray-500">
@@ -994,7 +1015,20 @@ export default function SorteioPage() {
           )}
         </section>
 
-
+        {/* Selecionar Todos — ação secundária, pouco utilizada */}
+        <div className="flex justify-center">
+          <button
+            onClick={toggleSelectAll}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+              todosSelecionados
+                ? 'bg-green-600 text-white border-2 border-green-600'
+                : 'bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-green-600 hover:bg-green-50 hover:text-green-600'
+            }`}
+          >
+            <span className="text-base">{todosSelecionados ? '❌' : '✅'}</span>
+            <span>{todosSelecionados ? 'Desselecionar Todos' : 'Selecionar Todos'}</span>
+          </button>
+        </div>
 
         {/* Botão Sortear estático após lista de jogadores (só antes do sorteio) */}
         {!mostrarResultado && (
@@ -1129,29 +1163,31 @@ export default function SorteioPage() {
 
             {/* Botões de Ação */}
             <div className="space-y-3">
-              {/* Botão Re-sortear */}
+              {/* Botão Confirmar Times e Iniciar Pelada — linha exclusiva */}
               <button
-                onClick={resortear}
-                className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200"
+                onClick={confirmarTimes}
+                className="w-full flex flex-col items-center justify-center gap-1 py-4 px-5 rounded-xl font-semibold bg-green-600 text-white hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200"
               >
-                <span className="text-xl">🔄</span>
-                <span>Re-sortear</span>
+                <div className="flex items-center gap-2 text-base">
+                  <span className="text-xl">✅</span>
+                  <span>Confirmar Times e Iniciar Pelada</span>
+                </div>
+                <span className="text-xs font-normal opacity-80">Requer confirmação de senha</span>
               </button>
 
-              {/* Botão Confirmar Times e WhatsApp */}
+              {/* Re-sortear + WhatsApp na mesma linha */}
               <div style={{ display: 'flex', gap: '12px' }}>
-                {/* Botão Confirmar Times - 75% */}
                 <button
-                  onClick={confirmarTimes}
-                  style={{ flex: '0 0 calc(75% - 6px)' }}
-                  className="flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-green-600 text-white hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200"
+                  onClick={resortear}
+                  style={{ flex: '1' }}
+                  className="flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200"
                 >
-                  <span className="text-xl">✅</span>
-                  <span>Confirmar Times</span>
+                  <span className="text-xl">🔄</span>
+                  <span>Re-sortear</span>
                 </button>
-                
-                {/* Botão WhatsApp - 25% */}
-                <div style={{ flex: '0 0 calc(25% - 6px)' }} className="relative">
+
+                {/* Botão WhatsApp */}
+                <div style={{ flex: '0 0 56px' }} className="relative">
                   {!possuiPermissao('compartilharWhatsApp') && (
                     <div className="absolute -top-2 -right-2 bg-gradient-to-r from-yellow-400 to-yellow-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1 z-10">
                       <span>⭐</span>
@@ -1185,6 +1221,43 @@ export default function SorteioPage() {
         </div>
       )}
 
+      {/* Modal de Confirmação de Senha para Iniciar Pelada */}
+      {showModalSenhaConfirmar && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[10000] p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">🔒 Confirmar Identidade</h3>
+            <p className="text-sm text-gray-500 mb-4">Digite sua senha para confirmar os times e iniciar a pelada.</p>
+            <input
+              type="password"
+              value={senhaConfirmar}
+              onChange={e => setSenhaConfirmar(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleConfirmarComSenha()}
+              placeholder="Sua senha"
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-green-500 mb-2"
+              autoFocus
+            />
+            {erroSenhaConfirmar && (
+              <p className="text-red-500 text-xs mb-3">{erroSenhaConfirmar}</p>
+            )}
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={() => { setShowModalSenhaConfirmar(false); setSenhaConfirmar(''); setErroSenhaConfirmar(''); }}
+                className="flex-1 py-3 rounded-xl text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                disabled={isValidandoSenha}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmarComSenha}
+                disabled={isValidandoSenha}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-60"
+              >
+                {isValidandoSenha ? 'Verificando...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
         
       {/* Botões Sticky - Aparecem quando os originais saem da tela */}
@@ -1205,6 +1278,20 @@ export default function SorteioPage() {
               <span className="text-xl">🎲</span>
               <span>Sortear Times: {jogadoresSelecionados.length}</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmando times / gerando pelada */}
+      {modalConfirmandoAberto && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '32px 24px', maxWidth: '360px', width: '90%', textAlign: 'center' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '16px' }}>⚽</div>
+            <h2 style={{ fontSize: '1.3rem', fontWeight: 'bold', marginBottom: '8px', color: '#16a34a' }}>Times Confirmados!</h2>
+            <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Gerando a pelada, aguarde...</p>
+            <div className="mt-4 flex justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-4 border-green-600 border-t-transparent"></div>
+            </div>
           </div>
         </div>
       )}

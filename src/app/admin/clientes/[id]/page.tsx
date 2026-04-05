@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { validarAcessoMaster } from '../../../../lib/adminAuth';
 
 const supabase = createClient(
   'https://ewcswczqvelhlwpbraea.supabase.co',
@@ -39,8 +40,18 @@ export default function DashboardCliente() {
   const [dadosAtraso, setDadosAtraso] = useState({ diasAtraso: '', consequencia: '' });
 
   useEffect(() => {
-    carregarCliente();
-  }, [clienteId]);
+    const validarECarregar = async () => {
+      const autorizado = await validarAcessoMaster();
+      if (!autorizado) {
+        alert('🚫 Acesso restrito ao perfil master.');
+        router.push('/');
+        return;
+      }
+      carregarCliente();
+    };
+
+    validarECarregar();
+  }, [clienteId, router]);
 
   const carregarCliente = async () => {
     try {

@@ -36,12 +36,12 @@ export default function AdBanner({ position = 'bottom' }: AdBannerProps) {
 
   return (
     <div
+      className="mobile-ad-shell"
       style={{
         position: 'fixed',
         bottom: 0, // Totalmente embaixo
         left: 0,
         right: 0,
-        height: '60px',
         background: '#f8f9fa',
         borderTop: '1px solid #e5e7eb',
         zIndex: 20, // Abaixo do footer

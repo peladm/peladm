@@ -119,14 +119,26 @@ export const rotacao_vitoriaconsec_mesclar = (
   limiteAtingido: boolean
 ) => {
   if (limiteAtingido) {
-    console.log('✅ LIMITE ATINGIDO: Times mesclados ao retornar');
-    const todosJogadores = [...time1, ...time2];
-    // Embaralhar
-    for (let i = todosJogadores.length - 1; i > 0; i--) {
+    console.log('✅ LIMITE ATINGIDO: Times mesclados ao retornar (intercalado)');
+    // Embaralha cada time entre si
+    const t1 = [...time1];
+    const t2 = [...time2];
+    for (let i = t1.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [todosJogadores[i], todosJogadores[j]] = [todosJogadores[j], todosJogadores[i]];
+      [t1[i], t1[j]] = [t1[j], t1[i]];
     }
-    return [...espera, ...todosJogadores];
+    for (let i = t2.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [t2[i], t2[j]] = [t2[j], t2[i]];
+    }
+    // Intercala um de cada time
+    const intercalados: any[] = [];
+    const maior = Math.max(t1.length, t2.length);
+    for (let i = 0; i < maior; i++) {
+      if (i < t1.length) intercalados.push(t1[i]);
+      if (i < t2.length) intercalados.push(t2[i]);
+    }
+    return [...espera, ...intercalados];
   }
   // Rotação normal
   if (timeVencedor === null) return [...espera, ...time1, ...time2];
@@ -175,14 +187,26 @@ export const rotacaoempate_ambos_mesclar = (
   time2: any[], 
   espera: any[]
 ) => {
-  console.log('✅ EMPATE - Ambos saem, times mesclados');
-  const todosJogadores = [...time1, ...time2];
-  // Embaralhar
-  for (let i = todosJogadores.length - 1; i > 0; i--) {
+  console.log('✅ EMPATE - Ambos saem, times mesclados (intercalado)');
+  // Embaralha cada time entre si
+  const t1 = [...time1];
+  const t2 = [...time2];
+  for (let i = t1.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [todosJogadores[i], todosJogadores[j]] = [todosJogadores[j], todosJogadores[i]];
+    [t1[i], t1[j]] = [t1[j], t1[i]];
   }
-  return [...espera, ...todosJogadores];
+  for (let i = t2.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [t2[i], t2[j]] = [t2[j], t2[i]];
+  }
+  // Intercala um de cada time
+  const intercalados: any[] = [];
+  const maior = Math.max(t1.length, t2.length);
+  for (let i = 0; i < maior; i++) {
+    if (i < t1.length) intercalados.push(t1[i]);
+    if (i < t2.length) intercalados.push(t2[i]);
+  }
+  return [...espera, ...intercalados];
 };
 
 // === ROTAÇÃO EMPATE: Desempate no final (time escolhido vira vencedor) ===
@@ -493,34 +517,146 @@ export const fila_mover = (
  * Cadastra novo jogador e adiciona às reservas
  * Valida nome duplicado e salva para sync (Gold/Premium)
  */
+export interface ResultadoCadastroFila {
+  sucesso: boolean;
+  jogadorId?: string;
+  reativado?: boolean;
+  criadoNovo?: boolean;
+}
+
 export const fila_cadastrarnovo_adicionar = (
   nome: string,
   nivel: number,
   peladaId: string,
   setJogadoresReserva: any,
   onSuccess: () => void
-) => {
+): ResultadoCadastroFila => {
   try {
-    console.log('🆕 [CADASTRAR] Cadastrando novo jogador:', nome);
+    console.log('🆕 [CADASTRAR] Cadastrando/reativando jogador:', nome);
+
+    const normalizarNome = (valor: string) =>
+      String(valor || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
     
     // 1. Validar nome não vazio
     if (!nome.trim()) {
       alert('❌ Digite o nome do jogador!');
-      return false;
+      return { sucesso: false };
     }
+
+    const nomeNormalizado = normalizarNome(nome);
 
     // 2. Buscar fila atual do localStorage
     const filaLocal = localStorage.getItem('fila_ativa');
     const fila = filaLocal ? JSON.parse(filaLocal) : [];
-    
-    // 3. Validar nome duplicado
-    const nomeDuplicado = fila.some((item: any) => 
-      item.nome?.toLowerCase() === nome.toLowerCase()
+    const jogadoresKey = `jogadores_${peladaId}`;
+    const jogadoresStr = localStorage.getItem(jogadoresKey);
+    const jogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+
+    const jogadorExistente = jogadores.find((j: any) =>
+      normalizarNome(j.nome) === nomeNormalizado
     );
+
+    const itemExistenteNaFila = fila.find((item: any) =>
+      normalizarNome(item.nome) === nomeNormalizado ||
+      (jogadorExistente && item.id === jogadorExistente.id)
+    );
+
+    // 3A. Já existe na sessão atual: não cadastrar novamente
+    if (itemExistenteNaFila) {
+      const statusAtual = (jogadorExistente?.status || 'ativo').toLowerCase();
+      if (statusAtual === 'inativo') {
+        const confirmarReativacao = window.confirm(
+          `Já existe um ${jogadorExistente?.nome || nome.trim()} cadastrado INATIVO. Deseja reativá-lo?`
+        );
+
+        if (!confirmarReativacao) {
+          return { sucesso: false };
+        }
+
+        const jogadoresAtualizados = jogadores.map((j: any) =>
+          normalizarNome(j.nome) === nomeNormalizado
+            ? { ...j, status: 'ativo' }
+            : j
+        );
+        localStorage.setItem(jogadoresKey, JSON.stringify(jogadoresAtualizados));
+        alert('✅ Jogador reativado com sucesso!');
+        onSuccess();
+        return {
+          sucesso: true,
+          jogadorId: jogadorExistente?.id,
+          reativado: true,
+          criadoNovo: false,
+        };
+      }
+
+      alert('❌ Já existe um jogador com esse nome na sessão atual!');
+      return { sucesso: false };
+    }
     
-    if (nomeDuplicado) {
-      alert('❌ Já existe um jogador com esse nome!');
-      return false;
+    // 3B. Já existe no cadastro geral: reaproveitar cadastro (sem criar duplicado)
+    if (jogadorExistente) {
+      const statusAtual = (jogadorExistente.status || 'ativo').toLowerCase();
+      const ehInativo = statusAtual === 'inativo';
+
+      if (ehInativo) {
+        const confirmarReativacao = window.confirm(
+          `Já existe um ${jogadorExistente.nome} cadastrado INATIVO. Deseja reativá-lo e adicionar à fila?`
+        );
+
+        if (!confirmarReativacao) {
+          return { sucesso: false };
+        }
+      } else {
+        const confirmarAdicionar = window.confirm(
+          `Já existe um ${jogadorExistente.nome} cadastrado. Deseja adicionar este cadastro à fila?`
+        );
+
+        if (!confirmarAdicionar) {
+          return { sucesso: false };
+        }
+      }
+
+      fila.push({
+        id: jogadorExistente.id,
+        nome: jogadorExistente.nome,
+        nivel: jogadorExistente.nivel || nivel,
+        status: 'reserva',
+        posicao_fila: 999,
+      });
+      localStorage.setItem('fila_ativa', JSON.stringify(fila));
+
+      if (ehInativo) {
+        const jogadoresAtualizados = jogadores.map((j: any) =>
+          normalizarNome(j.nome) === nomeNormalizado
+            ? { ...j, status: 'ativo' }
+            : j
+        );
+        localStorage.setItem(jogadoresKey, JSON.stringify(jogadoresAtualizados));
+      }
+
+      const reservaItems = fila
+        .filter((item: any) => item.status === 'reserva')
+        .map((item: any) => ({
+          id: item.id || item.nome,
+          nome: item.nome,
+          nivel: item.nivel || 3,
+          posicao_fila: item.posicao_fila,
+          status: 'reserva' as const
+        }));
+
+      setJogadoresReserva(reservaItems);
+      onSuccess();
+
+      return {
+        sucesso: true,
+        jogadorId: jogadorExistente.id,
+        reativado: ehInativo,
+        criadoNovo: false,
+      };
     }
     
     // 4. Gerar UUID válido (compatível com Supabase)
@@ -534,9 +670,10 @@ export const fila_cadastrarnovo_adicionar = (
     const novoId = gerarUUID();
     
     // 5. Criar novo jogador
+    const nomeFinal = nome.trim();
     const novoJogador = {
       id: novoId,
-      nome: nome,
+      nome: nomeFinal,
       nivel: nivel,
       status: 'reserva' as const,
       posicao_fila: 999
@@ -548,14 +685,9 @@ export const fila_cadastrarnovo_adicionar = (
     fila.push(novoJogador);
     localStorage.setItem('fila_ativa', JSON.stringify(fila));
     
-    // 7. Adicionar à tabela jogadores (para estatísticas e sincronização)
-    const jogadoresKey = `jogadores_${peladaId}`;
-    const jogadoresStr = localStorage.getItem(jogadoresKey);
-    const jogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
-    
     jogadores.push({
       id: novoId,
-      nome: nome,
+      nome: nomeFinal,
       nivel: nivel,
       pelada_id: peladaId,
       status: 'ativo',
@@ -580,18 +712,23 @@ export const fila_cadastrarnovo_adicionar = (
     
     console.log('✅ Novo jogador cadastrado nas reservas!', {
       total_reserva: reservaItems.length,
-      nome: nome
+      nome: nomeFinal
     });
     
     // 9. Callback de sucesso
     onSuccess();
     
-    return true;
+    return {
+      sucesso: true,
+      jogadorId: novoId,
+      reativado: false,
+      criadoNovo: true,
+    };
     
   } catch (error) {
     console.error('❌ Erro ao cadastrar jogador:', error);
     alert('❌ Erro inesperado ao cadastrar jogador!');
-    return false;
+    return { sucesso: false };
   }
 };
 
