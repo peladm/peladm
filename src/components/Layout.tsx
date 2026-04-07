@@ -139,7 +139,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
         }
 
         const torneio = JSON.parse(torneioRaw);
-        if (torneio.status !== 'ativo') {
+        if (torneio.status !== 'ativo' && torneio.status !== 'rascunho') {
           setTorneioSteps({ regras: regrasEnabled, participantes: false, sortearTimes: false, chaveamento: false });
           return;
         }

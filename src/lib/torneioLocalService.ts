@@ -217,6 +217,28 @@ export function obterTorneioAtivoLocal(): TorneioLocal | null {
   return torneio;
 }
 
+/** Retorna o torneio independentemente de ser rascunho ou ativo (para uso no fluxo de setup). */
+export function obterTorneioRascunhoOuAtivoLocal(): TorneioLocal | null {
+  migrarLegacySeNecessario();
+
+  const keys = getKeys();
+  const torneio = safeJsonParse<TorneioLocal | null>(localStorage.getItem(keys.torneioAtivo), null);
+
+  if (!torneio) return null;
+  if (torneio.status !== 'rascunho' && torneio.status !== 'ativo') return null;
+
+  return torneio;
+}
+
+/** Muda o status do torneio de 'rascunho' para 'ativo'. */
+export function ativarTorneioLocal(torneioId: string): void {
+  const keys = getKeys();
+  const torneio = safeJsonParse<TorneioLocal | null>(localStorage.getItem(keys.torneioAtivo), null);
+  if (!torneio || torneio.id !== torneioId) return;
+  const atualizado: TorneioLocal = { ...torneio, status: 'ativo', updated_at: nowIso() };
+  localStorage.setItem(keys.torneioAtivo, JSON.stringify(atualizado));
+}
+
 export function obterEquipesTorneioLocal(torneioId: string): EquipeTorneioLocal[] {
   const keys = getKeys();
 
@@ -279,7 +301,7 @@ export function criarTorneioAtivoLocal(
     nome,
     modalidade,
     formato,
-    status: 'ativo',
+    status: 'rascunho',
     data_inicio: timestamp,
     data_fim: null,
     created_at: timestamp,

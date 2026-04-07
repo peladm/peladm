@@ -8,7 +8,8 @@ import {
   EquipeTorneioLocal,
   obterParticipantesTorneioLocal,
   obterRegrasCompeticaoLocal,
-  obterTorneioAtivoLocal,
+  obterTorneioRascunhoOuAtivoLocal,
+  ativarTorneioLocal,
   salvarEquipesTorneioLocal,
   salvarJogadoresEquipesLocal,
   obterJogadoresEquipesLocal,
@@ -19,6 +20,15 @@ import { sortearNomesUnicos } from '../../../lib/nomesTimesTorneio';
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
 const CORES_EMOJIS = ['🔴', '🔵', '🟢', '🟡', '🟠', '🟣', '⚫', '⚪'];
+
+const COR_EMOJI_MAP: Record<string, string> = {
+  '🔴': '#ef4444', '🔵': '#3b82f6', '🟢': '#22c55e', '🟡': '#eab308',
+  '🟠': '#f97316', '🟣': '#a855f7', '⚫': '#374151', '⚪': '#9ca3af',
+};
+
+function corDoEmoji(emoji: string): string {
+  return COR_EMOJI_MAP[emoji] ?? '#6b7280';
+}
 
 const NIVEL_LABELS: Record<number, string> = {
   5: '⭐⭐⭐⭐⭐  Nível 5',
@@ -229,7 +239,7 @@ function SortearTimesPage() {
   const timesResultadoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const torneio = obterTorneioAtivoLocal();
+    const torneio = obterTorneioRascunhoOuAtivoLocal();
     if (!torneio) {
       router.replace('/modo-torneio');
       return;
@@ -268,13 +278,19 @@ function SortearTimesPage() {
         if (equipes.length > 0) {
           // Reconstrói TimeSorteado com jogadores salvos
           const mapa = obterJogadoresEquipesLocal(torneio.id);
-          const times: TimeSorteado[] = equipes.map((e, i) => ({
-            id: e.id,
-            nome: e.nome,
-            jogadores: mapa[e.id] ?? [],
-            nivelMedio: 0,
-            corEmoji: e.cor ?? CORES_EMOJIS[i] ?? '⭐',
-          }));
+          const times: TimeSorteado[] = equipes.map((e, i) => {
+            const jogadores = mapa[e.id] ?? [];
+            const nivelMedio = jogadores.length > 0
+              ? jogadores.reduce((sum, j) => sum + (j.nivel ?? 3), 0) / jogadores.length
+              : 0;
+            return {
+              id: e.id,
+              nome: e.nome,
+              jogadores,
+              nivelMedio,
+              corEmoji: e.cor ?? CORES_EMOJIS[i] ?? '⭐',
+            };
+          });
           setTimesFormados(times);
           setTimesConfirmados(true);
         }
@@ -353,6 +369,7 @@ function SortearTimesPage() {
   };
 
   const iniciarTorneio = () => {
+    if (torneioId) ativarTorneioLocal(torneioId);
     router.push('/modo-torneio/painel');
   };
 
@@ -438,48 +455,60 @@ function SortearTimesPage() {
             </div>
           </section>
 
-          {/* Grid de times */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          {/* Lista de times — uma coluna para facilitar print */}
+          <div className="flex flex-col gap-3 mb-6">
             {timesFormados
               .filter((t) => t.jogadores.length > 0 || timesConfirmados)
-              .map((time) => (
+              .map((time) => {
+                const cor = corDoEmoji(time.corEmoji);
+                return (
                 <div
                   key={time.id}
-                  className="bg-white border-2 border-gray-100 rounded-2xl p-4 shadow-sm hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md transition-all duration-200"
+                  className="bg-white border-2 rounded-2xl overflow-hidden shadow-sm"
+                  style={{ borderColor: cor + '55' }}
                 >
-                  <div className="text-center mb-3 pb-2 border-b border-gray-100">
-                    <div className="text-base font-bold text-emerald-600 mb-1">
-                      {time.corEmoji} {time.nome}
+                  {/* Cabeçalho colorido */}
+                  <div className="flex items-center justify-between px-4 py-3" style={{ background: cor + '18' }}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ background: cor }} />
+                      <span className="text-base font-bold" style={{ color: cor }}>{time.nome}</span>
                     </div>
                     {time.nivelMedio > 0 && (
-                      <div className="text-xs text-gray-500">
-                        ⭐ {time.nivelMedio.toFixed(1).replace('.', ',')}
-                        {time.jogadores.length > 0 && (
-                          <> &nbsp;·&nbsp; {time.jogadores.length} jogadores</>
-                        )}
+                      <div className="flex items-center gap-1 text-xs font-semibold" style={{ color: cor }}>
+                        <span>{Array.from({ length: 5 }).map((_, i) => (
+                          <span key={i} style={{ color: i < Math.round(time.nivelMedio) ? cor : '#d1d5db' }}>★</span>
+                        ))}</span>
+                        <span className="text-gray-500 font-normal">{time.nivelMedio.toFixed(1).replace('.', ',')} · {time.jogadores.length} jog.</span>
                       </div>
                     )}
                   </div>
+                  {/* Jogadores */}
+                  <div className="px-4 py-3">
                   {time.jogadores.length > 0 ? (
-                    <div className="space-y-1">
+                    <div className="flex flex-col gap-1">
                       {time.jogadores.map((j, idx) => (
                         <div
                           key={idx}
-                          className="p-2 bg-gray-50 rounded-lg border border-gray-100 text-center"
+                          className="flex items-center justify-between px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100"
                         >
-                          <span className="text-sm font-medium text-gray-800 block truncate">
-                            {j.nome}
-                          </span>
+                          <span className="text-sm font-medium text-gray-800">{j.nome}</span>
+                          {j.nivel != null && (
+                            <span className="text-xs shrink-0 ml-2">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <span key={i} style={{ color: i < j.nivel ? '#facc15' : '#e5e7eb' }}>★</span>
+                              ))}
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-400 text-center py-2">
-                      {jogadoresPorTime} jogadores
-                    </p>
+                    <p className="text-xs text-gray-400 text-center py-2">{jogadoresPorTime} jogadores</p>
                   )}
+                  </div>
                 </div>
-              ))}
+                );
+              })}
           </div>
 
           {/* Botão Re-sortear (desfazer) */}

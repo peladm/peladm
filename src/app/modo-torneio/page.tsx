@@ -12,6 +12,7 @@ import {
   limparTorneioLocal,
   limparSetupCompeticaoLocal,
   obterResumoTorneioAtivoLocal,
+  obterTorneioRascunhoOuAtivoLocal,
   salvarSetupCompeticaoLocal,
   obterTorneiosEncerrados,
 } from '../../lib/torneioLocalService';
@@ -54,13 +55,30 @@ export default function ModoTorneioPage() {
       if (!resumo) {
         setTorneioAtivo(false);
         setInfoTorneio(null);
-        
-        // Verificar se há setup em andamento
+
+        // Verificar se há torneio rascunho (setup em andamento salvo)
+        const rascunho = obterTorneioRascunhoOuAtivoLocal();
+        if (rascunho && rascunho.status === 'rascunho') {
+          setSetupEmAndamento(true);
+          // Verificar se times já foram sorteados/confirmados
+          const pid = pelada_id;
+          const equipesKey = `equipes_torneio_${pid}_${rascunho.id}`;
+          const equipesDataRaw = localStorage.getItem(equipesKey);
+          if (equipesDataRaw) {
+            try {
+              const equipes = JSON.parse(equipesDataRaw);
+              setEquipesJaCadastradas(equipes.length > 0);
+            } catch {
+              setEquipesJaCadastradas(false);
+            }
+          }
+          return;
+        }
+
+        // Compatibilidade antiga: setup salvo pelo método legado
         const setup = localStorage.getItem(`setup_competicao_${pelada_id}`);
         if (setup) {
           setSetupEmAndamento(true);
-          
-          // Verificar se há equipes cadastradas
           const torneio_id = localStorage.getItem(`torneio_id_ativo_${pelada_id}`);
           if (torneio_id) {
             const equipesKey = `equipes_torneio_${pelada_id}_${torneio_id}`;

@@ -9,7 +9,7 @@ import {
   ParticipanteTorneioLocal,
   obterParticipantesTorneioLocal,
   obterRegrasCompeticaoLocal,
-  obterTorneioAtivoLocal,
+  obterTorneioRascunhoOuAtivoLocal,
   salvarParticipantesTorneioLocal,
 } from '../../../lib/torneioLocalService';
 
@@ -51,7 +51,7 @@ export default function ParticipantesPage() {
   const [checkingCadastrados, setCheckingCadastrados] = useState(true);
 
   useEffect(() => {
-    const torneio = obterTorneioAtivoLocal();
+    const torneio = obterTorneioRascunhoOuAtivoLocal();
     if (!torneio) { router.replace('/modo-torneio'); return; }
     setTorneioId(torneio.id);
 

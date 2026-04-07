@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from './logger';
-import { buscar_pelada_id, buscar_senha, buscar_plano, buscar_supabase_url, buscar_supabase_anon_key, hashSenha } from './credenciais';
+import { buscar_pelada_id, buscar_senha, buscar_username, buscar_plano, buscar_supabase_url, buscar_supabase_anon_key, hashSenha } from './credenciais';
 
 // Configurações do Supabase PRINCIPAL (para autenticação e clientes)
 const supabaseUrl = 'https://ewcswczqvelhlwpbraea.supabase.co';
@@ -102,12 +102,45 @@ const isPlanoFree = (): boolean => {
 // Função centralizada para validar senha da pelada
 export const validarSenhaPelada = async (senhaDigitada: string): Promise<boolean> => {
   if (typeof window === 'undefined') return false;
-  
+
+  // Tentativa 1: comparar hash local (caminho rápido)
   const senhaHashArmazenada = buscar_senha();
-  if (!senhaHashArmazenada) return false;
-  
-  const hashDigitada = await hashSenha(senhaDigitada);
-  return hashDigitada === senhaHashArmazenada;
+  if (senhaHashArmazenada) {
+    const hashDigitada = await hashSenha(senhaDigitada);
+    if (hashDigitada === senhaHashArmazenada) return true;
+    // Fallback legado: credenciais salvas como texto puro em versões antigas
+    if (senhaDigitada === senhaHashArmazenada) return true;
+  }
+
+  // Tentativa 2: validar diretamente na API (garante sempre funcionar)
+  try {
+    const pelada_id = buscar_pelada_id();
+    const username = buscar_username();
+    if (!pelada_id || !username) return false;
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pelada_id, username, senha: senhaDigitada }),
+    });
+    if (response.ok) {
+      // Atualiza as credenciais locais com o hash correto para futuras validações
+      const data = await response.json();
+      const { salvarCredenciais } = await import('./credenciais');
+      await salvarCredenciais({
+        pelada_id: data.pelada_id,
+        username: data.username,
+        senha: data.senha,
+        plano: data.plano,
+        supabase_url: data.supabase_url,
+        supabase_anon_key: data.supabase_anon_key,
+        is_master: data.is_master,
+      });
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 };
 
 // Funções de interação com a tabela jogadores (usa localStorage se Free, Supabase se Gold/Premium)
