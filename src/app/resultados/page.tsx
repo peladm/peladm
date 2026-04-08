@@ -1656,7 +1656,7 @@ export default function ResultadosPage() {
                               return (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 13 }}>
                                   <span>⚽</span>
-                                  <span style={{ fontWeight: 600, color: '#1f2937' }}>{buscarJogador(gol.jogador_id)}</span>
+                                  <span style={{ fontWeight: 600, color: gol.jogador_id === 'gol_contra' ? '#ef4444' : '#1f2937' }}>{buscarJogador(gol.jogador_id)}</span>
                                   {assist && <span style={{ color: '#9ca3af' }}>👟 {buscarJogador(assist.jogador_id)}</span>}
                                   <span className={`ml-auto text-xs font-semibold px-1.5 py-0.5 rounded border ${estiloGol.container} ${estiloGol.titulo}`}>{nomeTime}</span>
                                 </div>
@@ -2114,11 +2114,26 @@ export default function ResultadosPage() {
           const nomeTimeBModal = getNomeTime(jogoEditarEventos.cor_time_b, 'Time 2');
           const numeroPartidaModal = jogosFiltrados.findIndex(j => j.id === jogoEditarEventos.id);
           const numPartidaLabel = numeroPartidaModal !== -1 ? jogosFiltrados.length - numeroPartidaModal : '';
-          const todoJogadores = [
-            ...(jogoEditarEventos.time_a || []),
-            ...(jogoEditarEventos.time_b || []),
-          ];
-          const primeiroDaTimeA = jogoEditarEventos.time_a[0] ?? todoJogadores[0] ?? '';
+          // Normaliza time_a/time_b: podem ser objetos {id,nome}, UUIDs ou nomes puros
+          // Resolve para [{id, nome, timeLabel}] para uso nos selects
+          const resolverJogadores = (arr: any[], timeLabel: string) =>
+            (arr || []).map((j: any) => {
+              if (typeof j === 'object' && j?.id) {
+                return { id: String(j.id), nome: j.nome || buscarJogador(String(j.id)) };
+              }
+              const idStr = String(j);
+              // Se parecer UUID, usa direto; senão busca por nome no mapa de jogadores
+              const isUUID = /^[0-9a-f-]{36}$/i.test(idStr);
+              if (isUUID) return { id: idStr, nome: buscarJogador(idStr) };
+              // É um nome: procura o ID no mapa de jogadores
+              const entry = Object.values(jogadores).find((jog: any) => jog.nome === idStr || jog.apelido === idStr);
+              return { id: entry ? String((entry as any).id) : idStr, nome: idStr };
+            });
+          const jogadoresTimeA = resolverJogadores(jogoEditarEventos.time_a, nomeTimeAModal);
+          const jogadoresTimeB = resolverJogadores(jogoEditarEventos.time_b, nomeTimeBModal);
+          const timeAIds = jogadoresTimeA.map(j => j.id);
+          const todosJogadoresModal = [...jogadoresTimeA, ...jogadoresTimeB];
+          const primeiroDaTimeA = timeAIds[0] ?? '';
           return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -2155,16 +2170,17 @@ export default function ResultadosPage() {
                               value={evento.jogadorGolId}
                               onChange={(e) => {
                                 const newId = e.target.value;
-                                const newTime: 'A' | 'B' = jogoEditarEventos.time_a.includes(newId) ? 'A' : 'B';
+                                const newTime: 'A' | 'B' = timeAIds.includes(newId) ? 'A' : 'B';
                                 setEventosEditaveis(prev => prev.map((ev, idx) =>
                                   idx === i ? { ...ev, jogadorGolId: newId, timeGol: newTime } : ev
                                 ));
                               }}
                               className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
                             >
-                              {todoJogadores.map(jId => (
-                                <option key={jId} value={jId}>
-                                  {buscarJogador(jId)} ({jogoEditarEventos.time_a.includes(jId) ? nomeTimeAModal : nomeTimeBModal})
+                              <option value="gol_contra" style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ Gol Contra</option>
+                              {todosJogadoresModal.map(j => (
+                                <option key={j.id} value={j.id}>
+                                  {j.nome} ({timeAIds.includes(j.id) ? nomeTimeAModal : nomeTimeBModal})
                                 </option>
                               ))}
                             </select>
@@ -2175,7 +2191,7 @@ export default function ResultadosPage() {
                               value={evento.jogadorAssistId}
                               onChange={(e) => {
                                 const newId = e.target.value;
-                                const newTime: 'A' | 'B' | undefined = newId ? (jogoEditarEventos.time_a.includes(newId) ? 'A' : 'B') : undefined;
+                                const newTime: 'A' | 'B' | undefined = newId ? (timeAIds.includes(newId) ? 'A' : 'B') : undefined;
                                 setEventosEditaveis(prev => prev.map((ev, idx) =>
                                   idx === i ? { ...ev, jogadorAssistId: newId, timeAssist: newTime } : ev
                                 ));
@@ -2183,9 +2199,9 @@ export default function ResultadosPage() {
                               className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
                             >
                               <option value="">— Nenhum —</option>
-                              {todoJogadores.map(jId => (
-                                <option key={jId} value={jId}>
-                                  {buscarJogador(jId)} ({jogoEditarEventos.time_a.includes(jId) ? nomeTimeAModal : nomeTimeBModal})
+                              {todosJogadoresModal.map(j => (
+                                <option key={j.id} value={j.id}>
+                                  {j.nome} ({timeAIds.includes(j.id) ? nomeTimeAModal : nomeTimeBModal})
                                 </option>
                               ))}
                             </select>

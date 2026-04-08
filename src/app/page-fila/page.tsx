@@ -8232,9 +8232,10 @@ export default function FilaPage() {
                       const acoesPorJogador: Record<string, { nome: string; gols: number; assistencias: number }> = {};
                       historicoAcoes.filter(h => h.time === 'A').forEach((acao) => {
                         if (!acoesPorJogador[acao.jogadorId]) {
-                          const jogador = todosJogadores.find((j: any) => j.id === acao.jogadorId);
+                          const isGolContra = acao.jogadorId === 'gol_contra';
+                          const jogador = isGolContra ? null : todosJogadores.find((j: any) => j.id === acao.jogadorId);
                           acoesPorJogador[acao.jogadorId] = {
-                            nome: jogador?.nome || 'Jogador',
+                            nome: isGolContra ? 'Gol Contra' : (jogador?.nome || 'Jogador'),
                             gols: 0,
                             assistencias: 0
                           };
@@ -8253,8 +8254,8 @@ export default function FilaPage() {
                           padding: '10px 8px',
                           border: `1px solid ${corTimeA}20`
                         }}>
-                          {Object.values(acoesPorJogador).map((jogadorInfo, idx) => (
-                            <div key={idx} style={{ fontSize: '0.75rem', color: '#333', marginBottom: '3px' }}>
+                          {Object.entries(acoesPorJogador).map(([jogadorId, jogadorInfo], idx) => (
+                            <div key={idx} style={{ fontSize: '0.75rem', color: jogadorId === 'gol_contra' ? '#ef4444' : '#333', marginBottom: '3px', fontWeight: jogadorId === 'gol_contra' ? 700 : 400 }}>
                               {'⚽'.repeat(jogadorInfo.gols)}{'👟'.repeat(jogadorInfo.assistencias)} {jogadorInfo.nome}
                             </div>
                           ))}
@@ -8284,9 +8285,10 @@ export default function FilaPage() {
                       const acoesPorJogador: Record<string, { nome: string; gols: number; assistencias: number }> = {};
                       historicoAcoes.filter(h => h.time === 'B').forEach((acao) => {
                         if (!acoesPorJogador[acao.jogadorId]) {
-                          const jogador = todosJogadores.find((j: any) => j.id === acao.jogadorId);
+                          const isGolContra = acao.jogadorId === 'gol_contra';
+                          const jogador = isGolContra ? null : todosJogadores.find((j: any) => j.id === acao.jogadorId);
                           acoesPorJogador[acao.jogadorId] = {
-                            nome: jogador?.nome || 'Jogador',
+                            nome: isGolContra ? 'Gol Contra' : (jogador?.nome || 'Jogador'),
                             gols: 0,
                             assistencias: 0
                           };
@@ -8305,8 +8307,8 @@ export default function FilaPage() {
                           padding: '10px 8px',
                           border: `1px solid ${corTimeB}20`
                         }}>
-                          {Object.values(acoesPorJogador).map((jogadorInfo, idx) => (
-                            <div key={idx} style={{ fontSize: '0.75rem', color: '#333', marginBottom: '3px' }}>
+                          {Object.entries(acoesPorJogador).map(([jogadorId, jogadorInfo], idx) => (
+                            <div key={idx} style={{ fontSize: '0.75rem', color: jogadorId === 'gol_contra' ? '#ef4444' : '#333', marginBottom: '3px', fontWeight: jogadorId === 'gol_contra' ? 700 : 400 }}>
                               {'⚽'.repeat(jogadorInfo.gols)}{'👟'.repeat(jogadorInfo.assistencias)} {jogadorInfo.nome}
                             </div>
                           ))}
