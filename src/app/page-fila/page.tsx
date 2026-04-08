@@ -725,7 +725,32 @@ export default function FilaPage() {
         ...prev,
         [jogadorIdFila]: (prev[jogadorIdFila] || 0) + 1
       }));
-      
+
+      // 💾 SALVAR GOL CONTRA NO LOCALSTORAGE (igual aos gols normais)
+      const golId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
+      const partidaSalvaGC = localStorage.getItem('partida_em_andamento');
+      if (partidaSalvaGC) {
+        const estadoPartidaGC = JSON.parse(partidaSalvaGC);
+        const jogoIdGC = estadoPartidaGC.jogoId;
+        const sessaoIdGC = estadoPartidaGC.sessaoId;
+        const novoGolGC = {
+          id: golId,
+          jogo_id: jogoIdGC,
+          jogador_id: 'gol_contra',
+          time: time,
+          created_at: new Date().toISOString()
+        };
+        const golsKeyGC = `gols_${sessaoIdGC}`;
+        const golsStrGC = localStorage.getItem(golsKeyGC);
+        const golsGC = golsStrGC ? JSON.parse(golsStrGC) : [];
+        golsGC.push(novoGolGC);
+        localStorage.setItem(golsKeyGC, JSON.stringify(golsGC));
+        console.log(`💾 Gol contra salvo no localStorage: ${golId} (Time: ${time})`);
+      }
+
       setHistoricoAcoes(prev => [...prev, { tipo: 'gol', time, jogadorId: jogadorIdFila }]);
       setSelecionandoGolPara(null);
       console.log(`⚽ Gol contra registrado no Time ${time}`);
@@ -940,10 +965,13 @@ export default function FilaPage() {
         const assistenciasStr = localStorage.getItem(assistenciasKey);
         if (assistenciasStr) {
           const assistencias = JSON.parse(assistenciasStr);
-          // Remover última assistência do jogador no time específico
-          const index = assistencias.findIndex((a: any) => 
-            a.jogador_id === ultimaAcao.jogadorId && a.time === ultimaAcao.time
-          );
+          // Remover ÚLTIMA assistência do jogador no time específico (findLastIndex)
+          let index = -1;
+          for (let idx = assistencias.length - 1; idx >= 0; idx--) {
+            if (assistencias[idx].jogador_id === ultimaAcao.jogadorId && assistencias[idx].time === ultimaAcao.time) {
+              index = idx; break;
+            }
+          }
           if (index !== -1) {
             const removida = assistencias.splice(index, 1);
             localStorage.setItem(assistenciasKey, JSON.stringify(assistencias));
@@ -987,10 +1015,13 @@ export default function FilaPage() {
             const golsStr = localStorage.getItem(golsKey);
             if (golsStr) {
               const gols = JSON.parse(golsStr);
-              // Remover último gol do jogador no time específico
-              const index = gols.findIndex((g: any) => 
-                g.jogador_id === penultimaAcao.jogadorId && g.time === penultimaAcao.time
-              );
+              // Remover ÚLTIMO gol do jogador no time específico (findLastIndex)
+              let index = -1;
+              for (let idx = gols.length - 1; idx >= 0; idx--) {
+                if (gols[idx].jogador_id === penultimaAcao.jogadorId && gols[idx].time === penultimaAcao.time) {
+                  index = idx; break;
+                }
+              }
               if (index !== -1) {
                 const removido = gols.splice(index, 1);
                 localStorage.setItem(golsKey, JSON.stringify(gols));
@@ -1039,10 +1070,13 @@ export default function FilaPage() {
         const golsStr = localStorage.getItem(golsKey);
         if (golsStr) {
           const gols = JSON.parse(golsStr);
-          // Remover último gol do jogador no time específico
-          const index = gols.findIndex((g: any) => 
-            g.jogador_id === ultimaAcao.jogadorId && g.time === ultimaAcao.time
-          );
+          // Remover ÚLTIMO gol do jogador no time específico (findLastIndex)
+          let index = -1;
+          for (let idx = gols.length - 1; idx >= 0; idx--) {
+            if (gols[idx].jogador_id === ultimaAcao.jogadorId && gols[idx].time === ultimaAcao.time) {
+              index = idx; break;
+            }
+          }
           if (index !== -1) {
             const removido = gols.splice(index, 1);
             localStorage.setItem(golsKey, JSON.stringify(gols));

@@ -342,6 +342,10 @@ export default function ResultadosPage() {
     
     // Se for string, buscar no map
     const idStr = String(jogadorId);
+
+    // Gol contra
+    if (idStr === 'gol_contra') return 'Gol Contra';
+
     const jogador = jogadores[idStr];
     
     if (jogador) {
