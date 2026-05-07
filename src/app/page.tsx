@@ -337,14 +337,19 @@ export default function Home() {
       </section>
 
       {/* Modo Torneio Hero */}
-      <section className="mb-6">
-        <div className="rounded-2xl shadow-2xl p-5 sm:p-6 relative overflow-hidden border-2 transition-all bg-sky-700 border-sky-500">
+      <section className="mb-6 opacity-50">
+        <div className="rounded-2xl shadow-lg p-5 sm:p-6 relative overflow-hidden border-2 transition-all bg-sky-600 border-sky-400">
           <div className="relative z-10">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                  Modo Torneio
-                </h2>
+                <div className="flex items-center gap-2 mb-2">
+                  <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                    Modo Torneio
+                  </h2>
+                  <span className="inline-block px-2 py-1 bg-yellow-400 text-yellow-900 text-xs font-bold rounded-full">
+                    em desenvolvimento
+                  </span>
+                </div>
                 <p className="text-sm sm:text-base mt-1 text-sky-100">
                   Organize competicoes em formato de grupos e mata-mata
                 </p>
@@ -353,8 +358,9 @@ export default function Home() {
 
             <div className="grid grid-cols-1 gap-3">
               <button
+                disabled
                 onClick={() => navigateTo('modo-torneio')}
-                className="px-4 sm:px-5 py-3 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all text-sm sm:text-base bg-white text-sky-700 hover:bg-sky-50 active:scale-[0.99]"
+                className="px-4 sm:px-5 py-3 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all text-sm sm:text-base bg-gray-300 text-gray-500 cursor-not-allowed opacity-60"
               >
                 <span>🏆</span>
                 <span>Abrir Modo Torneio</span>
@@ -362,8 +368,8 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="absolute -top-14 -right-10 w-36 h-36 rounded-full bg-sky-300/30"></div>
-          <div className="absolute -bottom-12 -left-10 w-28 h-28 rounded-full bg-sky-900/30"></div>
+          <div className="absolute -top-14 -right-10 w-36 h-36 rounded-full bg-sky-300/20"></div>
+          <div className="absolute -bottom-12 -left-10 w-28 h-28 rounded-full bg-sky-900/20"></div>
         </div>
       </section>
 

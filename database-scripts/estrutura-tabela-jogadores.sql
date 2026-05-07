@@ -13,16 +13,18 @@ Armazena os jogadores cadastrados
    - gols (tabela com todos os gols marcados)
    - assistencias (tabela com todas as assistências)
 
-COLUNAS (6):
+COLUNAS (9):
 ┌─────────────┬───────────────────┬─────────────┬────────────────────┐
 │ column_name │ data_type         │ is_nullable │ column_default     │
 ├─────────────┼───────────────────┼─────────────┼────────────────────┤
 │ id          │ uuid              │ NO          │ gen_random_uuid()  │
 │ nome        │ character varying │ NO          │ null               │
-│ nivel       │ integer           │ NO          │ 3                  │
+│ nivel       │ integer           │ NO          │ null               │
 │ pelada_id   │ text              │ NO          │ null               │
 │ status      │ text              │ YES         │ 'ativo'::text      │
+│ foto_url    │ text              │ YES         │ null               │
 │ created_at  │ timestamptz       │ YES         │ NOW()              │
+│ posicao     │ text              │ YES         │ null               │
 └─────────────┴───────────────────┴─────────────┴────────────────────┘
 
 CONSTRAINTS:
@@ -41,7 +43,9 @@ DESCRIÇÃO DOS CAMPOS:
 - nivel: Nível de habilidade (1-5)
 - pelada_id: ID da pelada/cliente a que pertence
 - status: Estado do jogador ('ativo' ou 'inativo')
+- foto_url: URL da foto do jogador (armazenada em bucket)
 - created_at: Data/hora de criação do registro
+- posicao: Posição tática do jogador (ex: 'goleiro', 'zagueiro', 'meia', 'atacante')
 
 ESTRATÉGIA DE SINCRONIZAÇÃO:
 - Fonte da verdade: Supabase
@@ -71,20 +75,14 @@ CREATE TABLE IF NOT EXISTS jogadores (
 
 -- Comando para recriar a tabela (se necessário)
 CREATE TABLE IF NOT EXISTS jogadores (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nome VARCHAR(100) NOT NULL,
     nivel INTEGER NOT NULL,
     pelada_id TEXT NOT NULL,
-    jogos INTEGER NOT NULL DEFAULT 0,
-    vitorias INTEGER NOT NULL DEFAULT 0,
-    derrotas INTEGER NOT NULL DEFAULT 0,
-    empates INTEGER NOT NULL DEFAULT 0,
-    gols INTEGER NOT NULL DEFAULT 0,
-    status TEXT DEFAULT 'ativo',
-    
-    CONSTRAINT jogadores_status_check CHECK (status IN ('ativo', 'inativo')),
-    CONSTRAINT fk_jogadores_pelada FOREIGN KEY (pelada_id) 
-        REFERENCES clientes(pelada_id) ON DELETE CASCADE
+    status TEXT DEFAULT 'ativo' CHECK (status IN ('ativo', 'inativo')),
+    foto_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    posicao TEXT
 );
 
 -- Índices recomendados

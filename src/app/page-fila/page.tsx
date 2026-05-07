@@ -18,7 +18,14 @@ import {
   fila_snapshot_confirmar_edicao,
   fila_snapshot_salvar_partida,
   fila_snapshot_restaurar,
-  fila_snapshot_limpar
+  fila_snapshot_limpar,
+  rotacao_vitoriaconsec_vencedor,
+  rotacao_vitoriaconsec_perdedor,
+  rotacao_vitoriaconsec_mesclar,
+  rotacao_vitoriaconsec_perdedorfica,
+  rotacaoempate_ambos_desempate,
+  rotacaoempate_ambos_mesclar,
+  rotacaoempate_desempate
 } from '../../lib/rotacoes-fila';
 
 interface Jogador {
@@ -33,7 +40,7 @@ interface JogadorFila {
   id: string;
   nome: string;
   posicao_fila: number;
-  status: 'fila' | 'reserva';
+  status: 'fila' | 'reserva' | 'goleiro';
 }
 
 interface Regras {
@@ -48,6 +55,7 @@ export default function FilaPage() {
   const [jogadoresJogando, setJogadoresJogando] = useState<JogadorFila[]>([]);
   const [jogadoresFila, setJogadoresFila] = useState<JogadorFila[]>([]);
   const [jogadoresReserva, setJogadoresReserva] = useState<JogadorFila[]>([]);
+  const [jogadoresGoleiro, setJogadoresGoleiro] = useState<JogadorFila[]>([]);
   const [regras, setRegras] = useState<Regras>({ jogadores_por_time: 5 });
   const [totalPartidas, setTotalPartidas] = useState(0);
   const [totalGols, setTotalGols] = useState(0);
@@ -57,6 +65,7 @@ export default function FilaPage() {
   const [localJogadoresJogando, setLocalJogadoresJogando] = useState<JogadorFila[]>([]);
   const [localJogadoresFila, setLocalJogadoresFila] = useState<JogadorFila[]>([]);
   const [localJogadoresReserva, setLocalJogadoresReserva] = useState<JogadorFila[]>([]);
+  const [localJogadoresGoleiro, setLocalJogadoresGoleiro] = useState<JogadorFila[]>([]);
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
   
   // States para modal de cadastro de novo jogador
@@ -132,6 +141,7 @@ export default function FilaPage() {
   const [placarTimeB, setPlacarTimeB] = useState(0);
   const [corTimeA, setCorTimeA] = useState('#dc3545'); // Vermelho
   const [corTimeB, setCorTimeB] = useState('#000000'); // Preto
+  const [coresDisponiveis, setCoresDisponiveis] = useState<string[]>(['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981']); // Cores da regra
   const [selecionandoGolPara, setSelecionandoGolPara] = useState<'A' | 'B' | null>(null);
   const [selecionandoAssistenciaPara, setSelecionandoAssistenciaPara] = useState<'A' | 'B' | null>(null);
   const [ultimoGolInfo, setUltimoGolInfo] = useState<{jogadorId: string, golId: string, time: 'A' | 'B'} | null>(null);
@@ -189,7 +199,7 @@ export default function FilaPage() {
 
   // Alternar cores dos times
   const alternarCorTimeA = () => {
-    const cores = ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981'];
+    const cores = coresDisponiveis.length > 0 ? coresDisponiveis : ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981'];
     const indiceAtual = cores.indexOf(corTimeA);
     const proximoIndice = (indiceAtual + 1) % cores.length;
     const novaCor = cores[proximoIndice];
@@ -202,12 +212,12 @@ export default function FilaPage() {
       estadoPartida.timeA.cor = novaCor;
       estadoPartida.timeA.nome = obterNomeCor(novaCor).toUpperCase();
       localStorage.setItem('partida_em_andamento', JSON.stringify(estadoPartida));
-      console.log(`🎨 Cor do Time A atualizada: ${novaCor}`);
+      console.log(`🎨 Cor do Time A atualizada para: ${novaCor}`);
     }
   };
 
   const alternarCorTimeB = () => {
-    const cores = ['#000000', '#dc3545', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981'];
+    const cores = coresDisponiveis.length > 0 ? coresDisponiveis : ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981'];
     const indiceAtual = cores.indexOf(corTimeB);
     const proximoIndice = (indiceAtual + 1) % cores.length;
     const novaCor = cores[proximoIndice];
@@ -297,98 +307,6 @@ export default function FilaPage() {
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
-  };
-
-  // ROTAÇÃO: Time 1 vence (fica no campo)
-  // === FUNÇÕES DE ROTAÇÃO ===
-  // === ROTAÇÃO: Vencedor tem prioridade ao retornar ===
-  const rotacao_vitoriaconsec_vencedor = (time1: any[], time2: any[], espera: any[], timeVencedor: 'A' | 'B' | null, limiteAtingido: boolean) => {
-    if (limiteAtingido) {
-      console.log('✅ LIMITE ATINGIDO: Vencedor retorna 1º à fila');
-      return [...espera, ...time1, ...time2]; // Espera joga, vencedor volta primeiro
-    }
-    // Rotação normal
-    if (timeVencedor === null) return [...espera, ...time1, ...time2];
-    if (timeVencedor === 'B') return [...time2, ...espera, ...time1];
-    return [...time1, ...espera, ...time2];
-  };
-
-  // === ROTAÇÃO: Perdedor tem prioridade ao retornar ===
-  const rotacao_vitoriaconsec_perdedor = (time1: any[], time2: any[], espera: any[], timeVencedor: 'A' | 'B' | null, limiteAtingido: boolean) => {
-    if (limiteAtingido) {
-      console.log('✅ LIMITE ATINGIDO: Perdedor retorna 1º à fila');
-      return [...espera, ...time2, ...time1]; // Espera joga, perdedor volta primeiro
-    }
-    // Rotação normal
-    if (timeVencedor === null) return [...espera, ...time1, ...time2];
-    if (timeVencedor === 'B') return [...time2, ...espera, ...time1];
-    return [...time1, ...espera, ...time2];
-  };
-
-  // === ROTAÇÃO: Times são mesclados ao retornar ===
-  const rotacao_vitoriaconsec_mesclar = (time1: any[], time2: any[], espera: any[], timeVencedor: 'A' | 'B' | null, limiteAtingido: boolean) => {
-    if (limiteAtingido) {
-      console.log('✅ LIMITE ATINGIDO: Times mesclados ao retornar');
-      const todosJogadores = [...time1, ...time2];
-      // Embaralhar
-      for (let i = todosJogadores.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [todosJogadores[i], todosJogadores[j]] = [todosJogadores[j], todosJogadores[i]];
-      }
-      return [...espera, ...todosJogadores];
-    }
-    // Rotação normal
-    if (timeVencedor === null) return [...espera, ...time1, ...time2];
-    if (timeVencedor === 'B') return [...time2, ...espera, ...time1];
-    return [...time1, ...espera, ...time2];
-  };
-
-  // === ROTAÇÃO: Perdedor continua jogando ===
-  const rotacao_vitoriaconsec_perdedorfica = (time1: any[], time2: any[], espera: any[], timeVencedor: 'A' | 'B' | null, limiteAtingido: boolean) => {
-    if (limiteAtingido) {
-      console.log('✅ LIMITE ATINGIDO: Perdedor continua jogando');
-      return [...time2, ...espera, ...time1]; // Perdedor fica, vencedor sai
-    }
-    // Rotação normal
-    if (timeVencedor === null) return [...espera, ...time1, ...time2];
-    if (timeVencedor === 'B') return [...time2, ...espera, ...time1];
-    return [...time1, ...espera, ...time2];
-  };
-
-  // === ROTAÇÃO EMPATE: Ambos saem + Time escolhido retorna primeiro ===
-  const rotacaoempate_ambos_desempate = (time1: any[], time2: any[], espera: any[], timeEscolhido: 'A' | 'B') => {
-    console.log('✅ EMPATE - Ambos saem, time escolhido retorna primeiro');
-    if (timeEscolhido === 'A') {
-      // Time 1 (PRETO) retorna primeiro
-      return [...espera, ...time1, ...time2];
-    } else {
-      // Time 2 (VERMELHO) retorna primeiro
-      return [...espera, ...time2, ...time1];
-    }
-  };
-
-  // === ROTAÇÃO EMPATE: Ambos saem + Times mesclados ===
-  const rotacaoempate_ambos_mesclar = (time1: any[], time2: any[], espera: any[]) => {
-    console.log('✅ EMPATE - Ambos saem, times mesclados');
-    const todosJogadores = [...time1, ...time2];
-    // Embaralhar
-    for (let i = todosJogadores.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [todosJogadores[i], todosJogadores[j]] = [todosJogadores[j], todosJogadores[i]];
-    }
-    return [...espera, ...todosJogadores];
-  };
-
-  // === ROTAÇÃO EMPATE: Desempate no final (time escolhido vira vencedor) ===
-  const rotacaoempate_desempate = (time1: any[], time2: any[], espera: any[], timeEscolhido: 'A' | 'B') => {
-    console.log('✅ EMPATE - Time escolhido vira vencedor');
-    if (timeEscolhido === 'A') {
-      // Time 1 vence (continua jogando)
-      return [...time1, ...espera, ...time2];
-    } else {
-      // Time 2 vence (continua jogando)
-      return [...time2, ...espera, ...time1];
-    }
   };
 
   // === ROTAÇÃO PRINCIPAL ===
@@ -1354,6 +1272,12 @@ export default function FilaPage() {
           tempo_partida: regrasData.duracao || 10
         });
         
+        // Carregar cores dos coletes das regras
+        if (regrasData.cores_coletes && Array.isArray(regrasData.cores_coletes) && regrasData.cores_coletes.length > 0) {
+          setCoresDisponiveis(regrasData.cores_coletes);
+          console.log('🎨 Cores disponíveis carregadas das regras:', regrasData.cores_coletes);
+        }
+        
         // Buscar configurações de vitórias consecutivas
         const limiteVit = (regrasData?.vitorias_consecutivas && regrasData.vitorias_consecutivas > 0) ? regrasData.vitorias_consecutivas : null;
         setLimiteVitorias(limiteVit);
@@ -1439,14 +1363,32 @@ export default function FilaPage() {
             index === self.findIndex((j: any) => j.id === jogador.id)
           );
           
+          // 7. JOGADORES GOLEIRO (da tabela fila)
+          const goleiroItems = (filaData || []).filter((item: any) => item.status === 'goleiro');
+          const jogadoresGoleiroTemp = goleiroItems.map((item: any) => {
+            return {
+              id: item.id || item.nome,
+              nome: item.nome,
+              nivel: 3,
+              posicao_fila: item.posicao_fila || 0,
+              status: 'goleiro' as const
+            };
+          });
+          // Remover duplicatas baseado no ID
+          const jogadoresGoleiro = jogadoresGoleiroTemp.filter((jogador: any, index: number, self: any[]) => 
+            index === self.findIndex((j: any) => j.id === jogador.id)
+          );
+          
           setJogadoresJogando(jogadoresJogando);
           setJogadoresFila(jogadoresFila);
           setJogadoresReserva(jogadoresReserva);
+          setJogadoresGoleiro(jogadoresGoleiro);
           
           console.log(`✅ FREE: ${filaData.length} jogadores carregados da fila`);
           console.log(`  - Jogando: ${jogadoresJogando.length}`);
           console.log(`  - Fila: ${jogadoresFila.length}`);
           console.log(`  - Reserva: ${jogadoresReserva.length}`);
+          console.log(`  - Goleiro: ${jogadoresGoleiro.length}`);
         }
         
         setIsLoading(false);
@@ -1545,10 +1487,27 @@ export default function FilaPage() {
         );
         setJogadoresReserva(jogadoresReserva);
         
+        const goleiroItems = (filaData || []).filter((item: any) => item.status === 'goleiro');
+        const jogadoresGoleiroTemp = goleiroItems.map((item: any) => {
+          const jogador = todosJogadores.find((j: any) => j.id === item.jogador_id);
+          return {
+            id: item.jogador_id,
+            nome: jogador?.nome || 'Desconhecido',
+            nivel: jogador?.nivel || 3,
+            posicao_fila: item.posicao_fila || 0,
+            status: 'goleiro' as const
+          };
+        });
+        const jogadoresGoleiro = jogadoresGoleiroTemp.filter((jogador: JogadorFila, index: number, self: JogadorFila[]) => 
+          index === self.findIndex(j => j.id === jogador.id)
+        );
+        setJogadoresGoleiro(jogadoresGoleiro);
+        
         console.log(`✅ Modo offline: ${filaData.length} jogadores carregados`);
         console.log(`  - Jogando: ${jogadoresJogando.length}`);
         console.log(`  - Fila: ${jogadoresFila.length}`);
         console.log(`  - Reserva: ${jogadoresReserva.length}`);
+        console.log(`  - Goleiro: ${jogadoresGoleiro.length}`);
         
         setIsLoading(false);
         return;
@@ -1640,6 +1599,22 @@ export default function FilaPage() {
       );
       setJogadoresReserva(jogadoresReserva);
       
+      // 7. JOGADORES GOLEIRO (da tabela fila)
+      const goleiroItems = (filaData || []).filter((item: any) => item.status === 'goleiro');
+      const jogadoresGoleiroTemp = goleiroItems.map((item: any) => {
+        return {
+          id: item.id || item.nome,
+          nome: item.nome,
+          posicao_fila: item.posicao_fila || 0,
+          status: 'goleiro' as const
+        };
+      });
+      // Remover duplicatas baseado no ID
+      const jogadoresGoleiro = jogadoresGoleiroTemp.filter((jogador: any, index: number, self: any[]) => 
+        index === self.findIndex((j: any) => j.id === jogador.id)
+      );
+      setJogadoresGoleiro(jogadoresGoleiro);
+      
       // 7. CARREGAR CONTADOR DE PARTIDAS, GOLS E ASSISTÊNCIAS DO LOCALSTORAGE
       const jogosKey = `jogos_${sessao.id}`;
       const jogosStr = localStorage.getItem(jogosKey);
@@ -1673,7 +1648,7 @@ export default function FilaPage() {
       
       console.log(`✅ Estatísticas carregadas: ${partidasReais} partidas, ${golsReais} gols, ${assistenciasReais} assistências`);
       
-      console.log(`✅ Fila carregada: ${jogadoresJogando.length} jogando, ${jogadoresFila.length} na fila, ${jogadoresReserva.length} reservas`);
+      console.log(`✅ Fila carregada: ${jogadoresJogando.length} jogando, ${jogadoresFila.length} na fila, ${jogadoresReserva.length} reservas, ${jogadoresGoleiro.length} goleiros`);
       
       // Verificar e restaurar modo prancheta
       const pranchetaSalva = localStorage.getItem('modo_prancheta_ativo');
@@ -3213,6 +3188,16 @@ export default function FilaPage() {
         return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
       });
       
+      // Pegar cores das regras (cores_coletes) ou usar padrão
+      const coresDisponivelPartida = (regrasData?.cores_coletes && Array.isArray(regrasData.cores_coletes) && regrasData.cores_coletes.length > 0) 
+        ? regrasData.cores_coletes 
+        : ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981'];
+      
+      const corTimeAPartida = coresDisponivelPartida[0] || '#000000';
+      const corTimeBPartida = coresDisponivelPartida[1] || '#16a34a';
+      
+      console.log('🎨 Cores iniciais da partida (de regras):', { corTimeAPartida, corTimeBPartida });
+      
       const estadoPartida = {
         jogoId: novoJogoId,
         sessaoId: sessao.id,
@@ -3223,14 +3208,14 @@ export default function FilaPage() {
         timeA: {
           jogadores: time1,
           gols: 0,
-          cor: '#000000',
-          nome: 'PRETO'
+          cor: corTimeAPartida,
+          nome: obterNomeCor(corTimeAPartida).toUpperCase()
         },
         timeB: {
           jogadores: time2,
           gols: 0,
-          cor: '#16a34a',
-          nome: 'VERDE'
+          cor: corTimeBPartida,
+          nome: obterNomeCor(corTimeBPartida).toUpperCase()
         },
         historico: [],
         substituicoes: [], // 🔄 Histórico de substituições durante a partida
@@ -3448,6 +3433,105 @@ export default function FilaPage() {
       await carregarDados();
     } catch (error) {
       console.error('❌ Erro ao mover para fila:', error);
+    }
+  };
+
+  const moverGoleiroParaFila = async (jogadorId: string) => {
+    try {
+      console.log('➕ Movendo goleiro para fila:', jogadorId);
+      
+      // Verificar se temos sessão ativa
+      if (!sessaoAtual || !peladaIdAtual) {
+        alert('❌ Sessão não encontrada! Por favor, recarregue a página.');
+        return;
+      }
+      
+      const peladaId = peladaIdAtual;
+      const sessaoId = sessaoAtual.id;
+      
+      if (modoSincronizacao === 'local_first') {
+        // MODO LOCAL FIRST: Atualizar localStorage e adicionar à fila de sync
+        console.log('⚡ Modo local: atualizando cache e agendando sync');
+        
+        // Buscar dados locais
+        const filaLocal = localStorage.getItem(`fila_${sessaoId}`);
+        const fila = filaLocal ? JSON.parse(filaLocal) : [];
+        
+        // Buscar maior posição na fila
+        const jogadoresNaFila = fila.filter((item: any) => item.status === 'fila');
+        const maiorPosicao = jogadoresNaFila.reduce((max: number, item: any) => 
+          Math.max(max, item.posicao_fila || 0), 0);
+        const proximaPosicao = maiorPosicao + 1;
+        
+        // Atualizar item local
+        const filaAtualizada = fila.map((item: any) => 
+          item.jogador_id === jogadorId && item.status === 'goleiro' 
+            ? { ...item, status: 'fila', posicao_fila: proximaPosicao }
+            : item
+        );
+        
+        localStorage.setItem(`fila_${sessaoId}`, JSON.stringify(filaAtualizada));
+        
+        // Adicionar à fila de sincronização
+        await addToSyncQueue({
+          tipo: 'atualizar_fila',
+          jogador_id: jogadorId,
+          pelada_id: peladaId,
+          sessao_id: sessaoId,
+          dados: { status: 'fila', posicao_fila: proximaPosicao }
+        });
+        
+        // Atualizar contador
+        const pendentes = await getSyncQueueCount();
+        setItensPendentesSync(pendentes);
+        
+        console.log(`✅ Goleiro movido localmente para posição ${proximaPosicao}`);
+      } else {
+        // MODO TEMPO REAL: Atualizar direto no Supabase
+        console.log('🔄 Modo tempo real: atualizando Supabase');
+        
+        // 1. Buscar a MAIOR posição atual na fila da sessão ativa
+        const clienteDb = await getClienteSupabase(peladaId);
+        const { data: jogadoresNaFila } = await clienteDb
+          .from('fila')
+          .select('posicao_fila')
+          .eq('pelada_id', peladaId)
+          .eq('sessao_id', sessaoId)
+          .eq('status', 'fila')
+          .order('posicao_fila', { ascending: false })
+          .limit(1);
+        
+        // Próxima posição = maior posição atual + 1 (ou 1 se não houver ninguém)
+        const maiorPosicao = jogadoresNaFila?.[0]?.posicao_fila || 0;
+        const proximaPosicao = maiorPosicao + 1;
+        
+        console.log(`📍 Maior posição atual: ${maiorPosicao}, próxima: ${proximaPosicao}`);
+        
+        // 2. Atualizar APENAS o registro com status='goleiro' para 'fila'
+        const { error: updateError } = await clienteDb
+          .from('fila')
+          .update({ 
+            status: 'fila',
+            posicao_fila: proximaPosicao
+          })
+          .eq('jogador_id', jogadorId)
+          .eq('pelada_id', peladaId)
+          .eq('sessao_id', sessaoId)
+          .eq('status', 'goleiro'); // Filtrar apenas registros de goleiro
+        
+        if (updateError) {
+          console.error('❌ Erro ao mover goleiro para fila:', updateError);
+          alert('❌ Erro ao adicionar goleiro à fila!');
+          return;
+        }
+        
+        console.log(`✅ Goleiro movido para fila na posição ${proximaPosicao}`);
+      }
+      
+      // 3. Recarregar dados
+      await carregarDados();
+    } catch (error) {
+      console.error('❌ Erro ao mover goleiro para fila:', error);
     }
   };
 
@@ -7438,6 +7522,121 @@ export default function FilaPage() {
                           <div style={{ fontWeight: '500', color: '#333', flex: 1 }}>{jogador.nome}</div>
                           <button
                             onClick={() => moverReservaParaFila(jogador.id)}
+                            style={{
+                              background: '#28a745',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              padding: '4px 6px',
+                              fontSize: '14px',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                              minWidth: '28px',
+                              height: '28px'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = '#218838';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = '#28a745';
+                            }}
+                          >
+                            ➕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* Botão Fixo no Final */}
+                    <div style={{
+                      padding: '8px',
+                      borderTop: '1px solid #dee2e6',
+                      background: '#f8f9fa'
+                    }}>
+                      <button
+                        onClick={() => setShowCadastroModal(true)}
+                        style={{
+                          background: '#007bff',
+                          color: 'white',
+                          border: '2px dashed #0056b3',
+                          borderRadius: '8px',
+                          padding: '12px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#0056b3';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#007bff';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                      >
+                        🆕 Adicionar Novo Jogador
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Coluna Goleiros */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}>
+                  <div style={{
+                    padding: '12px',
+                    background: '#f8f9fa',
+                    borderBottom: '1px solid #dee2e6',
+                    textAlign: 'center'
+                  }}>
+                    <h4 style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      color: '#495057',
+                      margin: '0 0 4px 0'
+                    }}>🥅 Goleiros ({jogadoresGoleiro.length})</h4>
+                    <small style={{ fontSize: '12px', color: '#6c757d' }}>Goleiros disponíveis</small>
+                  </div>
+                  
+                  <div style={{
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}>
+                    {/* Lista de goleiros com scroll */}
+                    <div style={{
+                      flex: 1,
+                      padding: '8px',
+                      overflowY: 'auto',
+                      maxHeight: 'calc(100vh - 280px)'
+                    }}>
+                      {jogadoresGoleiro.map((jogador) => (
+                        <div
+                          key={jogador.id}
+                          style={{
+                            background: '#fff',
+                            border: '1px solid #e9ecef',
+                            borderRadius: '8px',
+                            padding: '8px',
+                            marginBottom: '6px',
+                            fontSize: '14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <div style={{ fontWeight: '500', color: '#333', flex: 1 }}>{jogador.nome}</div>
+                          <button
+                            onClick={() => moverGoleiroParaFila(jogador.id)}
                             style={{
                               background: '#28a745',
                               color: 'white',

@@ -35,7 +35,8 @@ export default function ParticipantesPage() {
   const router = useRouter();
 
   const [torneioId, setTorneioId] = useState<string | null>(null);
-  const [totalNecessario, setTotalNecessario] = useState(30); // jogadoresPorTime × quantidadeTimes
+  const [totalNecessario, setTotalNecessario] = useState(30); // jogadoresPorTime × quantidadeTimes (jogadores de linha)
+  const [incluirGoleiro, setIncluirGoleiro] = useState(false);
   const [jogadores, setJogadores] = useState<JogadorDisponivel[]>([]);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -56,7 +57,10 @@ export default function ParticipantesPage() {
     setTorneioId(torneio.id);
 
     const regras = obterRegrasCompeticaoLocal(torneio.id);
-    if (regras) { setTotalNecessario(regras.jogadores_por_time * regras.quantidade_times); }
+    if (regras) {
+      setTotalNecessario(regras.jogadores_por_time * regras.quantidade_times);
+      setIncluirGoleiro(regras.incluir_goleiro ?? false);
+    }
 
     // Se já há participantes salvos, pula o modal e carrega direto
     const jasSalvos = obterParticipantesTorneioLocal(torneio.id);
@@ -267,7 +271,10 @@ export default function ParticipantesPage() {
           <p className="text-xs sm:text-sm mt-1 text-gray-300">
             Selecione exatamente{' '}
             <span className="text-sky-400 font-bold">{totalNecessario} jogadores</span>
-            {' '}para a competição. Os demais ficam na lista de espera.
+            {' '}de linha para a competição.
+            {incluirGoleiro && (
+              <> Os goleiros serão adicionados depois durante o sorteio.</>
+            )}
           </p>
         </div>
       </section>

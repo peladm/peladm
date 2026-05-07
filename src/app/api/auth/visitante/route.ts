@@ -43,6 +43,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'inativo' }, { status: 403 });
     }
 
+    // Atualizar last_access com a data/hora atual
+    await supabaseAdmin
+      .from('clientes')
+      .update({ last_access: new Date().toISOString() })
+      .eq('pelada_id', pelada_id.toUpperCase());
+
     return NextResponse.json({
       pelada_id: data.pelada_id,
       nome: data.nome,

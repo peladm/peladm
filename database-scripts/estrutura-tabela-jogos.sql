@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS jogos (
   -- Substituições (armazenado como JSONB)
   substituicoes JSONB, -- Array de substituições: [{jogador_saiu, jogador_entrou, time, momento}, ...]
   
+  -- Cores dos Times
+  cor_time_a TEXT,
+  cor_time_b TEXT,
+  
   -- Auditoria
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -49,3 +53,4 @@ CREATE INDEX IF NOT EXISTS idx_jogos_status ON jogos(status);
 -- 3. time_a e time_b: JSONB com array completo dos jogadores
 -- 4. substituicoes: JSONB com histórico de trocas (se houver)
 -- 5. tempo_decorrido: cronômetro em segundos (se habilitado)
+-- 6. cor_time_a / cor_time_b: Cores dos coletes para visualização (hex color ou nome)

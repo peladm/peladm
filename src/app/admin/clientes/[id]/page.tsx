@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { validarAcessoMaster } from '../../../../lib/adminAuth';
+import { obterCredenciais } from '../../../../lib/credenciais';
 
 const supabase = createClient(
   'https://ewcswczqvelhlwpbraea.supabase.co',
@@ -57,23 +58,35 @@ export default function DashboardCliente() {
     try {
       console.log('📥 Carregando cliente com ID:', clienteId);
       
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('*')
-        .eq('pelada_id', clienteId)
-        .single();
+      const credenciais = obterCredenciais();
+      
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        throw new Error('Credenciais inválidas');
+      }
 
-      console.log('📦 Dados retornados:', data);
-      console.log('❌ Erro?:', error);
+      const response = await fetch('/api/admin/clientes/get', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          clienteId: clienteId,
+        }),
+      });
 
-      if (error || !data) {
+      if (!response.ok) {
+        const errorData = await response.json();
         alert('Cliente não encontrado!');
         router.push('/admin/clientes');
         return;
       }
 
-      setCliente(data);
-      console.log('✅ Cliente salvo no state:', data);
+      const data = await response.json();
+      console.log('📦 Dados retornados:', data.cliente);
+
+      setCliente(data.cliente);
+      console.log('✅ Cliente salvo no state:', data.cliente);
 
       // Não buscar automaticamente ao carregar - usuário clica no refresh
       // if (data.plano === 'Gold' || data.plano === 'Premium') {
@@ -131,29 +144,45 @@ export default function DashboardCliente() {
       console.log('🔍 Buscando dados do banco...');
 
       // Buscar tamanho TOTAL do banco
+      console.log('📊 Tentando chamar get_database_total_size()...');
       const { data: totalSizeData, error: totalSizeError } = await clienteSupabase
         .rpc('get_database_total_size');
 
       if (totalSizeError) {
         console.error('❌ Erro ao buscar tamanho total:', totalSizeError);
-        throw new Error(`Função get_database_total_size() falhou: ${totalSizeError.message}`);
-      }
-
-      if (totalSizeData && totalSizeData.length > 0) {
+        // Se a função não existe, não lançar erro, apenas não mostrar
+        if (totalSizeError.message.includes('does not exist')) {
+          console.warn('⚠️ Função get_database_total_size() não existe. Execute o SQL de setup.');
+          setTotalDatabaseSize('Funções não configuradas');
+        } else {
+          throw new Error(`Função get_database_total_size() falhou: ${totalSizeError.message}`);
+        }
+      } else if (totalSizeData && totalSizeData.length > 0) {
         setTotalDatabaseSize(totalSizeData[0].total_size_formatted);
         console.log('✅ Tamanho total do banco:', totalSizeData[0].total_size_formatted);
       }
 
       // Buscar detalhamento por tabela
+      console.log('📊 Tentando chamar get_tables_size()...');
       const { data: tableSizeData, error: rpcError } = await clienteSupabase
         .rpc('get_tables_size');
 
       if (rpcError) {
         console.error('❌ Erro ao buscar tamanho das tabelas:', rpcError);
-        throw new Error(`Função get_tables_size() falhou: ${rpcError.message}`);
-      }
-
-      if (tableSizeData && tableSizeData.length > 0) {
+        
+        // Se a função não existe, sugerir ao usuário que execute o SQL
+        if (rpcError.message.includes('does not exist')) {
+          console.warn('⚠️ Função get_tables_size() não existe. Execute o SQL de setup.');
+          alert(
+            '⚠️ As funções de monitoramento de banco não foram configuradas.\n\n' +
+            'Para habilitar, execute o SQL em: SETUP-FUNCOES-RPC.sql\n\n' +
+            'No Supabase SQL Editor de cada cliente, copie e cole o conteúdo do arquivo.'
+          );
+          setUsageData(null);
+        } else {
+          throw new Error(`Função get_tables_size() falhou: ${rpcError.message}`);
+        }
+      } else if (tableSizeData && tableSizeData.length > 0) {
         const usageInfo = tableSizeData.map((table: any) => {
           const totalSize = parseInt(table.total_size) || 0;
           const rowCount = parseInt(table.row_count) || 0;

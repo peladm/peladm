@@ -1,0 +1,9 @@
+jogadoresA.map((j) => {
+                const g = golsPorJogador[j.id] ?? 0;
+                const a = assistenciasPorJogador[j.id] ?? 0;
+                const c = cartaoPorJogador[j.id];
+                const isGoleiro = !!j.goleiroSlot;
+                return (
+                  <button key={j.id}
+                    onClick={() => aSelectando ? selecionarJogador(j) : undefined}
+                    style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-be

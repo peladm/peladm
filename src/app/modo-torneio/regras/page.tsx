@@ -15,6 +15,15 @@ import {
 import { buscar_pelada_id } from '../../../lib/credenciais';
 import { MetodoChaveamento, obterLabelMetodo, obterDescricaoMetodo } from '../../../lib/bracketService';
 
+interface TorneioVinculadoItem {
+  id: string;
+  nome: string;
+  temporada?: string;
+  slug: string;
+  colocacaoCol: string;
+  premiacoesCol: string;
+}
+
 const descricaoFormato: Record<FormatoCompeticao, string> = {
   grupos_mata_mata: 'Fase de grupos seguida de mata-mata.',
   mata_mata: 'Eliminacao direta do inicio ao fim.',
@@ -27,7 +36,7 @@ const tituloModalidade: Record<ModalidadeCompeticao, string> = {
   campeonato: 'Campeonato',
 };
 
-type CriterioKey = 'vitorias' | 'saldo_gols' | 'gols_pro' | 'gols_contra';
+type CriterioKey = 'vitorias' | 'saldo_gols' | 'gols_pro' | 'gols_contra' | 'total_cartoes';
 
 interface CriterioOrdenavel {
   key: CriterioKey;
@@ -40,6 +49,7 @@ const CRITERIOS_BASE: CriterioOrdenavel[] = [
   { key: 'saldo_gols', label: 'Saldo de gols', enabled: true },
   { key: 'gols_pro', label: 'Gols pro', enabled: true },
   { key: 'gols_contra', label: 'Gols contra (menos sofre, melhor)', enabled: true },
+  { key: 'total_cartoes', label: 'Total de cartões (menos é melhor)', enabled: false },
 ];
 
 export default function RegrasModoTorneioPage() {
@@ -50,8 +60,13 @@ export default function RegrasModoTorneioPage() {
   const [formato, setFormato] = useState<FormatoCompeticao>('grupos_mata_mata');
 
   const [nomeCompeticao, setNomeCompeticao] = useState('');
+  const [usarTorneioVinculado, setUsarTorneioVinculado] = useState<'sim' | 'nao' | null>(null);
+  const [torneiosVinculados, setTorneiosVinculados] = useState<TorneioVinculadoItem[]>([]);
+  const [torneioVinculadoSelecionado, setTorneioVinculadoSelecionado] = useState('');
+  const [temporadaCompeticao, setTemporadaCompeticao] = useState('2026');
   const [jogadoresPorTime, setJogadoresPorTime] = useState(5);
   const [quantidadeTimes, setQuantidadeTimes] = useState(6);
+  const [incluirGoleiro, setIncluirGoleiro] = useState(false);
   const [tempoPartida, setTempoPartida] = useState(10);
   const [criteriosDesempate, setCriteriosDesempate] = useState<CriterioOrdenavel[]>(CRITERIOS_BASE);
   const [idaVolta, setIdaVolta] = useState(false);
@@ -66,8 +81,25 @@ export default function RegrasModoTorneioPage() {
   const [temposPartida, setTemposPartida] = useState<1 | 2>(1);
   const [tempoProrrogacao, setTempoProrrogacao] = useState(5);
   const [temposProrrogacao, setTemposProrrogacao] = useState<1 | 2>(1);
+  const [registrarCartoes, setRegistrarCartoes] = useState(false);
+  const [cartoesAmarelos, setCartoesAmarelos] = useState(true);
+  const [cartoesVermelhos, setCartoesVermelhos] = useState(true);
+  const [cartoesAzuis, setCartoesAzuis] = useState(false);
+  const [acumulacaoCartoesAmarelos, setAcumulacaoCartoesAmarelos] = useState<0 | 2 | 3>(0);
+  const [acumulacaoCartoesAzuis, setAcumulacaoCartoesAzuis] = useState<0 | 2 | 3>(0);
+  const [resetCartoesParaEliminatorias, setResetCartoesParaEliminatorias] = useState(false);
+  const [efeitoCartaoVermelho, setEfeitoCartaoVermelho] = useState<'expulsao' | 'suspensao' | 'substituicao'>('expulsao');
+  const [tempoCartaoAzul, setTempoCartaoAzul] = useState(2);
+  const [expulsaoDoisCartoesAzuis, setExpulsaoDoisCartoesAzuis] = useState(false);
+  const suporteSubstituicao = false;
   const [metodoChaveamento, setMetodoChaveamento] = useState<MetodoChaveamento>('melhor_vs_pior');
   const [showModalConfirmar, setShowModalConfirmar] = useState(false);
+
+  useEffect(() => {
+    if (!suporteSubstituicao && efeitoCartaoVermelho === 'substituicao') {
+      setEfeitoCartaoVermelho('expulsao');
+    }
+  }, [efeitoCartaoVermelho, suporteSubstituicao]);
 
   useEffect(() => {
     const setup = obterSetupCompeticaoLocal();
@@ -82,6 +114,20 @@ export default function RegrasModoTorneioPage() {
     setModalidade(setup.modalidade);
     setFormato(setup.formato);
     setNomeCompeticao('');
+    setUsarTorneioVinculado(null);
+    setTorneioVinculadoSelecionado('');
+    setTemporadaCompeticao('2026');
+
+    if (typeof window !== 'undefined') {
+      const peladaId = buscar_pelada_id() || 'default';
+      try {
+        const raw = localStorage.getItem(`torneios_vinculados_${peladaId}`);
+        const parsed = raw ? (JSON.parse(raw) as TorneioVinculadoItem[]) : [];
+        setTorneiosVinculados(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        setTorneiosVinculados([]);
+      }
+    }
 
     if (setup.formato === 'mata_mata') {
       setClassificamGrupo(0);
@@ -135,6 +181,8 @@ export default function RegrasModoTorneioPage() {
     if (potencias2.length > 0) return potencias2[potencias2.length - 1];
     return gruposPossiveis[gruposPossiveis.length - 1];
   }, [gruposPossiveis]);
+
+  const mostrarOpcaoResetCartoes = formato === 'grupos_mata_mata' || formato === 'pontos_corridos_mata_mata';
 
   const timesPorGrupoAtual = useMemo(() => {
     if (!quantidadeGrupos) return 0;
@@ -220,6 +268,11 @@ export default function RegrasModoTorneioPage() {
     });
   }, [quantidadeTimes, formato]);
 
+  const criteriosDesempateVisiveis = useMemo(
+    () => criteriosDesempate.filter((item) => item.key !== 'total_cartoes' || registrarCartoes),
+    [criteriosDesempate, registrarCartoes],
+  );
+
   const toggleCriterio = (key: CriterioKey) => {
     setCriteriosDesempate((prev) => prev.map((item) => (
       item.key === key ? { ...item, enabled: !item.enabled } : item
@@ -241,7 +294,12 @@ export default function RegrasModoTorneioPage() {
   const confirmarRegras = () => {
     if (!setupValido || salvando) return;
 
-    if (!nomeCompeticao.trim()) {
+    if (usarTorneioVinculado === 'sim') {
+      if (!torneioVinculadoSelecionado) {
+        alert('Selecione um torneio vinculado.');
+        return;
+      }
+    } else if (!nomeCompeticao.trim()) {
       alert('Informe o nome da competicao.');
       return;
     }
@@ -268,11 +326,17 @@ export default function RegrasModoTorneioPage() {
         return;
       }
 
-      const torneio = iniciarCompeticaoLocalAPartirSetup(setup, nomeCompeticao.trim());
+      const selectedVinculado = usarTorneioVinculado === 'sim'
+        ? torneiosVinculados.find((item) => item.slug === torneioVinculadoSelecionado)
+        : undefined;
+      const nomeFinal = selectedVinculado?.nome ?? nomeCompeticao.trim();
+      const torneio = iniciarCompeticaoLocalAPartirSetup(setup, nomeFinal);
 
       const peladaId = buscar_pelada_id() || 'default';
       const timestamp = new Date().toISOString();
-      const criteriosAtivos = criteriosDesempate.filter((item) => item.enabled).map((item) => item.key);
+      const criteriosAtivos = criteriosDesempate
+        .filter((item) => item.enabled && (item.key !== 'total_cartoes' || registrarCartoes))
+        .map((item) => item.key);
 
       const regras: RegrasCompeticaoLocal = {
         torneio_id: torneio.id,
@@ -281,6 +345,10 @@ export default function RegrasModoTorneioPage() {
         formato,
         jogadores_por_time: jogadoresPorTime,
         quantidade_times: quantidadeTimes,
+        temporada_competicao: temporadaCompeticao.trim() || undefined,
+        vinculado_torneio_nome: selectedVinculado?.nome ?? (usarTorneioVinculado === 'sim' ? undefined : undefined),
+        vinculado_torneio_slug: selectedVinculado?.slug,
+        incluir_goleiro: incluirGoleiro,
         tempo_partida: tempoPartida,
         tempos_partida: temposPartida,
         tempo_prorrogacao: mostrarMataMata && empateDecisao === 'prorrogacao' ? tempoProrrogacao : undefined,
@@ -302,6 +370,16 @@ export default function RegrasModoTorneioPage() {
         metodo_chaveamento: mostrarMataMata ? metodoChaveamento : undefined,
         quantidade_grupos: mostrarClassificados ? quantidadeGrupos : undefined,
         repescagem: mostrarClassificados ? repescagem : undefined,
+        registrar_cartoes: registrarCartoes,
+        cartoes_amarelos: registrarCartoes ? cartoesAmarelos : false,
+        cartoes_vermelhos: registrarCartoes ? cartoesVermelhos : false,
+        cartoes_azuis: registrarCartoes ? cartoesAzuis : false,
+        acumulacao_cartoes_amarelos: registrarCartoes && cartoesAmarelos ? acumulacaoCartoesAmarelos : 0,
+        acumulacao_cartoes_azuis: registrarCartoes && cartoesAzuis ? acumulacaoCartoesAzuis : 0,
+        reset_cartoes_para_eliminatorias: registrarCartoes && mostrarOpcaoResetCartoes ? resetCartoesParaEliminatorias : undefined,
+        efeito_cartao_vermelho: registrarCartoes && cartoesVermelhos ? efeitoCartaoVermelho : undefined,
+        tempo_cartao_azul: registrarCartoes && cartoesAzuis ? tempoCartaoAzul : undefined,
+        expulsao_dois_cartoes_azuis: registrarCartoes && cartoesAzuis ? expulsaoDoisCartoesAzuis : false,
         created_at: timestamp,
         updated_at: timestamp,
         sync_status: 'local_only',
@@ -353,15 +431,69 @@ export default function RegrasModoTorneioPage() {
 
       <section className="mb-5">
         <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-4 sm:p-5">
-          <label className="block text-sm font-semibold text-gray-700 mb-1">Nome da competicao</label>
-          <input
-            type="text"
-            value={nomeCompeticao}
-            onChange={(e) => setNomeCompeticao(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-gray-300 outline-none focus:border-sky-500"
-            placeholder="Obrigatório"
-            required
-          />
+          <div className="mb-4">
+            <p className="text-sm font-semibold text-gray-700 mb-3">Deseja iniciar um torneio vinculado à sua pelada?</p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setUsarTorneioVinculado('sim')}
+                className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${usarTorneioVinculado === 'sim' ? 'bg-sky-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                Sim
+              </button>
+              <button
+                type="button"
+                onClick={() => setUsarTorneioVinculado('nao')}
+                className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${usarTorneioVinculado === 'nao' ? 'bg-slate-800 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                Não
+              </button>
+            </div>
+          </div>
+          {usarTorneioVinculado === 'sim' ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Torneio vinculado</label>
+                <select
+                  value={torneioVinculadoSelecionado}
+                  onChange={(e) => setTorneioVinculadoSelecionado(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:border-sky-500"
+                >
+                  <option value="">Selecione o torneio vinculado</option>
+                  {torneiosVinculados.map((item) => (
+                    <option key={item.slug} value={item.slug}>
+                      {item.nome}{item.temporada ? ` — ${item.temporada}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {torneiosVinculados.length === 0 && (
+                  <p className="mt-2 text-xs text-gray-500">Nenhum torneio vinculado cadastrado. Crie um novo na tela inicial do modo torneio.</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Temporada</label>
+                <input
+                  type="text"
+                  value={temporadaCompeticao}
+                  onChange={(e) => setTemporadaCompeticao(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 outline-none focus:border-sky-500"
+                  placeholder="Ex: 2026"
+                />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Nome da competicao</label>
+              <input
+                type="text"
+                value={nomeCompeticao}
+                onChange={(e) => setNomeCompeticao(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 outline-none focus:border-sky-500"
+                placeholder="Obrigatório"
+                required
+              />
+            </div>
+          )}
         </div>
       </section>
 
@@ -392,9 +524,32 @@ export default function RegrasModoTorneioPage() {
               />
               {jogadoresPorTime > 0 && quantidadeTimes > 0 && (
                 <p className="text-xs text-gray-500 mt-1">
-                  {quantidadeTimes} times × {jogadoresPorTime} jogadores ={' '}
-                  <span className="font-semibold text-sky-700">{quantidadeTimes * jogadoresPorTime} jogadores no total</span>
+                  {quantidadeTimes} times × {jogadoresPorTime} jogadores{incluirGoleiro ? ' + 1 goleiro' : ''} ={' '}
+                  <span className="font-semibold text-sky-700">{quantidadeTimes * (jogadoresPorTime + (incluirGoleiro ? 1 : 0))} jogadores no total</span>
                 </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Incluir Goleiros na seleção de times?</label>
+              <div className="flex gap-2">
+                {(['Sim', 'Não'] as const).map((opcao) => (
+                  <button
+                    key={opcao}
+                    type="button"
+                    onClick={() => setIncluirGoleiro(opcao === 'Sim')}
+                    className={`flex-1 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
+                      (opcao === 'Sim' && incluirGoleiro) || (opcao === 'Não' && !incluirGoleiro)
+                        ? 'border-sky-500 bg-sky-500 text-white'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-sky-300'
+                    }`}
+                  >
+                    {opcao}
+                  </button>
+                ))}
+              </div>
+              {incluirGoleiro && (
+                <p className="text-xs text-sky-600 mt-1 font-medium">Goleiro não conta como jogador de linha</p>
               )}
             </div>
 
@@ -433,10 +588,166 @@ export default function RegrasModoTorneioPage() {
         </div>
       </section>
 
+      <section className="mb-5">
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-4 sm:p-5">
+          <h3 className="font-black text-gray-800 mb-4">Bloco 2 — Cartões</h3>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Registrar cartões?</label>
+              <div className="flex gap-2">
+                {(['Sim', 'Não'] as const).map((opcao) => (
+                  <button
+                    key={opcao}
+                    type="button"
+                    onClick={() => setRegistrarCartoes(opcao === 'Sim')}
+                    className={`flex-1 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
+                      (opcao === 'Sim' && registrarCartoes) || (opcao === 'Não' && !registrarCartoes)
+                        ? 'border-sky-500 bg-sky-500 text-white'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-sky-300'
+                    }`}
+                  >
+                    {opcao}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {registrarCartoes ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Tipos de cartões habilitados</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'Amarelo', value: cartoesAmarelos, onClick: () => setCartoesAmarelos((prev) => !prev) },
+                      { label: 'Vermelho', value: cartoesVermelhos, onClick: () => setCartoesVermelhos((prev) => !prev) },
+                      { label: 'Azul', value: cartoesAzuis, onClick: () => setCartoesAzuis((prev) => !prev) },
+                    ].map((option) => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        onClick={option.onClick}
+                        className={`w-full py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
+                          option.value
+                            ? 'border-sky-500 bg-sky-500 text-white'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-sky-300'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Acumulação de cartões amarelos</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['Não', '2', '3'] as const).map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setAcumulacaoCartoesAmarelos(value === 'Não' ? 0 : Number(value) as 2 | 3)}
+                        className={`w-full py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
+                          acumulacaoCartoesAmarelos === (value === 'Não' ? 0 : Number(value))
+                            ? 'border-sky-500 bg-sky-500 text-white'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-sky-300'
+                        }`}
+                      >
+                        {value}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Escolha quando o acúmulo de amarelos gera suspensão automática.</p>
+                </div>
+
+                {cartoesAzuis && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Duração do cartão azul (minutos)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={tempoCartaoAzul}
+                        onChange={(e) => setTempoCartaoAzul(Number(e.target.value))}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-300 outline-none focus:border-sky-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {mostrarOpcaoResetCartoes && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Resetar cartões antes da fase eliminatória?</label>
+                    <div className="flex gap-2">
+                      {(['Sim', 'Não'] as const).map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setResetCartoesParaEliminatorias(value === 'Sim')}
+                          className={`flex-1 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
+                            (value === 'Sim' && resetCartoesParaEliminatorias) || (value === 'Não' && !resetCartoesParaEliminatorias)
+                              ? 'border-sky-500 bg-sky-500 text-white'
+                              : 'border-gray-300 bg-white text-gray-700 hover:border-sky-300'
+                          }`}
+                        >
+                          {value}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Use quando a primeira fase termina e a segunda começa com um novo acúmulo de cartões.</p>
+                  </div>
+                )}
+
+                {cartoesVermelhos && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Efeito do cartão vermelho</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {([
+                        { label: 'Expulsão', value: 'expulsao', description: 'Remove do jogo atual.', disabled: false },
+                        { label: 'Suspensão', value: 'suspensao', description: 'Remove do jogo atual + próximo jogo.', disabled: false },
+                        { label: 'Substituição', value: 'substituicao', description: 'Entrada de reserva (não suportado ainda).', disabled: true },
+                      ] as Array<{
+                        label: string;
+                        value: 'expulsao' | 'suspensao' | 'substituicao';
+                        description: string;
+                        disabled: boolean;
+                      }>).map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            if (option.disabled) return;
+                            setEfeitoCartaoVermelho(option.value);
+                          }}
+                          disabled={option.disabled}
+                          className={`py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
+                            option.disabled
+                              ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : efeitoCartaoVermelho === option.value
+                                ? 'border-sky-500 bg-sky-500 text-white'
+                                : 'border-gray-300 bg-white text-gray-700 hover:border-sky-300'
+                          }`}
+                        >
+                          <div>{option.label}</div>
+                          <div className="text-[10px] font-normal mt-1 text-gray-500">{option.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Defina o tratamento do cartão vermelho na competição.</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">Cartões não serão registrados na competição.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
       {mostrarClassificados && (
       <section className="mb-5">
         <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-4 sm:p-5">
-          <h3 className="font-black text-gray-800 mb-4">Bloco 2 — Fase de Grupos</h3>
+          <h3 className="font-black text-gray-800 mb-4">Bloco 3 — Fase de Grupos</h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
@@ -571,7 +882,7 @@ export default function RegrasModoTorneioPage() {
       {(formato === 'pontos_corridos' || formato === 'pontos_corridos_mata_mata') && (
       <section className="mb-5">
         <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-4 sm:p-5">
-          <h3 className="font-black text-gray-800 mb-4">Bloco 3 — Liga (Pontos Corridos)</h3>
+          <h3 className="font-black text-gray-800 mb-4">Bloco 4 — Liga (Pontos Corridos)</h3>
 
           <div className="space-y-5">
 
@@ -631,7 +942,7 @@ export default function RegrasModoTorneioPage() {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Critérios de desempate (ordem de prioridade)</label>
               <div className="space-y-2">
-                {criteriosDesempate.map((criterioItem, index) => (
+                {criteriosDesempateVisiveis.map((criterioItem, index) => (
                   <div
                     key={criterioItem.key}
                     className="rounded-lg border border-gray-200 bg-white px-3 py-2 flex items-center gap-2"
@@ -674,7 +985,7 @@ export default function RegrasModoTorneioPage() {
       {mostrarMataMata && (
         <section className="mb-5">
           <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-4 sm:p-5">
-            <h3 className="font-black text-gray-800 mb-4">Bloco 4 — Fase Eliminatória</h3>
+            <h3 className="font-black text-gray-800 mb-4">Bloco 5 — Fase Eliminatória</h3>
 
             <div className="space-y-5">
 
@@ -931,6 +1242,22 @@ export default function RegrasModoTorneioPage() {
                       <p><span className="text-gray-400">Final:</span> {finalFormato === 'jogo_unico' ? 'Jogo único' : 'Ida e volta'}</p>
                       <p><span className="text-gray-400">3º lugar:</span> {disputaTerceiro === 'nao' ? 'Não' : disputaTerceiro === 'jogo_unico' ? 'Jogo único' : 'Ida e volta'}</p>
                       <p><span className="text-gray-400">Empate:</span> {empateDecisao === 'prorrogacao' ? 'Prorrogação' : 'Pênaltis'}</p>
+                    </div>
+                  </div>
+                )}
+
+                {registrarCartoes && (
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="font-bold text-gray-700 mb-1.5">Cartões</p>
+                    <div className="space-y-1 text-gray-600">
+                      <p><span className="text-gray-400">Registrados:</span> Sim</p>
+                      <p><span className="text-gray-400">Tipos:</span> {cartoesAmarelos ? 'Amarelo ' : ''}{cartoesVermelhos ? 'Vermelho ' : ''}{cartoesAzuis ? 'Azul' : ''}</p>
+                      {cartoesAmarelos && <p><span className="text-gray-400">Acúmulo amarelos:</span> {acumulacaoCartoesAmarelos === 0 ? 'Não' : acumulacaoCartoesAmarelos}</p>}
+                      {cartoesAzuis && <p><span className="text-gray-400">Acúmulo azuis:</span> {acumulacaoCartoesAzuis === 0 ? 'Não' : acumulacaoCartoesAzuis}</p>}
+                      {mostrarOpcaoResetCartoes && <p><span className="text-gray-400">Reset na eliminatória:</span> {resetCartoesParaEliminatorias ? 'Sim' : 'Não'}</p>}
+                      {cartoesVermelhos && <p><span className="text-gray-400">Efeito vermelho:</span> {efeitoCartaoVermelho === 'expulsao' ? 'Expulsão' : efeitoCartaoVermelho === 'suspensao' ? 'Suspensão' : 'Substituição'}</p>}
+                      {cartoesAzuis && <p><span className="text-gray-400">Duração azul:</span> {tempoCartaoAzul} min</p>}
+                      {cartoesAzuis && <p><span className="text-gray-400">2 azuis expulsão:</span> {expulsaoDoisCartoesAzuis ? 'Sim' : 'Não'}</p>}
                     </div>
                   </div>
                 )}

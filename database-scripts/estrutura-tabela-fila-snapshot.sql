@@ -4,7 +4,9 @@
 -- DESCRIÇÃO: Snapshot da fila inicial para restauração
 -- ARMAZENAMENTO: localStorage (apenas Gold/Premium)
 -- DEPLOY: NUNCA (deletado ao encerrar pelada)
--- =========================================
+-- ⚠️ IMPORTANTE: Esta tabela é APENAS local (localStorage)
+-- NÃO deve ser criada no Supabase
+-- ===========================================
 
 CREATE TABLE IF NOT EXISTS fila_snapshot (
   -- Identificação

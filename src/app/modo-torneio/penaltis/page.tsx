@@ -327,7 +327,7 @@ function PenaltisPage() {
     const nDone = equipe === 'A' ? nA : nB;
     const isCurrTeam = equipeAtual === equipe && !finalizado;
     const currIdx = nDone % Math.max(lista.length, 1);
-    const slotsCount = isSuddenDeath ? Math.max(nDone + (isCurrTeam ? 1 : 0), nDone) : cobradoresPorTime;
+    const slotsCount = lista.length;
 
     return (
       <div style={{ flex: 1, minWidth: 0 }}>

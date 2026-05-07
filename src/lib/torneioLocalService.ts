@@ -95,6 +95,10 @@ export interface RegrasCompeticaoLocal {
   formato: FormatoCompeticao;
   jogadores_por_time: number;
   quantidade_times: number;
+  temporada_competicao?: string;
+  vinculado_torneio_nome?: string;
+  vinculado_torneio_slug?: string;
+  incluir_goleiro: boolean;
   tempo_partida: number;
   tempos_partida?: 1 | 2;
   tempo_prorrogacao?: number;
@@ -116,6 +120,16 @@ export interface RegrasCompeticaoLocal {
   metodo_chaveamento?: string;
   quantidade_grupos?: number;
   repescagem?: boolean;
+  registrar_cartoes?: boolean;
+  cartoes_amarelos?: boolean;
+  cartoes_vermelhos?: boolean;
+  cartoes_azuis?: boolean;
+  acumulacao_cartoes_amarelos?: 0 | 2 | 3;
+  acumulacao_cartoes_azuis?: 0 | 2 | 3;
+  reset_cartoes_para_eliminatorias?: boolean;
+  efeito_cartao_vermelho?: 'expulsao' | 'suspensao' | 'substituicao';
+  tempo_cartao_azul?: number;
+  expulsao_dois_cartoes_azuis?: boolean;
   created_at: string;
   updated_at: string;
   sync_status: SyncStatus;
@@ -131,7 +145,19 @@ export interface ParticipanteTorneioLocal {
   nivel: number;
   status: 'confirmado' | 'reserva';
   origem: 'cadastro' | 'avulso';
+  posicao?: 'goleiro' | 'linha'; // Identifica posição do jogador
+  goleiroSlot?: boolean; // Identifica se é goleiro (compatibilidade)
   created_at: string;
+}
+
+export interface RegistroCartaoJogador {
+  torneio_id: string;
+  jogador_id: string;
+  cartoesAmarelos: number;
+  cartoesVermelhos: number;
+  cartoesAzuis: number;
+  ultimoCartaoVermelho?: string; // ISO timestamp da partida do último cartão vermelho
+  suspensao_automatica: number; // Contador de suspensões automáticas baseado em acumulação
 }
 
 interface TorneioKeys {
@@ -142,6 +168,7 @@ interface TorneioKeys {
   partidas: (torneioId: string) => string;
   classificacao: (torneioId: string) => string;
   participantes: (torneioId: string) => string;
+  registrosCartoes: (torneioId: string) => string;
 }
 
 const LEGACY_TORNEIO_ATIVO_KEY = 'torneio_ativo';
@@ -179,6 +206,7 @@ const getKeys = (): TorneioKeys => {
     partidas: (torneioId: string) => `partidas_torneio_${peladaId}_${torneioId}`,
     classificacao: (torneioId: string) => `classificacao_torneio_${peladaId}_${torneioId}`,
     participantes: (torneioId: string) => `participantes_torneio_${peladaId}_${torneioId}`,
+    registrosCartoes: (torneioId: string) => `registros_cartoes_${peladaId}_${torneioId}`,
   };
 };
 
@@ -394,16 +422,300 @@ export function obterJogadoresEquipesLocal(torneioId: string): JogadoresEquipeMa
   );
 }
 
+// ─── Registros de cartões e suspensões ───────────────────────────────────────
+
+export function salvarRegistrosCartoesLocal(torneioId: string, registros: RegistroCartaoJogador[]): void {
+  const keys = getKeys();
+  localStorage.setItem(keys.registrosCartoes(torneioId), JSON.stringify(registros));
+}
+
+export function obterRegistrosCartoesLocal(torneioId: string): RegistroCartaoJogador[] {
+  const keys = getKeys();
+  return safeJsonParse<RegistroCartaoJogador[]>(localStorage.getItem(keys.registrosCartoes(torneioId)), []);
+}
+
+export function obterRegistroCartaoJogador(torneioId: string, jogadorId: string): RegistroCartaoJogador | null {
+  const registros = obterRegistrosCartoesLocal(torneioId);
+  return registros.find(r => r.jogador_id === jogadorId) || null;
+}
+
+/**
+ * Obtém dados completos de cartões e suspensões para um jogador específico
+ */
+export function obterStatusCartaoJogador(torneioId: string, jogadorId: string): {
+  cartoesAmarelos: number;
+  cartoesVermelhos: number;
+  cartoesAzuis: number;
+  ultimoCartaoVermelho?: string;
+  suspensaoPendente: boolean;
+  suspensoProximaPartida: boolean;
+  motivoSuspensao?: 'acumulacao_amarelos' | 'acumulacao_azuis' | 'cartao_vermelho';
+} {
+  const registro = obterRegistroCartaoJogador(torneioId, jogadorId);
+  const regras = obterRegrasCompeticaoLocal(torneioId);
+  const registros = obterRegistrosCartoesLocal(torneioId);
+  const suspensos = obterJogadoresSuspensosNaPartida(registros, regras);
+
+  return {
+    cartoesAmarelos: registro?.cartoesAmarelos || 0,
+    cartoesVermelhos: registro?.cartoesVermelhos || 0,
+    cartoesAzuis: registro?.cartoesAzuis || 0,
+    ultimoCartaoVermelho: registro?.ultimoCartaoVermelho,
+    suspensaoPendente: false, // Simplificado - não usado atualmente
+    suspensoProximaPartida: suspensos.has(jogadorId),
+    motivoSuspensao: registro?.ultimoCartaoVermelho ? 'cartao_vermelho' : undefined,
+  };
+}
+
+
+// ─── Lógica de processamento de cartões ──────────────────────────────────────
+
+export function procesarCartoesPartidaEncerrada(
+  torneioId: string,
+  partidaId: string,
+  eventos: EventoPartidaTorneio[],
+  regras: RegrasCompeticaoLocal | null,
+): void {
+  // Verificar se registro de cartões está ativo no torneio
+  if (!regras?.registrar_cartoes) return;
+
+  const registros = obterRegistrosCartoesLocal(torneioId);
+  const cartoesPartida = eventos.filter(e => e.tipo === 'cartao');
+
+  // Primeiro processamento: contar cartões por jogador nesta partida
+  const cartoesPorJogador: Record<string, { amarelos: number; vermelhos: number }> = {};
+  cartoesPartida.forEach(cartao => {
+    if (!cartoesPorJogador[cartao.jogadorId]) {
+      cartoesPorJogador[cartao.jogadorId] = { amarelos: 0, vermelhos: 0 };
+    }
+    if (cartao.cartaoTipo === 'amarelo') {
+      cartoesPorJogador[cartao.jogadorId].amarelos++;
+    } else if (cartao.cartaoTipo === 'vermelho') {
+      cartoesPorJogador[cartao.jogadorId].vermelhos++;
+    }
+  });
+
+  cartoesPartida.forEach(cartao => {
+    let registro = registros.find(r => r.jogador_id === cartao.jogadorId);
+    if (!registro) {
+      registro = {
+        torneio_id: torneioId,
+        jogador_id: cartao.jogadorId,
+        cartoesAmarelos: 0,
+        cartoesVermelhos: 0,
+        cartoesAzuis: 0,
+        suspensao_automatica: 0,
+      };
+      registros.push(registro);
+    }
+
+    // Verificar se o tipo de cartão está habilitado nas regras
+    if (cartao.cartaoTipo === 'amarelo' && regras.cartoes_amarelos) {
+      registro.cartoesAmarelos++;
+      
+      // Se acumulação de amarelos está habilitada, incrementa suspensao_automatica
+      if (regras.acumulacao_cartoes_amarelos && regras.acumulacao_cartoes_amarelos > 0) {
+        registro.suspensao_automatica++;
+      }
+      
+      // Verificar se levou 2 amarelos nesta partida = vermelho automático
+      const amarelosNestaPartida = cartoesPorJogador[cartao.jogadorId]?.amarelos || 0;
+      if (amarelosNestaPartida >= 2) {
+        // Conta como +1 vermelho na estatística, marca último vermelho para suspensão, zera suspensao_automatica
+        registro.cartoesVermelhos++;
+        registro.suspensao_automatica = 0;
+        registro.ultimoCartaoVermelho = new Date().toISOString();
+      }
+    } else if (cartao.cartaoTipo === 'vermelho' && regras.cartoes_vermelhos) {
+      // Cartão vermelho direto: +1 vermelho na estatística, zera suspensao_automatica, marca último vermelho
+      registro.cartoesVermelhos++;
+      registro.suspensao_automatica = 0;
+      registro.ultimoCartaoVermelho = new Date().toISOString();
+    } else if (cartao.cartaoTipo === 'azul' && regras.cartoes_azuis) {
+      registro.cartoesAzuis++;
+      
+      // Se acumulação de azuis está habilitada, incrementa suspensao_automatica
+      if (regras.acumulacao_cartoes_azuis && regras.acumulacao_cartoes_azuis > 0) {
+        registro.suspensao_automatica++;
+      }
+    }
+  });
+
+  salvarRegistrosCartoesLocal(torneioId, registros);
+}
+
+
+/**
+ * Verifica se um jogador está suspenso ao iniciar uma partida
+ * baseado no contador de suspensao_automatica vs limite definido nas regras
+ */
+export function obterJogadoresSuspensosNaPartida(
+  registros: RegistroCartaoJogador[],
+  regras: RegrasCompeticaoLocal | null,
+): Set<string> {
+  const suspensos = new Set<string>();
+  
+  if (!regras?.registrar_cartoes) return suspensos;
+  
+  registros.forEach(registro => {
+    // Se teve um vermelho (direto ou dois amarelos na mesma partida), é suspensão automática
+    if (registro.ultimoCartaoVermelho) {
+      suspensos.add(registro.jogador_id);
+      return;
+    }
+
+    // Verifica se atingiu limite de amarelos
+    if (regras.acumulacao_cartoes_amarelos && regras.acumulacao_cartoes_amarelos > 0) {
+      if (registro.suspensao_automatica >= regras.acumulacao_cartoes_amarelos) {
+        suspensos.add(registro.jogador_id);
+        return;
+      }
+    }
+    
+    // Verifica se atingiu limite de azuis
+    if (regras.acumulacao_cartoes_azuis && regras.acumulacao_cartoes_azuis > 0) {
+      if (registro.suspensao_automatica >= regras.acumulacao_cartoes_azuis) {
+        suspensos.add(registro.jogador_id);
+      }
+    }
+  });
+  
+  return suspensos;
+}
+
+/**
+ * Reseta suspensao_automatica ao finalizar uma partida
+ * (jogador cumpriu sua suspensão)
+ */
+export function resetarSuspensaoAposFimPartida(
+  torneioId: string,
+): void {
+  const registros = obterRegistrosCartoesLocal(torneioId);
+  const regras = obterRegrasCompeticaoLocal(torneioId);
+
+  // Zera apenas o contador de suspensão automática de quem atingiu o limite configurado
+  registros.forEach(r => {
+    let atingiuLimite = false;
+    let teveVermelho = false;
+
+    if (regras?.acumulacao_cartoes_amarelos && regras.acumulacao_cartoes_amarelos > 0) {
+      if (r.suspensao_automatica >= regras.acumulacao_cartoes_amarelos) {
+        atingiuLimite = true;
+      }
+    }
+
+    if (regras?.acumulacao_cartoes_azuis && regras.acumulacao_cartoes_azuis > 0) {
+      if (r.suspensao_automatica >= regras.acumulacao_cartoes_azuis) {
+        atingiuLimite = true;
+      }
+    }
+
+    // Verifica se teve vermelho (direto ou por 2 amarelos)
+    if (r.ultimoCartaoVermelho) {
+      teveVermelho = true;
+    }
+
+    if (atingiuLimite || teveVermelho) {
+      r.suspensao_automatica = 0;
+      r.ultimoCartaoVermelho = undefined;
+    }
+  });
+  
+  salvarRegistrosCartoesLocal(torneioId, registros);
+}
+
+/**
+ * Reseta cartões ao mudar de fase (de LIGA para MATA-MATA, por exemplo)
+ * Apenas jogadores que NÃO atingiram o limite de suspensão terão os cartões zerados
+ */
+export function resetarCartoesAoMudarDeFase(
+  torneioId: string,
+  regras: RegrasCompeticaoLocal | null,
+): void {
+  if (!regras?.registrar_cartoes || !regras?.reset_cartoes_para_eliminatorias) return;
+  
+  const registros = obterRegistrosCartoesLocal(torneioId);
+  
+  registros.forEach(r => {
+    // Só zera se NÃO atingiu o limite
+    let atingiuLimite = false;
+    
+    if (regras.acumulacao_cartoes_amarelos && regras.acumulacao_cartoes_amarelos > 0) {
+      if (r.suspensao_automatica >= regras.acumulacao_cartoes_amarelos) {
+        atingiuLimite = true;
+      }
+    }
+    
+    if (regras.acumulacao_cartoes_azuis && regras.acumulacao_cartoes_azuis > 0) {
+      if (r.suspensao_automatica >= regras.acumulacao_cartoes_azuis) {
+        atingiuLimite = true;
+      }
+    }
+    
+    // Se não atingiu limite, zera tudo
+    if (!atingiuLimite) {
+      r.cartoesAmarelos = 0;
+      r.cartoesVermelhos = 0;
+      r.cartoesAzuis = 0;
+      r.suspensao_automatica = 0;
+      r.ultimoCartaoVermelho = undefined;
+    }
+  });
+  
+  salvarRegistrosCartoesLocal(torneioId, registros);
+}
+
+/**
+ * @deprecated Use obterJogadoresSuspensosNaPartida em vez disso
+ */
+export function marcarSuspensaoPorPartida(
+  torneioId: string,
+  partidaId: string,
+  regras: RegrasCompeticaoLocal | null,
+  participantes: ParticipanteTorneioLocal[],
+): void {
+  // Função mantida para compatibilidade, mas não faz nada
+  // A suspensão agora é verificada em tempo real via obterJogadoresSuspensosNaPartida
+}
+
+/**
+ * @deprecated Use resetarSuspensaoAposFimPartida em vez disso
+ */
+export function removerSuspensaoAposFimPartida(
+  torneioId: string,
+  partidaId: string,
+): void {
+  // Função mantida para compatibilidade, mas não faz nada
+  // O reset agora é feito ao finalizar a partida
+  resetarSuspensaoAposFimPartida(torneioId);
+}
+
+/**
+ * @deprecated Use resetarCartoesAoMudarDeFase em vez disso
+ */
+
+
 // ─── Partida ativa do torneio ────────────────────────────────────────────────
 
 export interface EventoPartidaTorneio {
   id: string;
-  tipo: 'gol' | 'assistencia';
+  tipo: 'gol' | 'assistencia' | 'cartao';
   jogadorId: string;
   jogadorNome: string;
   equipeId: string;
   timestamp: string;
   golId?: string; // ID do gol ao qual esta assistência pertence
+  cartaoTipo?: 'amarelo' | 'vermelho' | 'azul';
+}
+
+export interface CartaoAzulAtivo {
+  jogadorId: string;
+  jogadorNome: string;
+  equipeId: string;
+  tempoTotalSegundos: number;
+  segundosRestantes: number;
+  timerRodando: boolean;
+  rodandoDesde: number; // Date.now() quando foi iniciado/retomado
 }
 
 export interface PartidaAtivaTorneio {
@@ -420,6 +732,7 @@ export interface PartidaAtivaTorneio {
   timerRodando?: boolean;
   rodandoDesde?: number; // Date.now() quando o timer foi ligado
   isProrrogacao?: boolean;
+  cartoesAzuisAtivos?: CartaoAzulAtivo[]; // timers de cartões azuis ativos
 }
 
 export function salvarPartidaAtivaTorneio(partida: PartidaAtivaTorneio): void {
@@ -449,6 +762,8 @@ export interface EstatisticaJogadorTorneio {
   equipeNome: string;
   gols: number;
   assistencias: number;
+  golsSofridos?: number; // Para goleiros
+  jogos?: number; // Número de partidas participadas
 }
 
 export function salvarEstatisticasTorneio(

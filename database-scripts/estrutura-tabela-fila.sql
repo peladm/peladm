@@ -4,7 +4,9 @@
 -- DESCRIÇÃO: Controle da fila de jogadores durante a pelada
 -- ARMAZENAMENTO: localStorage (todos os planos)
 -- DEPLOY: NUNCA (deletada ao encerrar pelada)
--- =========================================
+-- ⚠️ IMPORTANTE: Esta tabela é APENAS local (localStorage)
+-- NÃO deve ser criada no Supabase
+-- ===========================================
 
 CREATE TABLE IF NOT EXISTS fila (
   -- Identificação

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { validarAcessoMaster } from '../../../lib/adminAuth';
+import { obterCredenciais } from '../../../lib/credenciais';
 
 // Configuração Supabase
 const supabase = createClient(
@@ -101,18 +102,32 @@ export default function AdminClientes() {
 
   const carregarClientes = async () => {
     try {
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('*')
-        .order('nome');
+      const credenciais = obterCredenciais();
       
-      if (error) {
-        console.error('Erro ao carregar clientes:', error);
-      } else {
-        setClientes(data || []);
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        throw new Error('Credenciais inválidas');
       }
+
+      const response = await fetch('/api/admin/clientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao carregar clientes');
+      }
+
+      const data = await response.json();
+      setClientes(data.clientes || []);
     } catch (error) {
-      console.error('Erro:', error);
+      console.error('Erro ao carregar clientes:', error);
+      alert(`Erro ao carregar clientes: ${error}`);
     } finally {
       setLoading(false);
     }

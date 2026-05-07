@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS regras (
   regra_empate VARCHAR,
   regra_apos_empate VARCHAR,
   tipo_fila TEXT,
-  empate_conta_vitoria BOOLEAN
+  empate_conta_vitoria BOOLEAN,
+  modo_sincronizacao VARCHAR,
+  cores_coletes TEXT[]
 );
 
 -- ================================================
@@ -51,6 +53,8 @@ CREATE TABLE IF NOT EXISTS regras (
 -- regra_apos_empate: Como resolver após empate
 -- tipo_fila: Modo de gerenciamento da fila
 -- empate_conta_vitoria: Se empate conta como vitória consecutiva
+-- modo_sincronizacao: Tipo de sincronização com Supabase (ex: 'auto', 'manual')
+-- cores_coletes: Array com cores dos coletes disponíveis (ex: ARRAY['vermelho', 'amarelo'])
 
 -- ================================================
 -- REGRAS DE NEGÓCIO

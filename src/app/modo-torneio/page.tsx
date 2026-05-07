@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '../../components/Layout';
 import { validarSenhaPelada } from '../../lib/supabase';
@@ -16,6 +16,15 @@ import {
   salvarSetupCompeticaoLocal,
   obterTorneiosEncerrados,
 } from '../../lib/torneioLocalService';
+
+interface TorneioVinculado {
+  id: string;
+  nome: string;
+  temporada?: string;
+  slug: string;
+  colocacaoCol: string;
+  premiacoesCol: string;
+}
 
 export default function ModoTorneioPage() {
   const router = useRouter();
@@ -40,13 +49,137 @@ export default function ModoTorneioPage() {
   const [showModalTipoTorneio, setShowModalTipoTorneio] = useState(false);
   const [showModalTipoLiga, setShowModalTipoLiga] = useState(false);
 
+  const [torneiosVinculados, setTorneiosVinculados] = useState<TorneioVinculado[]>([]);
+  const [showModalTorneiosVinculados, setShowModalTorneiosVinculados] = useState(false);
+  const [novoVinculadoNome, setNovoVinculadoNome] = useState('');
+  const [novoVinculadoTemporada, setNovoVinculadoTemporada] = useState('');
+  const [erroVinculado, setErroVinculado] = useState('');
+  const [isCriandoVinculado, setIsCriandoVinculado] = useState(false);
+  const [vinculoParaRemover, setVinculoParaRemover] = useState<TorneioVinculado | null>(null);
+  const [senhaRemocaoVinculo, setSenhaRemocaoVinculo] = useState('');
+  const [erroRemoverVinculo, setErroRemoverVinculo] = useState('');
+  const [isRemovendoVinculo, setIsRemovendoVinculo] = useState(false);
+
   useEffect(() => {
     const pelada_id = buscar_pelada_id() || 'default';
     setPeladaId(pelada_id);
     
     verificarTorneioAtivo(pelada_id);
     setTorneiosEncerrados(obterTorneiosEncerrados());
+    carregarTorneiosVinculados(pelada_id);
   }, []);
+
+  const carregarTorneiosVinculados = (pelada_id: string) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(`torneios_vinculados_${pelada_id}`);
+      if (!raw) {
+        setTorneiosVinculados([]);
+        return;
+      }
+      const parsed = JSON.parse(raw) as TorneioVinculado[];
+      setTorneiosVinculados(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setTorneiosVinculados([]);
+    }
+  };
+
+  const salvarTorneiosVinculados = (lista: TorneioVinculado[]) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(`torneios_vinculados_${peladaId}`, JSON.stringify(lista));
+    setTorneiosVinculados(lista);
+  };
+
+  const gerarSlugTorneioVinculado = (nome: string, temporada?: string) => {
+    const base = `${nome || ''} ${temporada || ''}`
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return base || `torneio_${Date.now()}`;
+  };
+
+  const criarTorneioVinculado = async () => {
+    setErroVinculado('');
+    if (!novoVinculadoNome.trim()) {
+      setErroVinculado('Informe o nome oficial do torneio.');
+      return;
+    }
+
+    setIsCriandoVinculado(true);
+
+    try {
+      const slug = gerarSlugTorneioVinculado(novoVinculadoNome, novoVinculadoTemporada);
+      if (torneiosVinculados.some((item) => item.slug === slug)) {
+        setErroVinculado('Já existe um torneio vinculado com este nome ou temporada.');
+        return;
+      }
+
+      const colocacaoCol = `colocacao_${slug}`;
+      const premiacoesCol = `premiacoes_${slug}`;
+      const novoItem: TorneioVinculado = {
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`,
+        nome: novoVinculadoNome.trim(),
+        temporada: novoVinculadoTemporada.trim() || undefined,
+        slug,
+        colocacaoCol,
+        premiacoesCol,
+      };
+
+      // NOTE: A aplicação ainda não executa DDL direto no Supabase.
+      // Essa lista guarda os torneios vinculados localmente.
+      salvarTorneiosVinculados([...torneiosVinculados, novoItem]);
+      setNovoVinculadoNome('');
+      setNovoVinculadoTemporada('');
+    } catch (error) {
+      console.error('Erro ao criar torneio vinculado:', error);
+      setErroVinculado('Não foi possível adicionar o torneio vinculado.');
+    } finally {
+      setIsCriandoVinculado(false);
+    }
+  };
+
+  const removerTorneioVinculado = async () => {
+    if (!vinculoParaRemover) return;
+    setErroRemoverVinculo('');
+    if (!senhaRemocaoVinculo.trim()) {
+      setErroRemoverVinculo('Digite sua senha para confirmar a remoção.');
+      return;
+    }
+
+    setIsRemovendoVinculo(true);
+    try {
+      const response = await fetch('/api/torneio-vinculado/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          peladaId,
+          slug: vinculoParaRemover.slug,
+          colocacaoCol: vinculoParaRemover.colocacaoCol,
+          premiacoesCol: vinculoParaRemover.premiacoesCol,
+          senha: senhaRemocaoVinculo,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setErroRemoverVinculo(data?.error || 'Não foi possível remover o torneio vinculado.');
+        return;
+      }
+
+      const atualizados = torneiosVinculados.filter((item) => item.slug !== vinculoParaRemover.slug);
+      salvarTorneiosVinculados(atualizados);
+      setVinculoParaRemover(null);
+      setSenhaRemocaoVinculo('');
+    } catch (error) {
+      console.error('Erro ao remover torneio vinculado:', error);
+      setErroRemoverVinculo('Erro ao remover. Verifique a senha e tente novamente.');
+    } finally {
+      setIsRemovendoVinculo(false);
+    }
+  };
 
   const verificarTorneioAtivo = (pelada_id: string) => {
     try {
@@ -294,7 +427,7 @@ export default function ModoTorneioPage() {
 
       <section
         onClick={() => !torneioAtivo && !setupEmAndamento && setShowModalTipoLiga(true)}
-        className={`mb-6 rounded-2xl border p-4 sm:p-5 transition-all ${
+        className={`mb-5 rounded-2xl border p-4 sm:p-5 transition-all ${
           torneioAtivo || setupEmAndamento
             ? 'bg-gray-200 border-gray-300 opacity-80 cursor-not-allowed'
             : 'bg-gradient-to-r from-sky-600 to-cyan-700 border-sky-400 cursor-pointer hover:from-sky-700 hover:to-cyan-800'
@@ -309,6 +442,28 @@ export default function ModoTorneioPage() {
             <span className="text-sky-100 text-sm font-semibold">Escolher →</span>
           )}
         </div>
+      </section>
+
+      <section className="mb-6">
+        <button
+          onClick={() => setShowModalTorneiosVinculados(true)}
+          className="w-full rounded-2xl border border-gray-300 bg-white p-4 sm:p-5 text-left shadow-sm hover:border-sky-300 transition-colors"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl leading-none">🔗</span>
+              <div>
+                <h3 className="font-black text-lg text-gray-900">Torneios e Ligas vinculados à minha pelada</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  {torneiosVinculados.length > 0
+                    ? `${torneiosVinculados.length} vinculados`
+                    : 'Nenhum torneio vinculado cadastrado'}
+                </p>
+              </div>
+            </div>
+            <span className="text-sm font-semibold text-slate-500">Ver →</span>
+          </div>
+        </button>
       </section>
 
       {/* ── DIVISOR ──────────────────────────────────────────────────────── */}
@@ -497,6 +652,107 @@ export default function ModoTorneioPage() {
                 <p className="font-bold text-white text-sm">Pontos corridos + mata-mata</p>
                 <p className="text-xs text-gray-400 mt-1">Fase de liga seguida de playoffs eliminatórios</p>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showModalTorneiosVinculados && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 flex items-end justify-center" onClick={() => setShowModalTorneiosVinculados(false)}>
+          <div className="w-full max-w-lg bg-white rounded-t-3xl p-5 pb-8" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-lg font-black text-slate-900">🔗 Torneios vinculados</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Gerencie os torneios que estão associados à sua pelada</p>
+              </div>
+              <button onClick={() => setShowModalTorneiosVinculados(false)} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+            </div>
+
+            <div className="space-y-4">
+              {torneiosVinculados.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-300 p-4 text-center text-slate-600">
+                  Nenhum torneio vinculado cadastrado ainda.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {torneiosVinculados.map((item) => (
+                    <div key={item.slug} className="rounded-3xl border border-slate-200 p-4 bg-slate-50">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-900">{item.nome}</p>
+                          <p className="text-xs text-slate-500">Temporada: {item.temporada || 'Não definida'}</p>
+                          <p className="text-xs text-slate-500 mt-2">Coluna de colocação: <code>{item.colocacaoCol}</code></p>
+                          <p className="text-xs text-slate-500">Coluna de premiações: <code>{item.premiacoesCol}</code></p>
+                        </div>
+                        <button
+                          onClick={() => { setVinculoParaRemover(item); setSenhaRemocaoVinculo(''); setErroRemoverVinculo(''); }}
+                          className="text-red-600 text-sm font-semibold hover:text-red-700"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                <p className="font-semibold text-slate-900 mb-2">Adicionar novo torneio vinculado</p>
+                <label className="text-xs text-slate-500">Nome oficial do torneio</label>
+                <input
+                  type="text"
+                  value={novoVinculadoNome}
+                  onChange={(e) => setNovoVinculadoNome(e.target.value)}
+                  className="mt-1 mb-3 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-sky-500"
+                  placeholder="Ex: Copa da Pelada"
+                />
+                <label className="text-xs text-slate-500">Temporada</label>
+                <input
+                  type="text"
+                  value={novoVinculadoTemporada}
+                  onChange={(e) => setNovoVinculadoTemporada(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-sky-500"
+                  placeholder="Ex: 2026"
+                />
+                {erroVinculado && <p className="mt-2 text-xs text-red-600">{erroVinculado}</p>}
+                <button
+                  onClick={criarTorneioVinculado}
+                  disabled={isCriandoVinculado}
+                  className="mt-4 w-full rounded-2xl bg-sky-600 px-4 py-2 text-white font-semibold hover:bg-sky-700 transition-colors disabled:opacity-60"
+                >
+                  {isCriandoVinculado ? 'Criando...' : 'Adicionar torneio vinculado'}
+                </button>
+              </div>
+
+              {vinculoParaRemover && (
+                <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4">
+                  <p className="font-semibold text-rose-800 mb-2">Confirmar remoção de:</p>
+                  <p className="text-sm text-rose-700 mb-3">{vinculoParaRemover.nome} ({vinculoParaRemover.temporada || 'sem temporada'})</p>
+                  <input
+                    type="password"
+                    value={senhaRemocaoVinculo}
+                    onChange={(e) => setSenhaRemocaoVinculo(e.target.value)}
+                    className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 outline-none focus:border-rose-400"
+                    placeholder="Digite sua senha para confirmar"
+                  />
+                  {erroRemoverVinculo && <p className="mt-2 text-xs text-rose-700">{erroRemoverVinculo}</p>}
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={removerTorneioVinculado}
+                      disabled={isRemovendoVinculo}
+                      className="flex-1 rounded-2xl bg-rose-600 px-4 py-2 text-white font-semibold hover:bg-rose-700 transition-colors disabled:opacity-60"
+                    >
+                      {isRemovendoVinculo ? 'Removendo...' : 'Remover'}
+                    </button>
+                    <button
+                      onClick={() => { setVinculoParaRemover(null); setSenhaRemocaoVinculo(''); setErroRemoverVinculo(''); }}
+                      className="rounded-2xl border border-rose-200 bg-white px-4 py-2 text-rose-700 hover:bg-rose-100 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -112,8 +112,11 @@ const CRITERIO_COL: Record<string, { abbrev: string; key: string }> = {
   saldo_gols: { abbrev: 'SG', key: 'saldo' },
   gols_pro: { abbrev: 'GP', key: 'gp' },
   gols_contra: { abbrev: 'GC', key: 'gc' },
+  total_cartoes: { abbrev: 'Ct', key: 'cartoes' },
   jogos: { abbrev: 'J', key: 'j' },
 };
+
+const CRITERIO_ASC = new Set(['gols_contra', 'total_cartoes']);
 
 function buildColunas(criterios: string[]) {
   // Colunas = J + Pts + somente os critérios selecionados (confronto_direto não é coluna visual)
@@ -160,6 +163,7 @@ function PainelTorneioPage() {
   const [nomeEditando, setNomeEditando] = useState('');
   const [modalTimeId, setModalTimeId] = useState<string | null>(null);
   const [jogadorParaTrocar, setJogadorParaTrocar] = useState<ParticipanteTorneioLocal | null>(null);
+  const [modoSubstituicao, setModoSubstituicao] = useState(false);
   const [partidaResultadoId, setPartidaResultadoId] = useState<string | null>(null);
   const [golsA, setGolsA] = useState('0');
   const [golsB, setGolsB] = useState('0');
@@ -295,6 +299,17 @@ function PainelTorneioPage() {
 
   const criterios = useMemo(() => regras?.criterios_desempate ?? ['pontos', 'vitorias', 'saldo_gols', 'gols_pro'], [regras]);
 
+  const cartoesPorEquipe = useMemo(() => {
+    const totals: Record<string, number> = {};
+    Object.values(historicosMap).forEach((history) => {
+      history.eventos.forEach((event) => {
+        if (event.tipo !== 'cartao') return;
+        totals[event.equipeId] = (totals[event.equipeId] ?? 0) + 1;
+      });
+    });
+    return totals;
+  }, [historicosMap]);
+
   const classificacao = useMemo(() => {
     return [...equipes].map((e) => {
       const jogadas = partidas.filter((p) => p.status === 'finalizada' && (p.equipe_a_id === e.id || p.equipe_b_id === e.id));
@@ -308,14 +323,15 @@ function PainelTorneioPage() {
         else if (nGp === nGc) { pts += (regras?.pontos_empate ?? 1); emp++; }
         else { pts += (regras?.pontos_derrota ?? 0); d++; }
       });
-      return { ...e, pts, v, emp, d, gp, gc, saldo: gp - gc, j: jogadas.length };
+      return { ...e, pts, v, emp, d, gp, gc, saldo: gp - gc, j: jogadas.length, cartoes: cartoesPorEquipe[e.id] ?? 0 };
     }).sort((a, b) => {
       // 1. Critérios selecionados pelo usuário
       for (const c of criterios) {
+        if (c === 'total_cartoes' && !regras?.registrar_cartoes) continue;
         const col = CRITERIO_COL[c]; if (!col) continue;
         const av = (a as unknown as Record<string, number>)[col.key] ?? 0;
         const bv = (b as unknown as Record<string, number>)[col.key] ?? 0;
-        if (bv !== av) return bv - av;
+        if (bv !== av) return CRITERIO_ASC.has(c) ? av - bv : bv - av;
       }
       // 2. Confronto direto — sempre aplicado, independente de configuração
       const diretas = partidas.filter(
@@ -344,7 +360,7 @@ function PainelTorneioPage() {
       // 4. Alfabético como fallback estável enquanto não houver sorteio
       return a.nome.localeCompare(b.nome, 'pt-BR');
     });
-  }, [equipes, partidas, regras, criterios, desempateSorteio]);
+  }, [equipes, partidas, regras, criterios, desempateSorteio, cartoesPorEquipe]);
 
   const equipeById = (id: string) => equipes.find((e) => e.id === id);
 
@@ -382,6 +398,42 @@ function PainelTorneioPage() {
       setTodosParticipantes(novosParticipantes);
     }
     setJogadorParaTrocar(null);
+  };
+
+  const removerJogador = (jogador: ParticipanteTorneioLocal) => {
+    if (!torneio || !modalTimeId) return;
+    const mapa = { ...jogadoresPorEquipe };
+    const jogadoresTime = [...(mapa[modalTimeId] ?? [])].filter((j) => j.id !== jogador.id);
+    mapa[modalTimeId] = jogadoresTime;
+    const novosParticipantes = todosParticipantes.map((p) =>
+      p.id === jogador.id ? { ...p, status: 'reserva' as const } : p
+    );
+    salvarJogadoresEquipesLocal(torneio.id, mapa);
+    const equipesAtualizadas = equipes.map((e) =>
+      e.id === modalTimeId ? { ...e, jogadores: mapa[modalTimeId] } : e
+    );
+    salvarEquipesTorneioLocal(torneio.id, equipesAtualizadas);
+    setEquipes(equipesAtualizadas);
+    setJogadoresPorEquipe(mapa);
+    setTodosParticipantes(novosParticipantes);
+  };
+
+  const adicionarJogador = (suplente: ParticipanteTorneioLocal) => {
+    if (!torneio || !modalTimeId) return;
+    const mapa = { ...jogadoresPorEquipe };
+    const jogadoresTime = [...(mapa[modalTimeId] ?? []), { ...suplente, status: 'confirmado' as const }];
+    mapa[modalTimeId] = jogadoresTime;
+    const novosParticipantes = todosParticipantes.map((p) =>
+      p.id === suplente.id ? { ...p, status: 'confirmado' as const } : p
+    );
+    salvarJogadoresEquipesLocal(torneio.id, mapa);
+    const equipesAtualizadas = equipes.map((e) =>
+      e.id === modalTimeId ? { ...e, jogadores: mapa[modalTimeId] } : e
+    );
+    salvarEquipesTorneioLocal(torneio.id, equipesAtualizadas);
+    setEquipes(equipesAtualizadas);
+    setJogadoresPorEquipe(mapa);
+    setTodosParticipantes(novosParticipantes);
   };
 
   const lancarResultado = (partidaId: string) => {
@@ -932,7 +984,7 @@ function PainelTorneioPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {/* Editar Times */}
             <button onClick={() => router.push('/modo-torneio/painel?aba=times')} style={{ background: 'white', border: '1.5px solid #e5e7eb', borderRadius: 18, padding: '18px 14px', cursor: 'pointer', textAlign: 'left' }}>
-              <span style={{ fontSize: 28 }}>👕</span>
+              <img src="/campo-de-futebol.png" alt="Campo de futebol" style={{ width: 28, height: 28, objectFit: 'contain' }} />
               <p style={{ margin: '8px 0 2px', fontWeight: 800, fontSize: 14, color: '#111827' }}>Times</p>
               <p style={{ margin: 0, fontSize: 11, color: '#9ca3af' }}>{equipes.length} times · renomear, trocar jogadores</p>
             </button>
@@ -1038,8 +1090,13 @@ function PainelTorneioPage() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => { setModalTimeId(equipe.id); setJogadorParaTrocar(null); }} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:border-emerald-300 hover:text-emerald-600 transition-colors" title="Ver jogadores">👥</button>
-                      {!isReadonly && <button onClick={() => { setEditandoTimeId(equipe.id); setNomeEditando(equipe.nome); }} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:border-sky-300 hover:text-sky-600 transition-colors" title="Renomear time">✏️</button>}
+                      <button onClick={() => { setModalTimeId(equipe.id); setJogadorParaTrocar(null); setModoSubstituicao(false); }} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:border-emerald-300 hover:text-emerald-600 transition-colors" title="Ver jogadores">👥</button>
+                      {!isReadonly && (
+                        <>
+                          <button onClick={() => { setModalTimeId(equipe.id); setJogadorParaTrocar(null); setModoSubstituicao(true); }} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:border-amber-300 hover:text-amber-600 transition-colors" title="Substituir jogadores">🔁</button>
+                          <button onClick={() => { setEditandoTimeId(equipe.id); setNomeEditando(equipe.nome); }} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:border-sky-300 hover:text-sky-600 transition-colors" title="Renomear time">✏️</button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1068,8 +1125,14 @@ function PainelTorneioPage() {
         // Contagens por jogador
         const golsPorJogador: Record<string, number> = {};
         const assistsPorJogador: Record<string, number> = {};
+        const cartoesPorJogador: Record<string, { amarelo: number; vermelho: number; azul: number }> = {};
         gols.forEach((e) => { golsPorJogador[e.jogadorId] = (golsPorJogador[e.jogadorId] ?? 0) + 1; });
         assists.forEach((e) => { assistsPorJogador[e.jogadorId] = (assistsPorJogador[e.jogadorId] ?? 0) + 1; });
+        eventos.filter((e): e is EventoPartidaTorneio => e.tipo === 'cartao').forEach((e) => {
+          const tipo = (e.cartaoTipo ?? 'amarelo') as 'amarelo' | 'vermelho' | 'azul';
+          if (!cartoesPorJogador[e.jogadorId]) cartoesPorJogador[e.jogadorId] = { amarelo: 0, vermelho: 0, azul: 0 };
+          cartoesPorJogador[e.jogadorId][tipo] = (cartoesPorJogador[e.jogadorId][tipo] ?? 0) + 1;
+        });
 
         // Lista de jogadores de cada time (fonte: jogadoresPorEquipe ou eventos)
         const jogA = jogadoresPorEquipe[p.equipe_a_id] ?? [];
@@ -1124,13 +1187,17 @@ function PainelTorneioPage() {
                       {nomesA.map((j) => {
                         const g = golsPorJogador[j.id] ?? 0;
                         const a = assistsPorJogador[j.id] ?? 0;
+                        const cartoes = cartoesPorJogador[j.id] ?? { amarelo: 0, vermelho: 0, azul: 0 };
                         return (
                           <div key={j.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderBottom: '1px solid #f3f4f6' }}>
                             <span style={{ fontSize: 13, fontWeight: 600, color: '#1f2937', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.nome}</span>
-                            {(g > 0 || a > 0) && (
+                            {(g > 0 || a > 0 || cartoes.amarelo > 0 || cartoes.vermelho > 0 || cartoes.azul > 0) && (
                               <span style={{ fontSize: 11, flexShrink: 0, marginLeft: 4 }}>
                                 {g > 0 && <span>{'⚽'.repeat(Math.min(g, 3))}{g > 3 ? `×${g}` : ''}</span>}
                                 {a > 0 && <span>{'👟'.repeat(Math.min(a, 3))}{a > 3 ? `×${a}` : ''}</span>}
+                                {cartoes.amarelo > 0 && <span>{'🟨'.repeat(Math.min(cartoes.amarelo, 3))}{cartoes.amarelo > 3 ? `×${cartoes.amarelo}` : ''}</span>}
+                                {cartoes.vermelho > 0 && <span>{'🟥'.repeat(Math.min(cartoes.vermelho, 3))}{cartoes.vermelho > 3 ? `×${cartoes.vermelho}` : ''}</span>}
+                                {cartoes.azul > 0 && <span>{'🟦'.repeat(Math.min(cartoes.azul, 3))}{cartoes.azul > 3 ? `×${cartoes.azul}` : ''}</span>}
                               </span>
                             )}
                           </div>
@@ -1146,13 +1213,17 @@ function PainelTorneioPage() {
                       {nomesB.map((j) => {
                         const g = golsPorJogador[j.id] ?? 0;
                         const a = assistsPorJogador[j.id] ?? 0;
+                        const cartoes = cartoesPorJogador[j.id] ?? { amarelo: 0, vermelho: 0, azul: 0 };
                         return (
                           <div key={j.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderBottom: '1px solid #f3f4f6' }}>
                             <span style={{ fontSize: 13, fontWeight: 600, color: '#1f2937', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.nome}</span>
-                            {(g > 0 || a > 0) && (
+                            {(g > 0 || a > 0 || cartoes.amarelo > 0 || cartoes.vermelho > 0 || cartoes.azul > 0) && (
                               <span style={{ fontSize: 11, flexShrink: 0, marginLeft: 4 }}>
                                 {g > 0 && <span>{'⚽'.repeat(Math.min(g, 3))}{g > 3 ? `×${g}` : ''}</span>}
                                 {a > 0 && <span>{'👟'.repeat(Math.min(a, 3))}{a > 3 ? `×${a}` : ''}</span>}
+                                {cartoes.amarelo > 0 && <span>{'🟨'.repeat(Math.min(cartoes.amarelo, 3))}{cartoes.amarelo > 3 ? `×${cartoes.amarelo}` : ''}</span>}
+                                {cartoes.vermelho > 0 && <span>{'🟥'.repeat(Math.min(cartoes.vermelho, 3))}{cartoes.vermelho > 3 ? `×${cartoes.vermelho}` : ''}</span>}
+                                {cartoes.azul > 0 && <span>{'🟦'.repeat(Math.min(cartoes.azul, 3))}{cartoes.azul > 3 ? `×${cartoes.azul}` : ''}</span>}
                               </span>
                             )}
                           </div>
@@ -1164,27 +1235,37 @@ function PainelTorneioPage() {
 
                 {/* ── Linha do tempo de eventos ── */}
                 {temHistorico && (() => {
+                  const CARTAO_EMOJI_MAP: Record<string, string> = { amarelo: '🟨', vermelho: '🟥', azul: '🟦' };
+                  const CARTAO_LABEL: Record<string, string> = { amarelo: 'amarelo', vermelho: 'vermelho', azul: 'azul' };
                   const assistPorGolId = new Map(eventos.filter((e) => e.tipo === 'assistencia' && e.golId).map((e) => [e.golId!, e]));
                   const assistSemGol = eventos.filter((e: EventoPartidaTorneio) => e.tipo === 'assistencia' && !e.golId);
-                  const itens: { gol: EventoPartidaTorneio; assist: EventoPartidaTorneio | null }[] = [
-                    ...eventos.filter((e: EventoPartidaTorneio) => e.tipo === 'gol').map((g: EventoPartidaTorneio) => ({ gol: g, assist: assistPorGolId.get(g.id) ?? null })),
-                    ...assistSemGol.map((a: EventoPartidaTorneio) => ({ gol: a, assist: null })),
+                  const cartoes = eventos.filter((e: EventoPartidaTorneio) => e.tipo === 'cartao');
+                  const itens: Array<{ tipo: 'gol' | 'assistencia' | 'cartao'; evento: EventoPartidaTorneio; assist?: EventoPartidaTorneio | null }> = [
+                    ...eventos.filter((e: EventoPartidaTorneio) => e.tipo === 'gol').map((g: EventoPartidaTorneio) => ({ tipo: 'gol' as const, evento: g, assist: assistPorGolId.get(g.id) ?? null })),
+                    ...assistSemGol.map((a: EventoPartidaTorneio) => ({ tipo: 'assistencia' as const, evento: a })),
+                    ...cartoes.map((c: EventoPartidaTorneio) => ({ tipo: 'cartao' as const, evento: c })),
                   ];
                   return (
                     <div style={{ marginBottom: 16 }}>
                       <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Eventos</p>
                       <div style={{ background: 'white', borderRadius: 12, border: '1px solid #f3f4f6', overflow: 'hidden' }}>
-                        {itens.map(({ gol, assist }, i) => {
-                          const isA = gol.equipeId === p.equipe_a_id;
+                        {itens.map(({ tipo, evento, assist }, i) => {
+                          const isA = evento.equipeId === p.equipe_a_id;
                           const cor = isA ? cA : cB;
+                          const emoji = tipo === 'gol' ? '⚽' : tipo === 'assistencia' ? '👟' : CARTAO_EMOJI_MAP[(evento as any).cartaoTipo ?? 'amarelo'];
                           return (
-                            <div key={gol.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderTop: i > 0 ? '1px solid #f9fafb' : 'none' }}>
-                              <span style={{ fontSize: 15 }}>{gol.tipo === 'gol' ? '⚽' : '👟'}</span>
+                            <div key={evento.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderTop: i > 0 ? '1px solid #f9fafb' : 'none' }}>
+                              <span style={{ fontSize: 15 }}>{emoji}</span>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <span style={{ fontSize: 13, fontWeight: 700, color: '#1f2937' }}>{gol.jogadorNome}</span>
-                                {assist && <span style={{ fontSize: 12, color: '#9ca3af', marginLeft: 6 }}>👟 {assist.jogadorNome}</span>}
+                                <span style={{ fontSize: 13, fontWeight: 700, color: '#1f2937' }}>{evento.jogadorNome}</span>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                                  {tipo === 'gol' && <span style={{ fontSize: 12, color: '#9ca3af' }}>Gol</span>}
+                                  {tipo === 'assistencia' && <span style={{ fontSize: 12, color: '#9ca3af' }}>Assistência</span>}
+                                  {tipo === 'cartao' && <span style={{ fontSize: 12, color: '#9ca3af' }}>Cartão {CARTAO_LABEL[(evento as any).cartaoTipo ?? 'amarelo']}</span>}
+                                  {tipo === 'gol' && assist && <span style={{ fontSize: 12, color: '#9ca3af' }}>👟 {assist.jogadorNome}</span>}
+                                </div>
                               </div>
-                              <span style={{ fontSize: 11, color: cor, fontWeight: 700 }}>{isA ? eqA?.nome : eqB?.nome}</span>
+                              <span style={{ fontSize: 10, color: cor, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.02em' }}>{isA ? eqA?.nome : eqB?.nome}</span>
                             </div>
                           );
                         })}
@@ -1311,17 +1392,73 @@ function PainelTorneioPage() {
         const equipe = equipes.find((e) => e.id === modalTimeId);
         const jogadores = jogadoresPorEquipe[modalTimeId] ?? [];
         const emTroca = !!jogadorParaTrocar;
+
+        const partidasTime = partidas.filter((p) => p.status === 'finalizada' && (p.equipe_a_id === modalTimeId || p.equipe_b_id === modalTimeId));
+        const resultadosTime = partidasTime.reduce((acc, p) => {
+          const somosA = p.equipe_a_id === modalTimeId;
+          const golsPro = somosA ? p.gols_a : p.gols_b;
+          const golsContra = somosA ? p.gols_b : p.gols_a;
+          acc.gp += golsPro;
+          acc.gc += golsContra;
+          if (golsPro > golsContra) acc.v++;
+          else if (golsPro === golsContra) acc.e++;
+          else acc.d++;
+          return acc;
+        }, { j: partidasTime.length, v: 0, e: 0, d: 0, gp: 0, gc: 0 });
+        const statsPorJogador = jogadores.map((j) => {
+          const stat = stats.find((s) => s.jogadorId === j.id);
+          const eventos = partidasTime.flatMap((p) => (historicosMap[p.id]?.eventos ?? []).filter((ev) => ev.jogadorId === j.id));
+          const gols = stat?.gols ?? eventos.filter((ev) => ev.tipo === 'gol').length;
+          const assistencias = stat?.assistencias ?? eventos.filter((ev) => ev.tipo === 'assistencia').length;
+          const mvp = new Set(partidasTime.filter((p) => (historicosMap[p.id]?.eventos ?? []).some((ev) => ev.jogadorId === j.id && (ev.tipo === 'gol' || ev.tipo === 'assistencia'))).map((p) => p.id)).size;
+          const cartoes = eventos.filter((ev) => ev.tipo === 'cartao');
+          const amarelo = cartoes.filter((ev) => ev.cartaoTipo === 'amarelo').length;
+          const vermelho = cartoes.filter((ev) => ev.cartaoTipo === 'vermelho').length;
+          const azul = cartoes.filter((ev) => ev.cartaoTipo === 'azul').length;
+          return {
+            ...j,
+            gols,
+            assistencias,
+            mvp,
+            amarelo,
+            vermelho,
+            azul,
+          };
+        });
+
+        const jogadoresOrdenados = [...statsPorJogador].sort((a, b) => {
+          const aGoleiro = a.posicao === 'goleiro' || a.goleiroSlot;
+          const bGoleiro = b.posicao === 'goleiro' || b.goleiroSlot;
+          if (aGoleiro !== bGoleiro) return aGoleiro ? 1 : -1;
+          return a.nome.localeCompare(b.nome, 'pt-BR');
+        });
+
+        const modoSubstituicaoAtivo = modoSubstituicao && !emTroca;
+
         return (
-          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 9999 }} onClick={() => { setModalTimeId(null); setJogadorParaTrocar(null); }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '24px 24px 0 0', padding: '24px', width: '100%', maxWidth: '600px', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 9999 }} onClick={() => { setModalTimeId(null); setJogadorParaTrocar(null); setModoSubstituicao(false); }}>
+            <div style={{ backgroundColor: 'white', borderRadius: '24px 24px 0 0', padding: '24px', width: '100%', maxWidth: '640px', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
                 <h3 className="text-lg font-bold text-gray-800">{equipe?.cor ?? '⭐'} {equipe?.nome ?? 'Time'}</h3>
-                <button onClick={() => { setModalTimeId(null); setJogadorParaTrocar(null); }} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 font-bold">✕</button>
+                <button onClick={() => { setModalTimeId(null); setJogadorParaTrocar(null); setModoSubstituicao(false); }} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 font-bold">✕</button>
               </div>
               {!emTroca ? (
                 <>
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Jogadores do time</p>
-                  {jogadores.length === 0 ? (
+                  <div className="mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Estatísticas gerais do time:</div>
+                  <div className="mb-4 text-xs text-gray-500">
+                    {resultadosTime.j} Jogos · {resultadosTime.v} V · {resultadosTime.e} E · {resultadosTime.d} D · {resultadosTime.gp} GP · {resultadosTime.gc} GC
+                  </div>
+                  {modoSubstituicaoAtivo && (
+                    <>
+                      <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+                        Clique em um jogador para iniciar a substituição e depois escolha um suplente.
+                      </div>
+                      <button onClick={() => { setModoSubstituicao(false); setJogadorParaTrocar(null); }} className="mb-4 px-4 py-2 rounded-xl border border-amber-200 text-amber-700 text-sm font-semibold hover:bg-amber-50 transition-colors">
+                        Cancelar modo de substituição
+                      </button>
+                    </>
+                  )}
+                  {jogadoresOrdenados.length === 0 ? (
                     <div className="text-center py-5">
                       <p className="text-sm text-gray-500 mb-3">Os jogadores não foram registrados neste sorteio.</p>
                       <p className="text-xs text-gray-400 mb-4">Volte à tela de Sorteio, refaça e confirme os times para associar os jogadores.</p>
@@ -1333,18 +1470,37 @@ function PainelTorneioPage() {
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-2 mb-4">
-                      {jogadores.map((j) => (
-                        <div key={j.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
-                          <div>
-                            <p className="text-sm font-semibold text-gray-800">{j.nome}</p>
-                            <p className="text-xs text-gray-400">{Array.from({ length: 5 }).map((_, k) => k < (j.nivel ?? 3) ? '★' : '☆').join('')}</p>
-                          </div>
-                          {suplentes.length > 0 && (
-                            <button onClick={() => setJogadorParaTrocar(j)} className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-600 hover:bg-amber-50 font-semibold transition-colors">Trocar</button>
-                          )}
-                        </div>
-                      ))}
+                    <div className="overflow-x-auto rounded-3xl border border-gray-100 bg-gray-50">
+                      <div className="grid grid-cols-[3.8fr_0.8fr_0.8fr_0.8fr_0.7fr_0.7fr_0.7fr] gap-2 p-3 text-xs text-gray-500 font-semibold uppercase tracking-wide">
+                        <span className="text-left">&nbsp;</span>
+                        <span className="text-center">⚽</span>
+                        <span className="text-center">👟</span>
+                        <span className="text-center">⭐</span>
+                        <span className="text-center">🟨</span>
+                        <span className="text-center">🟥</span>
+                        <span className="text-center">🟦</span>
+                      </div>
+                      <div className="divide-y divide-gray-100 bg-white">
+                        {jogadoresOrdenados.map((j) => {
+                          const isZero = (value: number | undefined) => (value ?? 0) === 0;
+                          const icon = j.posicao === 'goleiro' || j.goleiroSlot ? '🧤' : '';
+                          const podeSelecionar = modoSubstituicaoAtivo;
+                          return (
+                            <div key={j.id} className={`grid grid-cols-[3.8fr_0.8fr_0.8fr_0.8fr_0.7fr_0.7fr_0.7fr] items-center gap-2 px-3 py-3 ${podeSelecionar ? 'cursor-pointer hover:bg-amber-50 transition-colors' : ''}`} onClick={() => podeSelecionar && setJogadorParaTrocar(j)}>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-base">{icon}</span>
+                                <span className="truncate text-sm font-semibold text-gray-800">{j.nome}</span>
+                              </div>
+                              <span className={`text-center text-sm ${isZero(j.gols) ? 'text-gray-400' : 'text-gray-600'} font-medium`}>{j.gols ?? 0}</span>
+                              <span className={`text-center text-sm ${isZero(j.assistencias) ? 'text-gray-400' : 'text-gray-600'} font-medium`}>{j.assistencias ?? 0}</span>
+                              <span className={`text-center text-sm ${isZero(j.mvp) ? 'text-gray-400' : 'text-gray-600'} font-medium`}>{j.mvp ?? 0}</span>
+                              <span className={`text-center text-sm ${isZero(j.amarelo) ? 'text-gray-400' : 'text-gray-600'} font-medium`}>{j.amarelo ?? 0}</span>
+                              <span className={`text-center text-sm ${isZero(j.vermelho) ? 'text-gray-400' : 'text-gray-600'} font-medium`}>{j.vermelho ?? 0}</span>
+                              <span className={`text-center text-sm ${isZero(j.azul) ? 'text-gray-400' : 'text-gray-600'} font-medium`}>{j.azul ?? 0}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                   {suplentes.length === 0 && <p className="text-xs text-gray-400 text-center mt-2">Nenhum suplente disponível</p>}
@@ -1466,7 +1622,7 @@ function PainelTorneioPage() {
                                   )}
                                 </button>
                               ) : (
-                                !isReadonly && <button onClick={() => router.push(`/modo-torneio/partida?id=${p.id}`)} className="px-4 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 active:scale-95 transition-all shadow-sm">⚽ Jogar</button>
+                                !isReadonly && <button onClick={() => router.push(`/modo-torneio/partida?id=${p.id}&autoStart=true`)} className="px-4 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 active:scale-95 transition-all shadow-sm">⚽ Jogar</button>
                               )}
                               {/* Time B */}
                               <div className="flex-1 flex justify-start">
@@ -1550,7 +1706,7 @@ function PainelTorneioPage() {
                                   )}
                                 </div>
                               ) : (
-                                !isReadonly && <button onClick={() => router.push(`/modo-torneio/partida?id=${p.id}`)} className="px-4 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 active:scale-95 transition-all shadow-sm">⚽ Jogar</button>
+                                !isReadonly && <button onClick={() => router.push(`/modo-torneio/partida?id=${p.id}&autoStart=true`)} className="px-4 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 active:scale-95 transition-all shadow-sm">⚽ Jogar</button>
                               )}
                               <div className="flex-1 flex justify-start">
                                 <div style={{ backgroundColor: hexToRgba(corB, 0.12), border: `1.5px solid ${hexToRgba(corB, 0.35)}`, borderRadius: 8, padding: '4px 10px', width: '100%', overflow: 'hidden' }}>
@@ -1773,7 +1929,7 @@ function PainelTorneioPage() {
                                 <span className={`text-lg font-black ${p.gols_b > p.gols_a ? 'text-emerald-600' : 'text-gray-500'}`}>{p.gols_b}</span>
                               </div>
                             ) : !isReadonly ? (
-                              <button onClick={() => router.push(`/modo-torneio/partida?id=${p.id}`)} className="px-4 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 active:scale-95 transition-all shadow-sm">⚽ Jogar</button>
+                              <button onClick={() => router.push(`/modo-torneio/partida?id=${p.id}&autoStart=true`)} className="px-4 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 active:scale-95 transition-all shadow-sm">⚽ Jogar</button>
                             ) : null}
                             <div className="flex-1 text-left"><p className="text-sm font-bold text-gray-800">{eqB?.nome ?? '?'}</p></div>
                           </div>
@@ -1925,6 +2081,123 @@ function PainelTorneioPage() {
                 )}
               </section>
             );
+          })()}
+
+          {/* Goleiros Menos Vazados */}
+          {(() => {
+            const titulo = 'Goleiros Menos Vazados';
+            
+            // Construir mapa de goleiros verificando posicao nos jogadores
+            const goleirosSet = new Set<string>();
+            Object.values(jogadoresPorEquipe).forEach((jogadores) => {
+              jogadores.forEach((j) => {
+                if (j.posicao === 'goleiro' || j.goleiroSlot) {
+                  goleirosSet.add(j.id);
+                }
+              });
+            });
+            
+            console.log('🥅 DEBUG Goleiros Menos Vazados:', {
+              goleirosIdentificados: Array.from(goleirosSet),
+              statsTotal: stats.length,
+              jogadoresPorEquipe: Object.keys(jogadoresPorEquipe).length,
+              statsComGolsSofridos: stats.filter(s => s.golsSofridos !== undefined).length
+            });
+            
+            // Criar entry para cada goleiro (mesmo que sem stats)
+            const goleirosStats: EstatisticaJogadorTorneio[] = [];
+            Object.entries(jogadoresPorEquipe).forEach(([equipeId, jogadores]) => {
+              const goleiro = jogadores.find(j => j.posicao === 'goleiro' || j.goleiroSlot);
+              if (goleiro) {
+                const statExistente = stats.find(s => s.jogadorId === goleiro.id);
+                const equipeNome = classificacao.find(e => e.id === equipeId)?.nome ?? '';
+                
+                // Calcular gols sofridos pelo time do goleiro em partidas finalizadas
+                const golsSofridos = partidas
+                  .filter(p => p.status === 'finalizada')
+                  .reduce((total, p) => {
+                    if (p.equipe_a_id === equipeId) return total + (p.gols_b ?? 0);
+                    if (p.equipe_b_id === equipeId) return total + (p.gols_a ?? 0);
+                    return total;
+                  }, 0);
+                
+                goleirosStats.push(statExistente || {
+                  jogadorId: goleiro.id,
+                  nome: goleiro.nome,
+                  equipeId,
+                  equipeNome,
+                  gols: 0,
+                  assistencias: 0,
+                  jogos: 0,
+                  golsSofridos: 0,
+                });
+                
+                // Sobrescrever golsSofridos com o valor calculado
+                goleirosStats[goleirosStats.length - 1].golsSofridos = golsSofridos;
+              }
+            });
+            
+            // Ordenar todos os goleiros por: 1) gols sofridos (menor primeiro), 2) colocação do time
+            const listaRanqueada = [...goleirosStats].sort((a, b) => {
+              const vasadasA = a.golsSofridos ?? 0;
+              const vasadasB = b.golsSofridos ?? 0;
+              
+              if (vasadasA !== vasadasB) return vasadasA - vasadasB;
+              
+              // Desempate: colocação do time na classificação
+              const posicaoA = classificacao.findIndex((e) => e.id === a.equipeId) + 1;
+              const posicaoB = classificacao.findIndex((e) => e.id === b.equipeId) + 1;
+              return posicaoA - posicaoB;
+            });
+            
+            // Combinar: apenas a lista ranqueada
+            const listaCombinada = listaRanqueada;
+            
+            const expandida = statsExpandidas.has(titulo);
+            const exibir = expandida ? listaCombinada : listaCombinada.slice(0, 3);
+            return goleirosStats.length > 0 ? (
+              <section>
+                <button
+                  className="w-full flex items-center justify-between mb-3"
+                  onClick={() => setStatsExpandidas((prev) => { const n = new Set(prev); if (n.has(titulo)) n.delete(titulo); else n.add(titulo); return n; })}
+                  style={{ background: 'none', border: 'none', padding: '0 4px', cursor: 'pointer' }}
+                >
+                  <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                    <span>🥅</span> {titulo}
+                  </h3>
+                  {goleirosStats.length > 3 && (
+                    <span className="text-xs font-semibold text-sky-500 flex items-center gap-1">
+                      {expandida ? 'ver menos' : `ver todos (${goleirosStats.length})`}
+                      <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: expandida ? 'rotate(0deg)' : 'rotate(-90deg)' }}>▼</span>
+                    </span>
+                  )}
+                </button>
+                {exibir.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center text-gray-400">
+                    <p className="text-3xl mb-2">🥅</p>
+                    <p className="text-sm">Nenhum goleiro registrado</p>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    {exibir.map((s, i) => {
+                      return (
+                        <div key={s.jogadorId} className={`flex items-center px-4 py-3 gap-3 ${i > 0 ? 'border-t border-gray-50' : ''}`}>
+                          <span className="text-base w-6 text-center">
+                            {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : <span className="font-black text-gray-300">{i + 1}</span>}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm text-gray-800 truncate">
+                              <span className="text-gray-400 font-normal">{s.equipeNome} · </span>{s.nome}
+                            </p>
+                          </div>
+                          <span className="text-base font-bold text-indigo-600">{s.golsSofridos ?? 0}🥅</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ) : null;
           })()}
 
           {/* Stats de times */}

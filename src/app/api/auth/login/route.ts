@@ -38,6 +38,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'inativo' }, { status: 403 });
     }
 
+    // Atualizar last_access com a data/hora atual
+    await supabaseAdmin
+      .from('clientes')
+      .update({ last_access: new Date().toISOString() })
+      .eq('pelada_id', pelada_id.toUpperCase())
+      .eq('username', username);
+
     // Retorna apenas o necessário — email_supabase e senha_supabase nunca saem do servidor
     return NextResponse.json({
       pelada_id: data.pelada_id,

@@ -6,7 +6,8 @@ create table assistencias (
   jogo_id text not null,
   jogador_id text not null,
   time varchar(1) check (time in ('A', 'B')) not null,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  gol_id text
 );
 
 -- Índices para performance
@@ -24,5 +25,6 @@ create index idx_assistencias_created_at on assistencias(created_at desc);
 -- 5. Permite estatísticas detalhadas por jogador
 -- 6. jogo_id: referência ao UUID do jogo (armazenado como TEXT)
 -- 7. jogador_id: ID do jogador (pode ser diferente do nome)
--- 8. RLS DESABILITADO (igual tabela gols)
+-- 8. gol_id: referência ao gol que foi assistido (opcional)
+-- 9. RLS DESABILITADO (igual tabela gols)
 

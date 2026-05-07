@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
-import { supabase, validarSenhaPelada } from '../../lib/supabase';
+import { supabase, validarSenhaPelada, getClienteSupabase } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { buscar_pelada_id } from '../../lib/credenciais';
 import { createClient } from '@supabase/supabase-js';
@@ -61,7 +61,7 @@ export default function RegrasPage() {
         return;
       }
       
-      console.log('🔍 Carregando regras (master + cache local)...');
+      console.log('🔍 Carregando regras (cache local → cliente → master)...');
       console.log('🆔 Pelada ID:', peladaId);
 
       // 1) Cache local primeiro para renderização rápida
@@ -80,10 +80,41 @@ export default function RegrasPage() {
           tipo_fila: regrasCarregadas.tipo_fila || REGRAS_PADRAO.tipo_fila,
           cores_coletes: regrasCarregadas.cores_coletes || REGRAS_PADRAO.cores_coletes
         });
-        console.log('✅ Regras carregadas do cache local (rápido)');
+        console.log('✅ Regras carregadas do CACHE LOCAL (renderização rápida)');
       }
 
-      // 2) Sincronizar com master e atualizar cache local
+      // 2) Sincronizar com Supabase DO CLIENTE (dedicado)
+      console.log('☁️ Sincronizando com Supabase DO CLIENTE...');
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { data: regrasCliente, error: erroCliente } = await clienteDb
+        .from('regras')
+        .select('jogadores_por_time, modelo_sorteio, duracao, vitorias_consecutivas, prioridade_retorno, regra_empate, regra_apos_empate, empate_conta_vitoria, tipo_fila, cores_coletes')
+        .eq('pelada_id', peladaId)
+        .maybeSingle();
+
+      if (erroCliente) {
+        console.warn('⚠️ Erro ao sincronizar do cliente, tentando master:', erroCliente.message);
+      } else if (regrasCliente) {
+        const regrasSincronizadas: Regras = {
+          jogadores_por_time: regrasCliente.jogadores_por_time || REGRAS_PADRAO.jogadores_por_time,
+          modelo_sorteio: regrasCliente.modelo_sorteio || REGRAS_PADRAO.modelo_sorteio,
+          duracao: regrasCliente.duracao || REGRAS_PADRAO.duracao,
+          vitorias_consecutivas: regrasCliente.vitorias_consecutivas || REGRAS_PADRAO.vitorias_consecutivas,
+          prioridade_retorno: regrasCliente.prioridade_retorno || REGRAS_PADRAO.prioridade_retorno,
+          regra_empate: regrasCliente.regra_empate || REGRAS_PADRAO.regra_empate,
+          regra_apos_empate: regrasCliente.regra_apos_empate || REGRAS_PADRAO.regra_apos_empate,
+          empate_conta_vitoria: regrasCliente.empate_conta_vitoria || REGRAS_PADRAO.empate_conta_vitoria,
+          tipo_fila: regrasCliente.tipo_fila || REGRAS_PADRAO.tipo_fila,
+          cores_coletes: regrasCliente.cores_coletes || REGRAS_PADRAO.cores_coletes
+        };
+        setRegras(regrasSincronizadas);
+        localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regrasSincronizadas));
+        console.log('✅ Regras sincronizadas do CLIENTE e cache atualizado');
+        return;
+      }
+
+      // 3) Se cliente falhar, sincronizar com master e atualizar cache local
+      console.log('☁️ Sincronizando com Supabase MASTER...');
       const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
       const { data: regrasMaster, error } = await supabasePrincipal
         .from('regras')
@@ -92,7 +123,7 @@ export default function RegrasPage() {
         .maybeSingle();
 
       if (error) {
-        console.warn('⚠️ Erro ao sincronizar regras do master, mantendo cache local:', error.message);
+        console.warn('⚠️ Erro ao sincronizar do master, mantendo cache local:', error.message);
         return;
       }
 
@@ -112,7 +143,7 @@ export default function RegrasPage() {
 
         setRegras(regrasSincronizadas);
         localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regrasSincronizadas));
-        console.log('✅ Regras sincronizadas do master e cache local atualizado');
+        console.log('✅ Regras sincronizadas do MASTER e cache atualizado');
       }
       
     } catch (error) {
@@ -184,7 +215,7 @@ export default function RegrasPage() {
         throw new Error('Usuário não encontrado');
       }
 
-      console.log('☁️ Salvando regras no Supabase master (todos os planos)...');
+      console.log('☁️ Salvando regras nos 3 locais...');
       const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
       
       const dadosRegras = {
@@ -201,20 +232,37 @@ export default function RegrasPage() {
         cores_coletes: regras.cores_coletes
       };
       
-      // Tentar atualizar (upsert usando pelada_id como chave)
-      const { error: upsertError } = await supabasePrincipal
+      // 1. Salvar no Supabase MASTER
+      console.log('☁️ 1️⃣ Salvando no SUPABASE MASTER...');
+      const { error: masterError } = await supabasePrincipal
         .from('regras')
         .upsert(dadosRegras, { onConflict: 'pelada_id' });
       
-      if (upsertError) {
-        throw new Error(upsertError.message);
+      if (masterError) {
+        throw new Error(`Master: ${masterError.message}`);
+      }
+      console.log('✅ Salvo no MASTER');
+      
+      // 2. Salvar no Supabase DO CLIENTE (dedicado)
+      console.log('☁️ 2️⃣ Salvando no SUPABASE DO CLIENTE...');
+      const clienteDb = await getClienteSupabase(peladaId);
+      const { error: clienteError } = await clienteDb
+        .from('regras')
+        .upsert(dadosRegras, { onConflict: 'pelada_id' });
+      
+      if (clienteError) {
+        console.warn('⚠️ Erro ao salvar no cliente (continuando):', clienteError.message);
+      } else {
+        console.log('✅ Salvo no CLIENTE');
       }
       
-      // Salvar também no localStorage (cache local)
+      // 3. Salvar no localStorage (cache local)
+      console.log('💾 3️⃣ Salvando no localStorage...');
       localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
+      console.log('✅ Salvo no localStorage');
       
-      console.log('✅ Regras salvas no master e cache local');
-      setMessage('💾 Regras salvas com sucesso!');
+      console.log('✅ Regras salvas em todos os 3 locais (Master + Cliente + Cache)');
+      setMessage('✅ Regras salvas nos 3 locais (Master + Cliente + Cache)!');
       setTimeout(() => setMessage(''), 3000);
       
     } catch (error: any) {

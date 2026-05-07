@@ -73,6 +73,7 @@ export interface Jogador {
   nome: string;
   nivel: number;
   status: 'ativo' | 'inativo';
+  posicao?: 'linha' | 'goleiro';
   pelada_id?: string; // Campo opcional pois é definido automaticamente
   created_at: string;
   updated_at?: string;
@@ -181,7 +182,7 @@ export const jogadoresService = {
   },
 
   // Criar novo jogador
-  async criar(nome: string, nivel: number, fotoUrl?: string | null) {
+  async criar(nome: string, nivel: number, fotoUrl?: string | null, posicao?: 'linha' | 'goleiro') {
     const peladaId = getPeladaId();
     if (!peladaId) {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
@@ -204,6 +205,7 @@ export const jogadoresService = {
         nome: nome.trim(),
         nivel,
         status: 'ativo',
+        posicao: posicao ?? 'linha',
         pelada_id: peladaId,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -224,6 +226,7 @@ export const jogadoresService = {
           nome: nome.trim(),
           nivel,
           status: 'ativo',
+          posicao: posicao ?? 'linha',
           pelada_id: peladaId,
           ...(fotoUrl ? { foto_url: fotoUrl } : {})
         }
@@ -240,7 +243,7 @@ export const jogadoresService = {
   },
 
   // Atualizar jogador
-  async atualizar(id: string, nome: string, nivel: number, fotoUrl?: string | null) {
+  async atualizar(id: string, nome: string, nivel: number, fotoUrl?: string | null, posicao?: 'linha' | 'goleiro') {
     const peladaId = getPeladaId();
     if (!peladaId) {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
@@ -252,25 +255,48 @@ export const jogadoresService = {
       const index = jogadores.findIndex((j: Jogador) => j.id === id);
       if (index === -1) throw new Error('Jogador não encontrado');
       
+      const nomeAntigo = jogadores[index].nome;
+      const nomeNovo = nome.trim();
+      
+      // Atualizar jogador
       jogadores[index] = {
         ...jogadores[index],
-        nome: nome.trim(),
+        nome: nomeNovo,
         nivel,
+        posicao: posicao ?? jogadores[index].posicao ?? 'linha',
         updated_at: new Date().toISOString(),
         foto_url: fotoUrl !== undefined ? (fotoUrl ?? undefined) : jogadores[index].foto_url
       };
       localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
+      
+      // ⭐ NOVO: Atualizar referências em jogos localStorage
+      if (nomeAntigo !== nomeNovo) {
+        this.atualizarReferencesNomeJogadorFree(peladaId, id, nomeAntigo, nomeNovo);
+      }
+      
       return jogadores[index];
     }
     
     // Gold/Premium: atualizar no Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
+    // Primeiro, buscar o nome antigo para comparação
+    const { data: jogadorAnterior } = await clienteDb
+      .from('jogadores')
+      .select('nome')
+      .eq('id', id)
+      .eq('pelada_id', peladaId)
+      .single();
+    
+    const nomeAntigo = jogadorAnterior?.nome;
+    
+    // Atualizar jogador
     const { data, error } = await clienteDb
       .from('jogadores')
       .update({
         nome: nome.trim(),
         nivel,
+        posicao: posicao ?? 'linha',
         ...(fotoUrl !== undefined ? { foto_url: fotoUrl } : {})
       })
       .eq('id', id)
@@ -283,7 +309,173 @@ export const jogadoresService = {
       throw error;
     }
     
+    // ⭐ NOVO: Se o nome mudou, atualizar referências em cascata
+    if (nomeAntigo && nomeAntigo !== nome.trim()) {
+      await this.atualizarReferencesNomeJogadorGoldPremium(peladaId, nomeAntigo, nome.trim());
+    }
+    
     return data;
+  },
+
+  // ⭐ NOVO: Atualizar referências de nome em localStorage (Free)
+  atualizarReferencesNomeJogadorFree(peladaId: string, jogadorId: string, nomeAntigo: string, nomeNovo: string) {
+    try {
+      // Buscar todas as sessões armazenadas
+      const sessoes = localStorage.getItem(`sessoes_${peladaId}`);
+      if (!sessoes) return;
+      
+      const sessoesArray = JSON.parse(sessoes);
+      let sessaoModificada = false;
+      
+      sessoesArray.forEach((sessao: any) => {
+        if (sessao.jogos && Array.isArray(sessao.jogos)) {
+          sessao.jogos.forEach((jogo: any) => {
+            // Atualizar time_a (array de strings)
+            if (Array.isArray(jogo.time_a)) {
+              jogo.time_a = jogo.time_a.map((nome: string) => {
+                if (nome === nomeAntigo) {
+                  sessaoModificada = true;
+                  return nomeNovo;
+                }
+                return nome;
+              });
+            }
+            
+            // Atualizar time_b (array de strings)
+            if (Array.isArray(jogo.time_b)) {
+              jogo.time_b = jogo.time_b.map((nome: string) => {
+                if (nome === nomeAntigo) {
+                  sessaoModificada = true;
+                  return nomeNovo;
+                }
+                return nome;
+              });
+            }
+            
+            // Atualizar substituicoes (se existir)
+            if (Array.isArray(jogo.substituicoes)) {
+              jogo.substituicoes.forEach((sub: any) => {
+                if (sub.jogador_saiu === nomeAntigo) {
+                  sub.jogador_saiu = nomeNovo;
+                  sessaoModificada = true;
+                }
+                if (sub.jogador_entrou === nomeAntigo) {
+                  sub.jogador_entrou = nomeNovo;
+                  sessaoModificada = true;
+                }
+              });
+            }
+          });
+        }
+      });
+      
+      if (sessaoModificada) {
+        localStorage.setItem(`sessoes_${peladaId}`, JSON.stringify(sessoesArray));
+        logger.log('✅ Referências de nome atualizadas em localStorage');
+      }
+    } catch (error) {
+      logger.warn('⚠️ Erro ao atualizar referências em localStorage:', error);
+    }
+  },
+
+  // ⭐ NOVO: Atualizar referências de nome para Gold/Premium
+  async atualizarReferencesNomeJogadorGoldPremium(peladaId: string, nomeAntigo: string, nomeNovo: string) {
+    try {
+      const clienteDb = await getClienteSupabase(peladaId);
+      
+      logger.log('🔄 Buscando jogos para atualizar nome em cascata...');
+      
+      // Buscar todas as sessões da pelada
+      const { data: sessoes } = await clienteDb
+        .from('sessoes')
+        .select('id')
+        .eq('pelada_id', peladaId);
+      
+      if (!sessoes || sessoes.length === 0) {
+        logger.log('ℹ️ Nenhuma sessão encontrada para atualizar');
+        return;
+      }
+      
+      const sessaoIds = sessoes.map(s => s.id);
+      
+      // Buscar todos os jogos dessas sessões
+      const { data: jogos } = await clienteDb
+        .from('jogos')
+        .select('id, time_a, time_b, substituicoes')
+        .in('sessao_id', sessaoIds);
+      
+      if (!jogos || jogos.length === 0) {
+        logger.log('ℹ️ Nenhum jogo encontrado para atualizar');
+        return;
+      }
+      
+      let contadorAtualizacoes = 0;
+      const updatesPromises: Promise<any>[] = [];
+      
+      // Atualizar cada jogo que contém o nome antigo
+      jogos.forEach((jogo: any) => {
+        let modificado = false;
+        const updateData: any = {};
+        
+        // Atualizar time_a
+        if (Array.isArray(jogo.time_a)) {
+          const novoTimeA = jogo.time_a.map((nome: string) => 
+            nome === nomeAntigo ? nomeNovo : nome
+          );
+          if (JSON.stringify(novoTimeA) !== JSON.stringify(jogo.time_a)) {
+            updateData.time_a = novoTimeA;
+            modificado = true;
+            contadorAtualizacoes++;
+          }
+        }
+        
+        // Atualizar time_b
+        if (Array.isArray(jogo.time_b)) {
+          const novoTimeB = jogo.time_b.map((nome: string) => 
+            nome === nomeAntigo ? nomeNovo : nome
+          );
+          if (JSON.stringify(novoTimeB) !== JSON.stringify(jogo.time_b)) {
+            updateData.time_b = novoTimeB;
+            modificado = true;
+            contadorAtualizacoes++;
+          }
+        }
+        
+        // Atualizar substituições
+        if (Array.isArray(jogo.substituicoes)) {
+          const novasSubstituicoes = jogo.substituicoes.map((sub: any) => ({
+            ...sub,
+            jogador_saiu: sub.jogador_saiu === nomeAntigo ? nomeNovo : sub.jogador_saiu,
+            jogador_entrou: sub.jogador_entrou === nomeAntigo ? nomeNovo : sub.jogador_entrou
+          }));
+          if (JSON.stringify(novasSubstituicoes) !== JSON.stringify(jogo.substituicoes)) {
+            updateData.substituicoes = novasSubstituicoes;
+            modificado = true;
+          }
+        }
+        
+        // Se modificou, fazer update
+        if (modificado) {
+          updatesPromises.push(
+            clienteDb
+              .from('jogos')
+              .update(updateData)
+              .eq('id', jogo.id)
+          );
+        }
+      });
+      
+      // Executar todos os updates em paralelo
+      if (updatesPromises.length > 0) {
+        const results = await Promise.all(updatesPromises);
+        logger.log(`✅ Nome atualizado em ${updatesPromises.length} jogos`, {
+          nome_antigo: nomeAntigo,
+          nome_novo: nomeNovo
+        });
+      }
+    } catch (error) {
+      logger.warn('⚠️ Erro ao atualizar referências em jogos:', error);
+    }
   },
 
   // Alterar status do jogador

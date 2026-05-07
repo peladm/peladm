@@ -21,6 +21,7 @@ export default function CadastroPage() {
   const [jogadorParaExcluir, setJogadorParaExcluir] = useState<{id: string, nome: string} | null>(null);
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
+  const [posicao, setPosicao] = useState<'linha' | 'goleiro'>('linha');
 
   useEffect(() => {
     testarConexaoECarregar();
@@ -194,6 +195,7 @@ export default function CadastroPage() {
                 ...jogadoresArray[index],
                 nome: nome.trim(),
                 nivel,
+                posicao,
                 foto_url: fotoUrlFinal !== null ? fotoUrlFinal : jogadoresArray[index].foto_url
               };
               localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresArray));
@@ -205,13 +207,13 @@ export default function CadastroPage() {
             tipo: 'atualizar_jogador',
             jogador_id: editandoId,
             pelada_id: peladaId,
-            dados: { nome: nome.trim(), nivel, ...(fotoUrlFinal !== null ? { foto_url: fotoUrlFinal } : {}) }
+            dados: { nome: nome.trim(), nivel, posicao, ...(fotoUrlFinal !== null ? { foto_url: fotoUrlFinal } : {}) }
           });
           
           mostrarMensagem('✅ Jogador atualizado (sync pendente)', 'success');
         } else {
           // MODO TEMPO REAL: Salvar direto
-          await jogadoresService.atualizar(editandoId, nome, nivel, fotoUrlFinal);
+          await jogadoresService.atualizar(editandoId, nome, nivel, fotoUrlFinal, posicao);
           mostrarMensagem('✅ Jogador atualizado com sucesso!', 'success');
         }
       } else {
@@ -226,6 +228,7 @@ export default function CadastroPage() {
             id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             nome: nome.trim(),
             nivel,
+            posicao,
             status: 'ativo',
             pelada_id: peladaId,
             created_at: new Date().toISOString(),
@@ -252,7 +255,7 @@ export default function CadastroPage() {
           mostrarMensagem('✅ Jogador cadastrado (sync pendente)', 'success');
         } else {
           // MODO TEMPO REAL: Salvar direto
-          await jogadoresService.criar(nome, nivel, fotoUrlFinal ?? undefined);
+          await jogadoresService.criar(nome, nivel, fotoUrlFinal ?? undefined, posicao);
           mostrarMensagem('✅ Jogador cadastrado com sucesso!', 'success');
         }
       }
@@ -260,6 +263,7 @@ export default function CadastroPage() {
       // Limpar formulário e recarregar lista
       setNome('');
       setNivel(3);
+      setPosicao('linha');
       setEditandoId(null);
       setFotoFile(null);
       setFotoPreview(null);
@@ -292,6 +296,7 @@ export default function CadastroPage() {
     if (jogador) {
       setNome(jogador.nome);
       setNivel(jogador.nivel);
+      setPosicao(jogador.posicao ?? 'linha');
       setEditandoId(id);
       setFotoPreview(jogador.foto_url ?? null);
       setFotoFile(null);
@@ -305,6 +310,7 @@ export default function CadastroPage() {
   const cancelarEdicao = () => {
     setNome('');
     setNivel(3);
+    setPosicao('linha');
     setEditandoId(null);
     setFotoFile(null);
     setFotoPreview(null);
@@ -472,12 +478,12 @@ export default function CadastroPage() {
         <span
           key={i}
           onClick={() => handleStarClick(nivelEstrela)}
-          className={`inline-block text-xl transition-all duration-200 cursor-pointer hover:scale-125 ${
+          className={`inline-block text-lg transition-all duration-200 cursor-pointer hover:scale-125 ${
             i < nivel ? 'opacity-100 scale-110' : 'opacity-30'
           }`}
           style={{ 
             transform: i < nivel ? 'scale(1.1)' : 'scale(1)',
-            marginRight: '6px'
+            marginRight: '3px'
           }}
         >
           ⭐
@@ -514,60 +520,68 @@ export default function CadastroPage() {
 
       <div className="max-w-sm mx-auto space-y-3">
         {/* Formulário de Cadastro */}
-        <section className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
-          <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
+        <section className="bg-white rounded-xl p-2 border border-gray-100 shadow-sm">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-1">
             
             {/* Linha principal: Nome+Nível à esquerda, Foto à direita */}
-            <div className="flex gap-2 items-stretch">
-              {/* Esquerda: nome + estrelas */}
-              <div className="flex-1 flex flex-col gap-1.5">
-                <input
-                  type="text"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  placeholder="Nome do jogador"
-                  className="p-2.5 border-2 border-gray-100 rounded-xl text-base text-center bg-gray-50 focus:outline-none focus:border-green-600 focus:bg-white transition-colors"
-                  required
-                />
-                {possuiPermissao('cadastrarNivel') && (
-                  <div className="flex flex-col items-center gap-1 p-2 bg-gray-50 rounded-xl">
-                    <div className="flex gap-1 justify-center">
-                      {renderStars(nivel)}
-                    </div>
+            <div className="flex gap-1 items-stretch">
+{/* Esquerda: nome + estrelas + posição */}
+            <div className="flex-1 flex flex-col gap-0.5">
+              <input
+                type="text"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Nome do jogador"
+                className="p-1.5 border-2 border-gray-100 rounded-lg text-sm text-center bg-gray-50 focus:outline-none focus:border-green-600 focus:bg-white transition-colors"
+                required
+              />
+              {possuiPermissao('cadastrarNivel') && (
+                <div className="flex items-center justify-center gap-1.5 p-1 bg-gray-50 rounded-lg">
+                  <div className="flex gap-0.5">
+                    {renderStars(nivel)}
                   </div>
-                )}
-              </div>
+                  <select
+                    value={posicao}
+                    onChange={(e) => setPosicao(e.target.value as 'linha' | 'goleiro')}
+                    className="p-1 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:border-green-600 transition-colors"
+                  >
+                    <option value="linha">Linha</option>
+                    <option value="goleiro">Goleiro</option>
+                  </select>
+                </div>
+              )}
+            </div>
 
-              {/* Direita: foto (opcional) */}
-              <label
-                htmlFor="foto-input"
-                className="relative w-20 flex-shrink-0 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 hover:border-green-400 hover:bg-green-50 transition-colors cursor-pointer overflow-hidden flex items-center justify-center"
-                title="Clique para adicionar foto (opcional)"
-              >
-                {fotoPreview ? (
-                  <img src={fotoPreview} alt="Foto do jogador" className="absolute inset-0 w-full h-full object-cover" />
-                ) : (
-                  <div className="flex flex-col items-center gap-0.5 text-gray-400 select-none">
-                    <span className="text-2xl">📷</span>
-                    <span className="text-xs text-center leading-tight">Foto</span>
-                  </div>
-                )}
-                <input
-                  id="foto-input"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFotoChange}
-                />
-              </label>
+            {/* Direita: foto (opcional) */}
+            <label
+              htmlFor="foto-input"
+              className="relative w-16 h-16 flex-shrink-0 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 hover:border-green-400 hover:bg-green-50 transition-colors cursor-pointer overflow-hidden flex items-center justify-center"
+              title="Clique para adicionar foto (opcional)"
+            >
+              {fotoPreview ? (
+                <img src={fotoPreview} alt="Foto do jogador" className="absolute inset-0 w-full h-full object-cover" />
+              ) : (
+                <div className="flex flex-col items-center gap-0 text-gray-400 select-none">
+                  <span className="text-lg">📷</span>
+                  <span className="text-xs text-center leading-tight">Foto</span>
+                </div>
+              )}
+              <input
+                id="foto-input"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFotoChange}
+              />
+            </label>
             </div>
 
             {/* Botão Submit */}
-            <div className="mt-0.5">
+            <div className="mt-0">
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full flex items-center justify-center gap-2 p-2.5 bg-green-600 text-white rounded-xl font-medium text-sm hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 transition-all duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+                className="w-full flex items-center justify-center gap-2 p-2 bg-green-600 text-white rounded-lg font-medium text-sm hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 transition-all duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
               >
                 <span className="text-base">
                   {isLoading ? '⏳' : (editandoId ? '💾' : '✅')}
@@ -584,7 +598,7 @@ export default function CadastroPage() {
                 <button
                   type="button"
                   onClick={cancelarEdicao}
-                  className="w-full mt-1.5 flex items-center justify-center gap-1.5 p-2 bg-gray-500 text-white rounded-xl font-medium text-xs hover:bg-gray-600 transition-colors"
+                  className="w-full mt-1 flex items-center justify-center gap-1.5 p-1.5 bg-gray-500 text-white rounded-lg font-medium text-xs hover:bg-gray-600 transition-colors"
                 >
                   <span>❌</span>
                   <span>Cancelar</span>
@@ -595,15 +609,15 @@ export default function CadastroPage() {
         </section>
 
         {/* Lista de Jogadores */}
-        <section className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
-          <div className="flex justify-between items-center mb-2.5">
-            <h2 className="text-base font-medium text-gray-800 m-0 flex items-center gap-1.5">
-              <span className="text-sm">📋</span>
-              <span>Jogadores Cadastrados</span>
+        <section className="bg-white rounded-xl p-2 border border-gray-100 shadow-sm">
+          <div className="flex justify-between items-center mb-1.5">
+            <h2 className="text-sm font-medium text-gray-800 m-0 flex items-center gap-1">
+              <span className="text-xs">📋</span>
+              <span>Jogadores</span>
             </h2>
             <button
               onClick={toggleAdminMode}
-              className="w-6 h-6 bg-gray-50 hover:bg-gray-100 rounded-md flex items-center justify-center transition-all duration-200 opacity-60 hover:opacity-100 hover:scale-110"
+              className="w-5 h-5 bg-gray-50 hover:bg-gray-100 rounded flex items-center justify-center transition-all duration-200 opacity-60 hover:opacity-100 hover:scale-110"
               title={isAdmin ? "Desativar modo admin" : "Ativar modo admin"}
             >
               <span className="text-xs">{isAdmin ? '🔓' : '🔒'}</span>
@@ -616,7 +630,7 @@ export default function CadastroPage() {
               <p className="text-sm">Nenhum jogador cadastrado ainda</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               {jogadoresOrdenados.map((jogador) => {
                 const nivelJogador = jogador.nivel || 3;
                 const estrelas = '⭐'.repeat(nivelJogador) + '☆'.repeat(5 - nivelJogador);
@@ -633,49 +647,51 @@ export default function CadastroPage() {
                         : 'bg-gray-50 border-l-green-600'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-sm font-bold text-blue-700">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-7 h-7 rounded overflow-hidden flex-shrink-0 bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-xs font-bold text-blue-700">
                         {jogador.foto_url
                           ? <img src={jogador.foto_url} alt={jogador.nome} className="w-full h-full object-cover" />
                           : jogador.nome.charAt(0).toUpperCase()
                         }
                       </div>
-                      <div className="flex flex-col gap-0.5">
-                        <div className={`text-sm font-semibold ${
+                      <div className="flex flex-col gap-0">
+                        <div className={`text-xs font-semibold ${
                           isInativo ? 'text-gray-500 line-through' : 'text-gray-800'
                         }`}>
                           {jogador.nome}
                         </div>
-                        <div className="text-xs text-gray-600 opacity-70 leading-none">
-                          {estrelas}
+                        <div className="text-xs text-gray-600 opacity-70 leading-none flex items-center gap-0.5">
+                          <span className="text-xs">{estrelas}</span>
+                          <span className="text-xs">
+                            {jogador.posicao === 'goleiro' ? 'Goleiro' : 'Linha'}
+                          </span>
                         </div>
                       </div>
                     </div>
                     
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1">
                       <button
                         onClick={() => editarJogador(jogador.id)}
-                        className="w-7 h-7 bg-yellow-500 hover:bg-yellow-600 rounded-md flex items-center justify-center transition-all duration-200 hover:scale-110"
+                        className="w-6 h-6 bg-yellow-500 hover:bg-yellow-600 rounded flex items-center justify-center transition-all duration-200 hover:scale-110"
                         title="Editar jogador"
                       >
-                        <span className="text-sm">✏️</span>
+                        <span className="text-xs">✏️</span>
                       </button>
-                      
                       <button
                         onClick={() => alternarStatus(jogador.id)}
-                        className="w-7 h-7 bg-gray-100 hover:bg-gray-200 rounded-md flex items-center justify-center transition-all duration-200 hover:scale-110 border border-gray-300"
+                        className="w-6 h-6 bg-gray-100 hover:bg-gray-200 rounded flex items-center justify-center transition-all duration-200 hover:scale-110 border border-gray-300"
                         title={isInativo ? 'Ativar jogador' : 'Desativar jogador'}
                       >
-                        <span className="text-sm">{statusEmoji}</span>
+                        <span className="text-xs">{statusEmoji}</span>
                       </button>
                       
                       {isAdmin && (
                         <button
                           onClick={() => excluirJogador(jogador.id, jogador.nome)}
-                          className="w-7 h-7 bg-red-500 hover:bg-red-600 rounded-md flex items-center justify-center transition-all duration-200 hover:scale-110"
+                          className="w-6 h-6 bg-red-500 hover:bg-red-600 rounded flex items-center justify-center transition-all duration-200 hover:scale-110"
                           title="Excluir jogador (apenas ADM)"
                         >
-                          <span className="text-sm">❌</span>
+                          <span className="text-xs">❌</span>
                         </button>
                       )}
                     </div>

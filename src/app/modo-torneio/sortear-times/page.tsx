@@ -40,10 +40,16 @@ const NIVEL_LABELS: Record<number, string> = {
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
+type TimeJogador = ParticipanteTorneioLocal & {
+  goleiroSlot?: boolean;
+  goleiroPendente?: boolean;
+  manualSlot?: boolean;
+};
+
 interface TimeSorteado {
   id: string;
   nome: string;
-  jogadores: ParticipanteTorneioLocal[];
+  jogadores: TimeJogador[];
   nivelMedio: number;
   corEmoji: string;
 }
@@ -81,6 +87,7 @@ function sortearEquilibrado(
   jogadores: ParticipanteTorneioLocal[],
   numeroTimes: number,
   jogadoresPorTime: number,
+  incluirGoleiro: boolean = false,
 ): TimeSorteado[] {
   // Separar por nível e embaralhar cada grupo
   const porNivel: Record<number, ParticipanteTorneioLocal[]> = { 5: [], 4: [], 3: [], 2: [], 1: [] };
@@ -94,11 +101,19 @@ function sortearEquilibrado(
   });
 
   const total = jogadores.length;
+  const jogadoresDeLinhaPorTime = jogadoresPorTime;
+  const totalJogadoresDeLinha = numeroTimes * jogadoresDeLinhaPorTime;
+
+  // Verificar se há jogadores suficientes para os jogadores de linha
+  if (total < totalJogadoresDeLinha) {
+    throw new Error(`Não há jogadores suficientes. Necessário: ${totalJogadoresDeLinha}, disponível: ${total}`);
+  }
+
   const limitesPorTime = Array.from({ length: numeroTimes }, (_, i) => {
-    if (total % jogadoresPorTime !== 0 && i === numeroTimes - 1) {
-      return total % jogadoresPorTime;
+    if (total % jogadoresDeLinhaPorTime !== 0 && i === numeroTimes - 1) {
+      return total % jogadoresDeLinhaPorTime;
     }
-    return jogadoresPorTime;
+    return jogadoresDeLinhaPorTime;
   });
 
   const nomesZoeiros = sortearNomesUnicos(numeroTimes);
@@ -196,6 +211,37 @@ function sortearEquilibrado(
     }
   }
 
+  // Fase 4 — adicionar goleiros ou placeholders
+  if (incluirGoleiro) {
+    const usados = new Set(times.flatMap((time) => time.jogadores.map((j) => j.id)));
+    const jogadoresRestantes = jogadores.filter((j) => !usados.has(j.id));
+    const goleirosDisponiveis = embaralhar(jogadoresRestantes);
+
+    for (let t = 0; t < numeroTimes; t++) {
+      const time = times[t];
+      if (goleirosDisponiveis.length > 0) {
+        const goleiro = goleirosDisponiveis.shift()!;
+        time.jogadores.push(goleiro);
+        somasTimes[t] += goleiro.nivel;
+      } else {
+        const placeholder: TimeJogador = {
+          id: `goleiro_pendente_${time.id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          torneio_id: jogadores[0]?.torneio_id ?? 'local',
+          pelada_id: jogadores[0]?.pelada_id ?? 'default',
+          jogador_id: `goleiro_pendente_${time.id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          nome: '',
+          nivel: 3,
+          status: 'confirmado',
+          origem: 'avulso',
+          created_at: new Date().toISOString(),
+          goleiroSlot: true,
+          goleiroPendente: true,
+        };
+        time.jogadores.push(placeholder);
+      }
+    }
+  }
+
   // Calculando médias e embaralhando jogadores dentro de cada time
   times.forEach((time, i) => {
     time.jogadores = embaralhar(time.jogadores);
@@ -231,12 +277,18 @@ function SortearTimesPage() {
   const [participantes, setParticipantes] = useState<ParticipanteTorneioLocal[]>([]);
   const [jogadoresPorTime, setJogadoresPorTime] = useState(5);
   const [quantidadeTimes, setQuantidadeTimes] = useState(6);
+  const [incluirGoleiro, setIncluirGoleiro] = useState(false);
   const [timesFormados, setTimesFormados] = useState<TimeSorteado[]>([]);
   const [timesEditando, setTimesEditando] = useState<TimeEditando[]>([]);
   const [modalAberto, setModalAberto] = useState(false);
+  const [modoManual, setModoManual] = useState(false);
   const [timesConfirmados, setTimesConfirmados] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const timesResultadoRef = useRef<HTMLDivElement>(null);
+
+  const pendenciasContagem = timesFormados.reduce((count, time) => {
+    return count + time.jogadores.filter((j) => !j.nome.trim()).length;
+  }, 0);
 
   useEffect(() => {
     const torneio = obterTorneioRascunhoOuAtivoLocal();
@@ -250,11 +302,12 @@ function SortearTimesPage() {
     if (regras) {
       setJogadoresPorTime(regras.jogadores_por_time);
       setQuantidadeTimes(regras.quantidade_times);
+      setIncluirGoleiro(regras.incluir_goleiro);
 
       // Modo Times Prontos: inicializa grid de edição
       if (searchParams?.get('modo') === 'prontos') {
         const qT = regras.quantidade_times;
-        const qJ = regras.jogadores_por_time;
+        const qJ = regras.jogadores_por_time + (regras.incluir_goleiro ? 1 : 0);
         const nomesZoeiros = sortearNomesUnicos(qT);
         setTimesEditando(Array.from({ length: qT }, (_, i) => ({
           id: gerarId(),
@@ -318,13 +371,46 @@ function SortearTimesPage() {
   const niveisComJogadores = [5, 4, 3, 2, 1].filter((n) => porNivel[n].length > 0);
 
   const sortear = () => {
-    const times = sortearEquilibrado(participantes, quantidadeTimes, jogadoresPorTime);
+    setModoManual(false);
+    const times = sortearEquilibrado(participantes, quantidadeTimes, jogadoresPorTime, incluirGoleiro);
+    setTimesFormados(times);
+    setModalAberto(true);
+  };
+
+  const abrirEscolhaManual = () => {
+    setModoManual(true);
+    const nomesZoeiros = sortearNomesUnicos(quantidadeTimes);
+    const times: TimeSorteado[] = Array.from({ length: quantidadeTimes }, (_, i) => ({
+      id: gerarId(),
+      nome: nomesZoeiros[i],
+      jogadores: Array.from({ length: jogadoresPorTime + (incluirGoleiro ? 1 : 0) }, (_, slotIndex) => {
+        const isGoleiro = incluirGoleiro && slotIndex === jogadoresPorTime;
+        const placeholder: TimeJogador = {
+          id: `manual_${i}_${slotIndex}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          torneio_id: participantes[0]?.torneio_id ?? 'local',
+          pelada_id: participantes[0]?.pelada_id ?? 'default',
+          jogador_id: `manual_${i}_${slotIndex}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          nome: '',
+          nivel: 3,
+          status: 'confirmado',
+          origem: 'avulso',
+          created_at: new Date().toISOString(),
+          goleiroSlot: isGoleiro,
+          goleiroPendente: isGoleiro,
+          manualSlot: !isGoleiro,
+        };
+        return placeholder;
+      }),
+      nivelMedio: 0,
+      corEmoji: CORES_EMOJIS[i] ?? '⭐',
+    }));
     setTimesFormados(times);
     setModalAberto(true);
   };
 
   const resortear = () => {
-    const times = sortearEquilibrado(participantes, quantidadeTimes, jogadoresPorTime);
+    setModoManual(false);
+    const times = sortearEquilibrado(participantes, quantidadeTimes, jogadoresPorTime, incluirGoleiro);
     setTimesFormados(times);
   };
 
@@ -358,8 +444,14 @@ function SortearTimesPage() {
     salvarEquipesTorneioLocal(torneioId, equipes);
     // Salvar também os jogadores de cada time para uso no painel
     const mapaJogadores: Record<string, import('../../../lib/torneioLocalService').ParticipanteTorneioLocal[]> = {};
-    timesFormados.forEach((time) => { mapaJogadores[time.id] = time.jogadores; });
+    timesFormados.forEach((time) => { 
+      mapaJogadores[time.id] = time.jogadores.map(j => ({
+        ...j,
+        posicao: j.goleiroSlot ? 'goleiro' : 'linha'
+      }));
+    });
     salvarJogadoresEquipesLocal(torneioId, mapaJogadores);
+    ativarTorneioLocal(torneioId);
     setModalAberto(false);
     setTimesConfirmados(true);
     // Notifica o Layout para re-ler os steps do torneio
@@ -417,8 +509,14 @@ function SortearTimesPage() {
     }));
     salvarEquipesTorneioLocal(torneioId, equipes);
     const mapaJogadores: Record<string, ParticipanteTorneioLocal[]> = {};
-    timesCompletos.forEach((t) => { mapaJogadores[t.id] = t.jogadores; });
+    timesCompletos.forEach((t) => { 
+      mapaJogadores[t.id] = t.jogadores.map(j => ({
+        ...j,
+        posicao: 'linha'
+      }));
+    });
     salvarJogadoresEquipesLocal(torneioId, mapaJogadores);
+    ativarTorneioLocal(torneioId);
     setTimesFormados(timesCompletos);
     setTimesConfirmados(true);
     window.dispatchEvent(new CustomEvent('torneio-steps-changed'));
@@ -486,19 +584,21 @@ function SortearTimesPage() {
                   <div className="px-4 py-3">
                   {time.jogadores.length > 0 ? (
                     <div className="flex flex-col gap-1">
-                      {time.jogadores.map((j, idx) => (
+                      {[...time.jogadores.filter((j) => !j.goleiroSlot), ...time.jogadores.filter((j) => j.goleiroSlot)].map((j, idx) => (
                         <div
                           key={idx}
                           className="flex items-center justify-between px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100"
                         >
                           <span className="text-sm font-medium text-gray-800">{j.nome}</span>
-                          {j.nivel != null && (
+                          {j.goleiroSlot ? (
+                            <span className="text-xs font-semibold text-sky-600 uppercase">Goleiro</span>
+                          ) : j.nivel != null ? (
                             <span className="text-xs shrink-0 ml-2">
                               {Array.from({ length: 5 }).map((_, i) => (
                                 <span key={i} style={{ color: i < j.nivel ? '#facc15' : '#e5e7eb' }}>★</span>
                               ))}
                             </span>
-                          )}
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -680,6 +780,13 @@ function SortearTimesPage() {
               <span className="text-xl">🎲</span>
               <span>Sortear Times</span>
             </button>
+            <button
+              onClick={abrirEscolhaManual}
+              className="w-full mt-3 flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-all duration-200"
+            >
+              <span className="text-xl">✏️</span>
+              <span>Escolher Times Manualmente</span>
+            </button>
           </div>
         </section>
       )}
@@ -751,17 +858,86 @@ function SortearTimesPage() {
                         <small className="ml-1">({time.jogadores.length} jogadores)</small>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      {time.jogadores.map((jogador, index) => (
-                        <div
-                          key={index}
-                          className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-center hover:bg-green-50 hover:border-green-600 transition-all duration-150"
-                        >
-                          <span className="text-sm font-medium text-gray-800 block truncate">
-                            {jogador.nome}
-                          </span>
-                        </div>
-                      ))}
+                            <div className="space-y-1">
+                      {[...time.jogadores.filter((j) => !j.goleiroSlot), ...time.jogadores.filter((j) => j.goleiroSlot)].map((jogador, index) => {
+                        const pendente = !jogador.nome.trim();
+                        const isGoleiro = jogador.goleiroSlot;
+                        const currentSelectionId = jogador.goleiroSlot ? undefined : jogador.jogador_id;
+                        const selecionadosIds = new Set(
+                          timesFormados.flatMap((t) =>
+                            t.jogadores
+                              .filter((j) => j.jogador_id && j.jogador_id !== currentSelectionId && !j.goleiroSlot)
+                              .map((j) => j.jogador_id)
+                          )
+                        );
+                        const opcoes = participantes.filter((p) =>
+                          !selecionadosIds.has(p.jogador_id) || p.jogador_id === currentSelectionId
+                        );
+                        return (
+                          <div
+                            key={index}
+                            className={`p-2 rounded-lg border text-center transition-all duration-150 ${
+                              isGoleiro
+                                ? 'bg-sky-50 border-sky-300 hover:bg-sky-100'
+                                : 'bg-gray-50 border-gray-200 hover:bg-green-50 hover:border-green-600'
+                            } ${pendente ? 'border-orange-300' : ''}`}
+                          >
+                            {isGoleiro ? (
+                              <input
+                                type="text"
+                                value={jogador.nome}
+                                onChange={(e) => {
+                                  const next = timesFormados.map((t) => {
+                                    if (t.id !== time.id) return t;
+                                    return {
+                                      ...t,
+                                      jogadores: t.jogadores.map((j) =>
+                                        j.id === jogador.id
+                                          ? { ...j, nome: e.target.value, goleiroPendente: !e.target.value.trim() }
+                                          : j
+                                      ),
+                                    };
+                                  });
+                                  setTimesFormados(next);
+                                }}
+                                placeholder="Nome do goleiro"
+                                className="w-full text-sm text-gray-800 bg-white border border-sky-300 rounded-lg px-2 py-2 outline-none focus:border-sky-500"
+                              />
+                            ) : jogador.manualSlot || !jogador.nome.trim() ? (
+                              <select
+                                value={jogador.jogador_id || ''}
+                                onChange={(e) => {
+                                  const selecionado = participantes.find((p) => p.jogador_id === e.target.value);
+                                  const next = timesFormados.map((t) => {
+                                    if (t.id !== time.id) return t;
+                                    return {
+                                      ...t,
+                                      jogadores: t.jogadores.map((j) =>
+                                        j.id === jogador.id && selecionado
+                                          ? { ...selecionado, goleiroPendente: false, manualSlot: false }
+                                          : j
+                                      ),
+                                    };
+                                  });
+                                  setTimesFormados(next);
+                                }}
+                                className="w-full text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-2 outline-none focus:border-sky-500"
+                              >
+                                <option value="">Selecione o jogador</option>
+                                {opcoes.map((opcao) => (
+                                  <option key={opcao.jogador_id} value={opcao.jogador_id}>
+                                    {opcao.nome}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="text-sm font-medium text-gray-800 block truncate">
+                                {jogador.nome}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -777,9 +953,19 @@ function SortearTimesPage() {
                 <span>Re-sortear</span>
               </button>
 
-              <button
+              {pendenciasContagem > 0 && (
+              <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 mb-2">
+                Existem <strong>{pendenciasContagem}</strong> campo{pendenciasContagem !== 1 ? 's' : ''} pendente{pendenciasContagem !== 1 ? 's' : ''}. Preencha tudo antes de confirmar.
+              </div>
+            )}
+            <button
                 onClick={confirmar}
-                className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-green-600 text-white hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200"
+                disabled={pendenciasContagem > 0}
+                className={`w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold transition-all duration-200 ${
+                  pendenciasContagem > 0
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-200'
+                    : 'bg-green-600 text-white hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg'
+                }`}
               >
                 <span className="text-xl">✅</span>
                 <span>Confirmar Times</span>

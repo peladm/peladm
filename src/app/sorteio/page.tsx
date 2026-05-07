@@ -8,20 +8,13 @@ import { useAdInterstitial } from '../../lib/useAdInterstitial';
 import AdInterstitial from '../../components/AdInterstitial';
 import { addToSyncQueue } from '../../lib/syncService';
 import { buscar_pelada_id, buscar_plano } from '../../lib/credenciais';
-
-interface Jogador {
-  id: string; // UUID
-  nome: string;
-  nivel: number;
-}
-
-interface Time {
-  id: string; // UUID
-  nome: string;
-  jogadores: Jogador[];
-  nivelMedio: number;
-  cores: string;
-}
+import {
+  embaralharArray,
+  separarJogadoresPorNivel,
+  executarSorteioEquilibrado,
+  type Jogador,
+  type Time
+} from '../../lib/sorteioEquilibrado';
 
 interface Regras {
   jogadores_por_time: number;
@@ -145,9 +138,7 @@ export default function SorteioPage() {
       
       // Verificar se usuário está logado
       const peladaId = buscar_pelada_id();
-      const plano = buscar_plano();
       console.log('👤 Usuário logado:', peladaId ? 'SIM' : 'NÃO');
-      console.log('💎 Plano:', plano);
       
       if (!peladaId) {
         console.log('❌ Usuário não está logado, redirecionando para login...');
@@ -161,46 +152,34 @@ export default function SorteioPage() {
       console.log('🔍 Carregando jogadores...');
       console.log('🆔 Pelada ID:', peladaId);
       
-      let jogadoresFormatados = [];
+      // SEMPRE buscar do Supabase (fonte de verdade)
+      // O localStorage será atualizado para manter cache sincronizado
+      console.log('☁️ Buscando jogadores do Supabase (SEMPRE - independente do plano)');
+      const jogadoresData = await jogadoresService.buscarAtivos();
       
-      if (plano === 'free') {
-        // PLANO FREE: Carregar do localStorage
-        console.log('📦 FREE: Buscando jogadores do localStorage');
-        const jogadoresLocal = localStorage.getItem(`jogadores_${peladaId}`);
-        
-        if (jogadoresLocal) {
-          const jogadoresData = JSON.parse(jogadoresLocal);
-          jogadoresFormatados = jogadoresData
-            .filter((j: any) => j.status === 'ativo')
-            .map((jogador: any) => ({
-              id: jogador.id,
-              nome: jogador.nome,
-              nivel: jogador.nivel
-            }));
-          console.log(`✅ FREE: ${jogadoresFormatados.length} jogadores ativos carregados do localStorage`);
-        } else {
-          console.log('⚠️ FREE: Nenhum jogador encontrado no localStorage');
-        }
-      } else {
-        // PLANO GOLD/PREMIUM: Carregar do Supabase
-        console.log('☁️ GOLD/PREMIUM: Buscando jogadores do Supabase');
-        const jogadoresData = await jogadoresService.buscarAtivos();
-        
-        jogadoresFormatados = jogadoresData.map((jogador: any) => ({
-          id: jogador.id,
-          nome: jogador.nome,
-          nivel: jogador.nivel
-        }));
-        console.log(`✅ GOLD/PREMIUM: ${jogadoresFormatados.length} jogadores ativos carregados do Supabase`);
-      }
+      let jogadoresFormatados = jogadoresData.map((jogador: any) => ({
+        id: jogador.id,
+        nome: jogador.nome,
+        nivel: jogador.nivel,
+        posicao: (jogador.posicao || 'linha').toLowerCase()
+      }));
+      
+      console.log(`✅ ${jogadoresFormatados.length} jogadores ativos carregados do Supabase`);
+      
+      // Sincronizar localStorage com dados do Supabase (manter cache atualizado)
+      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresData));
+      console.log('💾 localStorage sincronizado com dados do Supabase');
 
-      setJogadoresDisponiveis(jogadoresFormatados);
-      console.log('🔍 Primeiros jogadores:', jogadoresFormatados.slice(0, 3).map((j: any) => `${j.nome} (${j.id})`));
+      // Filtrar apenas jogadores de linha (agora todos normalizados para minúscula)
+      const jogadoresDeLinha = jogadoresFormatados.filter((j: any) => j.posicao === 'linha');
+      setJogadoresDisponiveis(jogadoresDeLinha);
+      console.log('🔍 Jogadores de linha carregados:', jogadoresDeLinha.length);
+      console.log('   Primeiros:', jogadoresDeLinha.slice(0, 3).map((j: any) => `${j.nome} (${j.id})`));
 
-      if (jogadoresFormatados.length === 0) {
-        mostrarMensagem('⚠️ Nenhum jogador ativo cadastrado ainda para sorteio', 5000);
+      if (jogadoresDeLinha.length === 0) {
+        mostrarMensagem('⚠️ Nenhum jogador de linha cadastrado ainda para sorteio', 5000);
       } else {
-        mostrarMensagem(`🎯 ${jogadoresFormatados.length} jogadores disponíveis para sorteio`, 2000);
+        mostrarMensagem(`🎯 ${jogadoresDeLinha.length} jogadores de linha disponíveis para sorteio`, 2000);
       }
 
     } catch (error: any) {
@@ -240,36 +219,6 @@ export default function SorteioPage() {
     setTodosSelecionados(jogadoresSelecionados.length === jogadoresDisponiveis.length && jogadoresDisponiveis.length > 0);
   }, [jogadoresSelecionados, jogadoresDisponiveis]);
 
-  const embaralharArray = (array: any[]) => {
-    const arrayCopy = [...array];
-    for (let i = arrayCopy.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arrayCopy[i], arrayCopy[j]] = [arrayCopy[j], arrayCopy[i]];
-    }
-    return arrayCopy;
-  };
-
-  const separarJogadoresPorNivel = (jogadores: Jogador[]) => {
-    const jogadoresPorNivel: { [key: number]: Jogador[] } = {
-      5: [],
-      4: [],
-      3: [],
-      2: [],
-      1: []
-    };
-
-    jogadores.forEach(jogador => {
-      const nivel = jogador.nivel || 3;
-      jogadoresPorNivel[nivel].push(jogador);
-    });
-
-    // Embaralhar cada nível
-    Object.keys(jogadoresPorNivel).forEach(nivel => {
-      jogadoresPorNivel[parseInt(nivel)] = embaralharArray(jogadoresPorNivel[parseInt(nivel)]);
-    });
-
-    return jogadoresPorNivel;
-  };
 
   const sortearTimes = async () => {
     if (!jogadoresSelecionados.length) {
@@ -712,7 +661,9 @@ export default function SorteioPage() {
         });
         
         // 2. JOGADORES NÃO SELECIONADOS - status 'reserva'
-        const jogadoresReserva = todosJogadores.filter((j: any) => !idsJogadoresNaFila.has(j.nome));
+        // 3. GOLEIROS - status 'goleiro'
+        const jogadoresReserva = todosJogadores.filter((j: any) => !idsJogadoresNaFila.has(j.nome) && j.posicao !== 'goleiro');
+        const jogadoresGoleiros = todosJogadores.filter((j: any) => j.posicao === 'goleiro');
         
         jogadoresReserva.forEach((jogadorDB: any) => {
           filaLocal.push({
@@ -726,6 +677,18 @@ export default function SorteioPage() {
           });
         });
         
+        jogadoresGoleiros.forEach((jogadorDB: any) => {
+          filaLocal.push({
+            id: `fila_goleiro_${Date.now()}_${jogadorDB.nome}`,
+            pelada_id: peladaId,
+            sessao_id: sessao.id,
+            nome: jogadorDB.nome,
+            status: 'goleiro',
+            posicao_fila: 9999,
+            vitorias_consecutivas_time: 0
+          });
+        });
+        
         localStorage.setItem('fila_ativa', JSON.stringify(filaLocal));
         
         const jogadoresJogando = jogadoresPorTime * 2;
@@ -734,6 +697,7 @@ export default function SorteioPage() {
         console.log(`  - ${Math.min(jogadoresJogando, filaLocal.filter(f => f.status === 'fila').length)} jogando (primeiras posições)`);
         console.log(`  - ${Math.max(0, filaLocal.filter(f => f.status === 'fila').length - jogadoresJogando)} na fila de espera`);
         console.log(`  - ${filaLocal.filter(f => f.status === 'reserva').length} reservas`);
+        console.log(`  - ${filaLocal.filter(f => f.status === 'goleiro').length} goleiros`);
         
         // Modo offline: sessão e fila são criadas localmente e sincronizadas ao encerrar a pelada
         if (modoOffline) {
@@ -887,7 +851,9 @@ export default function SorteioPage() {
       });
       
       // 4.2. JOGADORES NÃO SELECIONADOS PARA O SORTEIO - status "reserva"
-      const jogadoresReserva = todosJogadores.filter((j: any) => !nomesJogadoresNaFila.has(j.nome));
+      // 4.3. GOLEIROS - status "goleiro"
+      const jogadoresReserva = todosJogadores.filter((j: any) => !nomesJogadoresNaFila.has(j.nome) && j.posicao !== 'goleiro');
+      const jogadoresGoleiros = todosJogadores.filter((j: any) => j.posicao === 'goleiro');
       
       jogadoresReserva.forEach((jogadorDB: any) => {
         filaLocal.push({
@@ -901,11 +867,24 @@ export default function SorteioPage() {
         });
       });
       
+      jogadoresGoleiros.forEach((jogadorDB: any) => {
+        filaLocal.push({
+          id: `fila_goleiro_${Date.now()}_${jogadorDB.nome}`,
+          pelada_id: peladaId,
+          sessao_id: sessao.id,
+          nome: jogadorDB.nome,
+          status: 'goleiro',
+          posicao_fila: 9999,
+          vitorias_consecutivas_time: 0
+        });
+      });
+      
       const jogadoresJogando = jogadoresPorTime * 2;
       console.log(`📝 Criando ${filaLocal.length} jogadores na fila local:`);
       console.log(`  - ${Math.min(jogadoresJogando, filaLocal.filter(f => f.status === 'fila').length)} jogando (primeiras posições)`);
       console.log(`  - ${Math.max(0, filaLocal.filter(f => f.status === 'fila').length - jogadoresJogando)} na fila de espera`);
       console.log(`  - ${filaLocal.filter(f => f.status === 'reserva').length} reservas`);
+      console.log(`  - ${filaLocal.filter(f => f.status === 'goleiro').length} goleiros`);
       
       // Salvar fila no localStorage (TODOS OS PLANOS)
       localStorage.setItem('fila_ativa', JSON.stringify(filaLocal));
@@ -983,14 +962,19 @@ export default function SorteioPage() {
 
         {/* Lista de Jogadores */}
         <section>
+          <div className="mb-4">
+            <p className="text-xs text-gray-500">
+              Exibindo somente jogadores de linha para o sorteio.
+            </p>
+          </div>
 
           {jogadoresDisponiveis.length === 0 ? (
             <div className="text-center py-10 text-gray-500">
               <span className="text-4xl mb-3 block">😴</span>
-              <p>Nenhum jogador cadastrado ainda</p>
+              <p>Nenhum jogador de linha cadastrado ainda</p>
               <p className="text-sm mt-2">
                 <span className="text-green-600">
-                  Cadastre jogadores primeiro
+                  Cadastre jogadores de linha primeiro
                 </span>
               </p>
             </div>
