@@ -457,11 +457,12 @@ export const jogadoresService = {
         // Se modificou, fazer update
         if (modificado) {
           updatesPromises.push(
-            clienteDb
-              .from('jogos')
-              .update(updateData)
-              .eq('id', jogo.id)
-              .then(r => r)
+            Promise.resolve(
+              clienteDb
+                .from('jogos')
+                .update(updateData)
+                .eq('id', jogo.id)
+            )
           );
         }
       });
