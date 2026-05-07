@@ -461,6 +461,7 @@ export const jogadoresService = {
               .from('jogos')
               .update(updateData)
               .eq('id', jogo.id)
+              .then(r => r)
           );
         }
       });
