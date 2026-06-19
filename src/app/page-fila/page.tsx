@@ -166,6 +166,11 @@ export default function FilaPage() {
   const [timeEscolhidoDesempate, setTimeEscolhidoDesempate] = useState<'A' | 'B' | null>(null);
   const [showModalTutorialCores, setShowModalTutorialCores] = useState(false);
 
+  // States para modo manual da fila (fila_automatizada = false)
+  const [acaoManualSelecionada, setAcaoManualSelecionada] = useState<'vencedor' | 'perdedor' | 'ambos' | null>(null);
+  const [opcaoAmbosAem, setOpcaoAmbosAem] = useState<'time_a' | 'time_b' | 'mesclar' | null>(null);
+  const [isAplicandoRotacaoManual, setIsAplicandoRotacaoManual] = useState(false);
+
   // States para regras de empate (compatível com modal de /partida)
   const [regrasEmpate, setRegrasEmpate] = useState<{
     empate_modo: string | null;
@@ -310,12 +315,25 @@ export default function FilaPage() {
   };
 
   // === ROTAÇÃO PRINCIPAL ===
-  const rotacao_fila = async (peladaId: string, sessaoId: string, timeVencedor: 'A' | 'B' | null, timeDesempateEscolhido?: 'A' | 'B' | null) => {
+  const rotacao_fila = async (
+    peladaId: string,
+    sessaoId: string,
+    timeVencedor: 'A' | 'B' | null,
+    timeDesempateEscolhido?: 'A' | 'B' | null,
+    modoManual: boolean = false,
+    acaoManual?: 'vencedor' | 'perdedor' | 'ambos' | null,
+    opcaoAmbos?: 'time_a' | 'time_b' | 'mesclar' | null
+  ) => {
     try {
       const plano = buscar_plano();
       console.log('🔄 ======= INICIANDO ROTAÇÃO =======');
       console.log('🔄 Plano:', plano);
       console.log('🏆 Time Vencedor:', timeVencedor);
+      console.log('🎮 Modo Manual?', modoManual);
+      if (modoManual) {
+        console.log('📋 Ação Manual Selecionada:', acaoManual);
+        console.log('📋 Opção Ambos Saem:', opcaoAmbos);
+      }
       
       const filaLocal = localStorage.getItem('fila_ativa');
       if (!filaLocal) {
@@ -431,56 +449,126 @@ export default function FilaPage() {
       // Determinar nova ordem usando função específica da regra
       let novaOrdem: any[] = [];
       
-      // === EMPATE ===
-      if (timeVencedor === null) {
-        if (empateModo === 'desempate_decide' && timeDesempateEscolhido) {
-          // Desempate no final - time escolhido vira vencedor
-          console.log('📋 Aplicando: rotacaoempate_desempate');
-          novaOrdem = rotacaoempate_desempate(time1, time2, espera, timeDesempateEscolhido);
-        } else if (empateModo === 'ambos_saem') {
-          // Ambos saem - verificar regra de retorno
-          if (empateRetorno === 'mesclar') {
-            console.log('📋 Aplicando: rotacaoempate_ambos_mesclar');
+      // ========================================
+      // 🎮 MODO MANUAL: PRIORIDADE ABSOLUTA
+      // ========================================
+      // Em modo manual, o PLACAR NÃO IMPORTA
+      // Toda partida é tratada como empate customizável pelo usuário
+      if (modoManual && acaoManual) {
+        console.log(`🎮 ========= MODO MANUAL ATIVADO ==========`);
+        console.log(`🎮 Placar real: A=${placarTimeA} vs B=${placarTimeB} (IGNORADO)`);
+        console.log(`🎮 Ação escolhida pelo usuário: ${acaoManual}`);
+        
+        // Vitórias consecutivas: manter ou incrementar sem considerar placar
+        // Se o usuário escolhe um time continuar, consideramos como vitória para aquele time
+        if (acaoManual === 'vencedor') {
+          // Time 1 (que estava jogando) continua
+          console.log('🎮 ➜ Time A continua jogando');
+          // Manter contador de vitórias (pode incrementar se placar_manual conta como vitória)
+          vitoriasConsecutivasNovas = vitoriasConsecutivasAtual;
+          novaOrdem = rotacaoempate_desempate(time1, time2, espera, 'A');
+        } 
+        else if (acaoManual === 'perdedor') {
+          // Time 2 (que estava na espera/fila) continua
+          console.log('🎮 ➜ Time B continua jogando');
+          // Reseta contador (time diferente agora está jogando)
+          vitoriasConsecutivasNovas = 0;
+          novaOrdem = rotacaoempate_desempate(time1, time2, espera, 'B');
+        } 
+        else if (acaoManual === 'ambos') {
+          // Ambos times saem
+          console.log(`🎮 ➜ Ambos saem - opção de retorno: ${opcaoAmbos}`);
+          vitoriasConsecutivasNovas = 0;
+          
+          if (opcaoAmbos === 'mesclar') {
+            console.log('🎮    ├─ Mesclando times (intercalado)');
             novaOrdem = rotacaoempate_ambos_mesclar(time1, time2, espera);
-          } else if (empateRetorno === 'desempate_decide' && timeDesempateEscolhido) {
-            console.log('📋 Aplicando: rotacaoempate_ambos_desempate');
-            novaOrdem = rotacaoempate_ambos_desempate(time1, time2, espera, timeDesempateEscolhido);
-          } else {
-            // Padrão: fila entra, ordem original
-            console.log('📋 Aplicando: rotação padrão de empate');
+          } 
+          else if (opcaoAmbos === 'time_a') {
+            console.log('🎮    ├─ Time A retorna 1º à fila');
+            novaOrdem = rotacaoempate_ambos_desempate(time1, time2, espera, 'A');
+          } 
+          else if (opcaoAmbos === 'time_b') {
+            console.log('🎮    ├─ Time B retorna 1º à fila');
+            novaOrdem = rotacaoempate_ambos_desempate(time1, time2, espera, 'B');
+          } 
+          else {
+            console.log('🎮    └─ Padrão: fila entra');
             novaOrdem = [...espera, ...time1, ...time2];
           }
-        } else {
-          // Fallback
-          novaOrdem = [...espera, ...time1, ...time2];
         }
-      }
-      // === VITÓRIA (COM OU SEM LIMITE) ===
-      else if (!limiteVitoriasConfig) {
-        // SEM limite de vitórias - rotação simples
-        console.log('📋 Sem limite de vitórias - rotação simples');
-        if (timeVencedor === 'B') novaOrdem = [...time2, ...espera, ...time1];
-        else novaOrdem = [...time1, ...espera, ...time2];
-      } else {
-        // COM limite de vitórias - usar função específica
-        console.log(`📋 Com limite - usando rotação: ${regraAposLimite}`);
         
-        switch (regraAposLimite) {
-          case 'prioridade':
-            novaOrdem = rotacao_vitoriaconsec_vencedor(time1, time2, espera, timeVencedor, limiteAtingido);
-            break;
-          case 'sem_prioridade':
-            novaOrdem = rotacao_vitoriaconsec_perdedor(time1, time2, espera, timeVencedor, limiteAtingido);
-            break;
-          case 'mesclar':
-            novaOrdem = rotacao_vitoriaconsec_mesclar(time1, time2, espera, timeVencedor, limiteAtingido);
-            break;
-          case 'perdedor_continua':
-            novaOrdem = rotacao_vitoriaconsec_perdedorfica(time1, time2, espera, timeVencedor, limiteAtingido);
-            break;
-          default:
-            novaOrdem = rotacao_vitoriaconsec_vencedor(time1, time2, espera, timeVencedor, limiteAtingido);
+        console.log(`🎮 ========= ROTAÇÃO MANUAL APLICADA ==========`);
+      }
+      // ========================================
+      // 📋 MODO AUTOMÁTICO: Usar regras e placar
+      // ========================================
+      else {
+        console.log(`📋 ========= MODO AUTOMÁTICO ==========`);
+        console.log(`📋 Placar: A=${placarTimeA} vs B=${placarTimeB}`);
+        console.log(`📋 Time vencedor: ${timeVencedor}`);
+        
+        // === EMPATE AUTOMÁTICO ===
+        if (timeVencedor === null) {
+          console.log('🤝 EMPATE - Aplicando regras de empate automático');
+          
+          // MODO AUTOMÁTICO: Usar empateModo/empateRetorno da config
+          if (empateModo === 'desempate_decide' && timeDesempateEscolhido) {
+            // Desempate no final - time escolhido vira vencedor
+            console.log('📋 Aplicando: rotacaoempate_desempate');
+            novaOrdem = rotacaoempate_desempate(time1, time2, espera, timeDesempateEscolhido);
+          } 
+          else if (empateModo === 'ambos_saem') {
+            // Ambos saem - verificar regra de retorno
+            if (empateRetorno === 'mesclar') {
+              console.log('📋 Aplicando: rotacaoempate_ambos_mesclar');
+              novaOrdem = rotacaoempate_ambos_mesclar(time1, time2, espera);
+            } 
+            else if (empateRetorno === 'desempate_decide' && timeDesempateEscolhido) {
+              console.log('📋 Aplicando: rotacaoempate_ambos_desempate');
+              novaOrdem = rotacaoempate_ambos_desempate(time1, time2, espera, timeDesempateEscolhido);
+            } 
+            else {
+              // Padrão: fila entra, ordem original
+              console.log('📋 Aplicando: rotação padrão de empate');
+              novaOrdem = [...espera, ...time1, ...time2];
+            }
+          } 
+          else {
+            // Fallback
+            novaOrdem = [...espera, ...time1, ...time2];
+          }
         }
+        // === VITÓRIA AUTOMÁTICA (COM OU SEM LIMITE) ===
+        else if (!limiteVitoriasConfig) {
+          // SEM limite de vitórias - rotação simples
+          console.log('📋 Sem limite de vitórias - rotação simples');
+          if (timeVencedor === 'B') novaOrdem = [...time2, ...espera, ...time1];
+          else novaOrdem = [...time1, ...espera, ...time2];
+        } 
+        else {
+          // COM limite de vitórias - usar função específica
+          console.log(`📋 Com limite - usando rotação: ${regraAposLimite}`);
+          
+          switch (regraAposLimite) {
+            case 'prioridade':
+              novaOrdem = rotacao_vitoriaconsec_vencedor(time1, time2, espera, timeVencedor, limiteAtingido);
+              break;
+            case 'sem_prioridade':
+              novaOrdem = rotacao_vitoriaconsec_perdedor(time1, time2, espera, timeVencedor, limiteAtingido);
+              break;
+            case 'mesclar':
+              novaOrdem = rotacao_vitoriaconsec_mesclar(time1, time2, espera, timeVencedor, limiteAtingido);
+              break;
+            case 'perdedor_continua':
+              novaOrdem = rotacao_vitoriaconsec_perdedorfica(time1, time2, espera, timeVencedor, limiteAtingido);
+              break;
+            default:
+              novaOrdem = rotacao_vitoriaconsec_vencedor(time1, time2, espera, timeVencedor, limiteAtingido);
+          }
+        }
+        
+        console.log(`📋 ========= ROTAÇÃO AUTOMÁTICA APLICADA ==========`);
       }
       
       console.log('📊 Nova ordem:', novaOrdem.map((j: any) => j.nome));
@@ -4397,6 +4485,164 @@ export default function FilaPage() {
     );
   }
 
+  // ============================================
+  // APLICAR AÇÃO MANUAL DO USUÁRIO EM EMPATE
+  // ============================================
+  const aplicarAcaoManual = async (acao: 'vencedor' | 'perdedor' | 'ambos') => {
+    try {
+      setIsAplicandoRotacaoManual(true);
+      console.log(`🎮 Aplicando ação manual: ${acao}`);
+
+      // Determinar vencedor
+      let timeVencedor: 'A' | 'B' | null = null;
+      if (placarTimeA > placarTimeB) {
+        timeVencedor = 'A';
+      } else if (placarTimeB > placarTimeA) {
+        timeVencedor = 'B';
+      } else {
+        timeVencedor = null; // Empate
+      }
+
+      // Buscar pelada_id e plano das credenciais
+      const peladaId = buscar_pelada_id();
+      const plano = buscar_plano();
+
+      if (!peladaId) {
+        alert('❌ Usuário não encontrado! Por favor, faça login novamente.');
+        setIsAplicandoRotacaoManual(false);
+        return;
+      }
+
+      // Buscar sessão do localStorage
+      const sessaoAtualStr = localStorage.getItem('sessao_ativa');
+      if (!sessaoAtualStr) {
+        alert('❌ Sessão não encontrada! Por favor, recarregue a página.');
+        setIsAplicandoRotacaoManual(false);
+        return;
+      }
+
+      const sessaoAtual = JSON.parse(sessaoAtualStr);
+      const sessaoId = sessaoAtual.id;
+
+      // Se ambos saem, validar se user escolheu opção
+      if (acao === 'ambos' && !opcaoAmbosAem) {
+        alert('⚽ Por favor, escolha como os times retornarão à fila!');
+        setIsAplicandoRotacaoManual(false);
+        return;
+      }
+
+      // === SALVAR JOGO (se não em modo prancheta) ===
+      if (!modoPrancheta) {
+        const jogosKey = `jogos_${sessaoId}`;
+        const jogosStr = localStorage.getItem(jogosKey);
+        const jogos = jogosStr ? JSON.parse(jogosStr) : [];
+        const numeroJogo = jogos.length + 1;
+
+        // Buscar jogadores para dados completos
+        const jogadoresKey = `jogadores_${peladaId}`;
+        const jogadoresStr = localStorage.getItem(jogadoresKey);
+        const todosJogadores = jogadoresStr ? JSON.parse(jogadoresStr) : [];
+
+        const timeACompleto = time1.map(jogador => {
+          const jogadorDB = todosJogadores.find((j: any) => j.nome === jogador.nome);
+          return {
+            id: jogadorDB?.id || jogador.id || `temp_${jogador.nome}`,
+            nome: jogador.nome,
+            nivel: jogadorDB?.nivel || 3,
+          };
+        });
+
+        const timeBCompleto = time2.map(jogador => {
+          const jogadorDB = todosJogadores.find((j: any) => j.nome === jogador.nome);
+          return {
+            id: jogadorDB?.id || jogador.id || `temp_${jogador.nome}`,
+            nome: jogador.nome,
+            nivel: jogadorDB?.nivel || 3,
+          };
+        });
+
+        // Gerar UUID
+        const gerarUUID = () => {
+          return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+        };
+
+        // Buscar substituições
+        const partidaSalva = localStorage.getItem('partida_em_andamento');
+        let substituicoesPartida = [];
+        let jogoIdFromPartida: string | null = null;
+        if (partidaSalva) {
+          const estadoPartida = JSON.parse(partidaSalva);
+          substituicoesPartida = estadoPartida.substituicoes || [];
+          jogoIdFromPartida = estadoPartida.jogoId || null;
+        }
+
+        const novoJogo = {
+          id: jogoIdFromPartida || gerarUUID(),
+          sessao_id: sessaoId,
+          numero_jogo: numeroJogo,
+          time_a: timeACompleto,
+          time_b: timeBCompleto,
+          placar_a: placarTimeA,
+          placar_b: placarTimeB,
+          cor_time_a: obterNomeCor(corTimeA),
+          cor_time_b: obterNomeCor(corTimeB),
+          status: 'finalizado',
+          time_vencedor: timeVencedor, // null para empate
+          tempo_decorrido: cronometro,
+          data_inicio: partidaAtiva?.data_inicio,
+          data_fim: new Date().toISOString(),
+          substituicoes: substituicoesPartida,
+          created_at: new Date().toISOString(),
+        };
+
+        jogos.push(novoJogo);
+        localStorage.setItem(jogosKey, JSON.stringify(jogos));
+        console.log(`✅ Jogo ${numeroJogo} salvo (modo manual)`);
+      }
+
+      // === CHAMAR ROTACAO FILA COM MODO MANUAL ===
+      console.log(`🎮 Chamando rotacao_fila em modo manual com ação: ${acao}`);
+      await rotacao_fila(peladaId, sessaoId, timeVencedor, undefined, true, acao, opcaoAmbosAem);
+
+      // === FECHAR MODAL E RESETAR ===
+      setShowModalFinalizacao(false);
+      setModoPartida(false);
+      setModoPrancheta(false);
+      setCronometroAtivo(false);
+      setCronometro(0);
+      setPlacarTimeA(0);
+      setPlacarTimeB(0);
+      setSelecionandoGolPara(null);
+      setSelecionandoAssistenciaPara(null);
+      setUltimoGolInfo(null);
+      setGolsJogadores({});
+      setAssistenciasJogadores({});
+      setHistoricoAcoes([]);
+      setVencedorDesempate(null);
+      setTimeEscolhidoDesempate(null);
+      setPartidaAtiva(null);
+      setAcaoManualSelecionada(null);
+      setOpcaoAmbosAem(null);
+      localStorage.removeItem('modo_partida_estado');
+      localStorage.removeItem('modo_prancheta_ativo');
+      localStorage.removeItem('partida_em_andamento');
+
+      // Recarregar dados da fila
+      await carregarDados();
+
+      console.log('✅ Ação manual finalizada com sucesso!');
+    } catch (erro) {
+      console.error('❌ Erro ao aplicar ação manual:', erro);
+      alert('❌ Erro ao aplicar ação. Tente novamente.');
+    } finally {
+      setIsAplicandoRotacaoManual(false);
+    }
+  };
+
   // Função para finalizar partida e rotacionar fila
   const finalizarPartidaComRotacao = async () => {
     if (finalizandoPartida) return; // Evitar duplo clique
@@ -6533,8 +6779,25 @@ export default function FilaPage() {
             <section className="queue-card">
               {!modoEdicao && (
                 <div className="queue-header">
-                  <h3>📋 Fila de Espera</h3>
-                  <span style={{fontSize: '0.75rem', color: '#666'}}>{filaDeEspera.length} aguardando</span>
+                  <h3>Fila de Espera</h3>
+                  {(() => {
+                    const peladaId = buscar_pelada_id();
+                    const filaStr = localStorage.getItem('fila_ativa');
+                    const fila = filaStr ? JSON.parse(filaStr) : [];
+                    const regrasStr = localStorage.getItem(`regras_${peladaId}`);
+                    const regras = regrasStr ? JSON.parse(regrasStr) : {};
+                    const jogadoresPorTime = regras.jogadores_por_time || 5;
+                    
+                    const filaEspera = fila.filter((j: any) => j.status === 'fila' && j.posicao_fila > (jogadoresPorTime * 2));
+                    const timesCompletos = Math.floor(filaEspera.length / jogadoresPorTime);
+                    const jogadoresIncompletos = filaEspera.length % jogadoresPorTime;
+                    
+                    return (
+                      <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#10b981' }}>
+                        {timesCompletos} {timesCompletos === 1 ? 'Time' : 'Times'} {jogadoresIncompletos > 0 ? `+ ${jogadoresIncompletos} Jogadores` : ''}
+                      </span>
+                    );
+                  })()}
                 </div>
               )}
               <div className="queue-blocks-container" style={{ 
@@ -8516,30 +8779,10 @@ export default function FilaPage() {
                     })()}
                   </div>
                 </div>
-                
-                {/* Mensagem de resultado */}
-                {placarTimeA !== placarTimeB && (
-                  <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#16a34a', marginTop: '16px' }}>
-                    🏆 Time {obterNomeCor(placarTimeA > placarTimeB ? corTimeA : corTimeB).toUpperCase()} Venceu!
-                  </div>
-                )}
-                {placarTimeA === placarTimeB && (
-                  <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#6b7280', marginTop: '16px', marginBottom: '12px' }}>
-                    {regrasEmpate.empate_modo === 'desempate' && (
-                      <>🤝 Empate!</>
-                    )}
-                    {regrasEmpate.empate_modo === 'ambos_saem' && (
-                      <>🤝 Empate! AMBOS times saem</>
-                    )}
-                    {regrasEmpate.empate_modo === 'um_sai' && (
-                      <>🤝 Empate! Um time sai</>
-                    )}
-                  </div>
-                )}
               </div>
 
-              {/* Prévia de Vitórias Consecutivas */}
-              {limiteVitorias && (() => {
+              {/* Prévia de Vitórias Consecutivas - Aparece SEMPRE (com ou sem limite) */}
+              {(() => {
                 // Recalcular prévia considerando o time selecionado no empate
                 let previa;
                 const empate = placarTimeA === placarTimeB;
@@ -8558,23 +8801,61 @@ export default function FilaPage() {
                 }
                 
                 return (
-                  <div style={{
-                    background: '#f0f9ff',
-                    borderRadius: '10px',
-                    padding: '12px 16px',
-                    marginBottom: '20px',
-                    border: '2px solid #bfdbfe',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '4px' }}>
-                      Se confirmar este resultado:
-                    </div>
-                    <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#1e40af' }}>
-                      Vitórias consecutivas {previa.time ? <span style={{ color: previa.cor, fontWeight: '700' }}>{previa.time}</span> : ''}: {previa.vitorias}/{limiteVitorias}
+                  <>
+                    <div style={{
+                      background: '#f8fafc',
+                      borderRadius: '12px',
+                      padding: '12px 16px',
+                      marginBottom: '20px',
+                      border: '1px solid #e2e8f0',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      {/* Vitórias Consecutivas */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                        <span style={{ color: '#64748b', fontWeight: '500' }}>Vit. Consecutivas</span>
+                        <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                          {previa.time ? (
+                            <>
+                              <span style={{ color: previa.cor, fontWeight: '700' }}>{previa.time}</span>: {previa.vitorias}
+                              {limiteVitorias && <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}> / {limiteVitorias}</span>}
+                            </>
+                          ) : (
+                            <>{previa.vitorias} {limiteVitorias && <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>/ {limiteVitorias}</span>}</>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Times de Fora */}
+                      {(() => {
+                        const peladaId = buscar_pelada_id();
+                        const filaStr = localStorage.getItem('fila_ativa');
+                        const fila = filaStr ? JSON.parse(filaStr) : [];
+                        const regrasStr = localStorage.getItem(`regras_${peladaId}`);
+                        const regras = regrasStr ? JSON.parse(regrasStr) : {};
+                        const jogadoresPorTime = regras.jogadores_por_time || 5;
+                        
+                        // Contar times completos na fila de espera (posição > 10)
+                        const filaEspera = fila.filter((j: any) => j.status === 'fila' && j.posicao_fila > (jogadoresPorTime * 2));
+                        const timesCompletos = Math.floor(filaEspera.length / jogadoresPorTime);
+                        const jogadoresIncompletos = filaEspera.length % jogadoresPorTime;
+                        
+                        console.log(`Times de Fora - Total na espera: ${filaEspera.length}, Times: ${timesCompletos}, Incompletos: ${jogadoresIncompletos}`);
+                        
+                        return (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                            <span style={{ color: '#64748b', fontWeight: '500' }}>Times de Fora</span>
+                            <div style={{ fontWeight: '600', color: '#1e293b' }}>
+                              {timesCompletos} {timesCompletos === 1 ? 'time' : 'times'} {jogadoresIncompletos > 0 ? `+ ${jogadoresIncompletos} jog.` : ''}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
-                    {/* Mensagens informativas quando o limite é atingido */}
-                    {previa.vitorias >= limiteVitorias && (
+                    {/* Mensagens informativas quando o limite é atingido - SÓ APARECE SE HÁ LIMITE */}
+                    {limiteVitorias && previa.vitorias >= limiteVitorias && (
                       <div style={{
                         marginTop: '12px',
                         padding: '12px',
@@ -8613,12 +8894,210 @@ export default function FilaPage() {
                         </div>
                       </div>
                     )}
-                  </div>
+                  </>
                 );
               })()}
 
-              {/* CENÁRIO 2: Empate com decisão de retorno à fila */}
-              {placarTimeA === placarTimeB && regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide' && (
+              {/* MODO MANUAL: Sempre mostrar opções para seleção manual */}
+              {(() => {
+                const peladaId = buscar_pelada_id();
+                const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+                const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+                const filaAutomatizada = regrasConfig.fila_automatizada !== undefined ? regrasConfig.fila_automatizada : true;
+                return !filaAutomatizada; // Mostrar se está em modo manual
+              })() && (
+                <div style={{
+                  background: '#eff6ff',
+                  borderRadius: '14px',
+                  padding: '18px',
+                  marginBottom: '16px',
+                  border: '2px solid #3b82f6'
+                }}>
+                  {/* Pergunta principal */}
+                  <div style={{ 
+                    fontSize: '1rem', 
+                    fontWeight: '700', 
+                    color: '#1e40af', 
+                    marginBottom: '14px',
+                    textAlign: 'center'
+                  }}>
+                    ❓ Quem segue jogando ❓
+                  </div>
+
+                  {/* Botões dos times lado a lado */}
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                    {/* TIME A */}
+                    <button
+                      onClick={() => {
+                        setAcaoManualSelecionada('vencedor');
+                        setOpcaoAmbosAem(null);
+                      }}
+                      style={{
+                        flex: 1,
+                        background: acaoManualSelecionada === 'vencedor' ? corTimeA : '#fff',
+                        color: acaoManualSelecionada === 'vencedor' ? (corTimeA === '#FFFFFF' ? '#000' : '#fff') : corTimeA,
+                        border: `2px solid ${acaoManualSelecionada === 'vencedor' ? corTimeA : corTimeA}`,
+                        borderRadius: '10px',
+                        padding: '12px',
+                        fontSize: '0.95rem',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        boxShadow: acaoManualSelecionada === 'vencedor' ? `0 0 8px ${corTimeA}60` : 'none'
+                      }}
+                      onMouseEnter={(e) => !finalizandoPartida && !isAplicandoRotacaoManual && (e.currentTarget.style.transform = 'scale(1.05)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                    >
+                      {obterNomeCor(corTimeA).toUpperCase()}
+                    </button>
+
+                    {/* TIME B */}
+                    <button
+                      onClick={() => {
+                        setAcaoManualSelecionada('perdedor');
+                        setOpcaoAmbosAem(null);
+                      }}
+                      style={{
+                        flex: 1,
+                        background: acaoManualSelecionada === 'perdedor' ? corTimeB : '#fff',
+                        color: acaoManualSelecionada === 'perdedor' ? (corTimeB === '#FFFFFF' ? '#000' : '#fff') : corTimeB,
+                        border: `2px solid ${acaoManualSelecionada === 'perdedor' ? corTimeB : corTimeB}`,
+                        borderRadius: '10px',
+                        padding: '12px',
+                        fontSize: '0.95rem',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        boxShadow: acaoManualSelecionada === 'perdedor' ? `0 0 8px ${corTimeB}60` : 'none'
+                      }}
+                      onMouseEnter={(e) => !finalizandoPartida && !isAplicandoRotacaoManual && (e.currentTarget.style.transform = 'scale(1.05)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                    >
+                      {obterNomeCor(corTimeB).toUpperCase()}
+                    </button>
+                  </div>
+
+                  {/* Botão Ambos Saem */}
+                  <button
+                    onClick={() => {
+                      setAcaoManualSelecionada('ambos');
+                      setOpcaoAmbosAem(null);
+                    }}
+                    style={{
+                      width: '100%',
+                      background: acaoManualSelecionada === 'ambos' ? '#000' : '#fff',
+                      color: acaoManualSelecionada === 'ambos' ? '#22c55e' : '#000',
+                      border: `2px solid ${acaoManualSelecionada === 'ambos' ? '#22c55e' : '#000'}`,
+                      borderRadius: '10px',
+                      padding: '12px',
+                      fontSize: '0.95rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      boxShadow: acaoManualSelecionada === 'ambos' ? '0 0 8px #22c55e60' : 'none'
+                    }}
+                    onMouseEnter={(e) => !finalizandoPartida && !isAplicandoRotacaoManual && (e.currentTarget.style.transform = 'scale(1.02)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                  >
+                    AMBOS SAEM
+                  </button>
+
+                  {/* Sub-opções quando AMBOS SAEM */}
+                  {acaoManualSelecionada === 'ambos' && (
+                    <div style={{
+                      marginTop: '12px',
+                      paddingTop: '12px',
+                      borderTop: '2px solid #93c5fd'
+                    }}>
+                      <div style={{ 
+                        fontSize: '0.9rem', 
+                        fontWeight: '700', 
+                        color: '#1e40af', 
+                        marginBottom: '10px',
+                        textAlign: 'center'
+                      }}>
+                        ❓ Quem retorna 1º a fila ❓
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                        {/* TIME A */}
+                        <button
+                          onClick={() => setOpcaoAmbosAem('time_a')}
+                          style={{
+                            flex: 1,
+                            background: opcaoAmbosAem === 'time_a' ? corTimeA : '#fff',
+                            color: opcaoAmbosAem === 'time_a' ? (corTimeA === '#FFFFFF' ? '#000' : '#fff') : corTimeA,
+                            border: `2px solid ${corTimeA}`,
+                            borderRadius: '10px',
+                            padding: '10px',
+                            fontSize: '0.9rem',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            boxShadow: opcaoAmbosAem === 'time_a' ? `0 0 8px ${corTimeA}60` : 'none'
+                          }}
+                          onMouseEnter={(e) => !finalizandoPartida && !isAplicandoRotacaoManual && (e.currentTarget.style.transform = 'scale(1.05)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                        >
+                          {obterNomeCor(corTimeA).toUpperCase()}
+                        </button>
+
+                        {/* TIME B */}
+                        <button
+                          onClick={() => setOpcaoAmbosAem('time_b')}
+                          style={{
+                            flex: 1,
+                            background: opcaoAmbosAem === 'time_b' ? corTimeB : '#fff',
+                            color: opcaoAmbosAem === 'time_b' ? (corTimeB === '#FFFFFF' ? '#000' : '#fff') : corTimeB,
+                            border: `2px solid ${corTimeB}`,
+                            borderRadius: '10px',
+                            padding: '10px',
+                            fontSize: '0.9rem',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            boxShadow: opcaoAmbosAem === 'time_b' ? `0 0 8px ${corTimeB}60` : 'none'
+                          }}
+                          onMouseEnter={(e) => !finalizandoPartida && !isAplicandoRotacaoManual && (e.currentTarget.style.transform = 'scale(1.05)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                        >
+                          {obterNomeCor(corTimeB).toUpperCase()}
+                        </button>
+                      </div>
+
+                      {/* MESCLAR TIMES */}
+                      <button
+                        onClick={() => setOpcaoAmbosAem('mesclar')}
+                        style={{
+                          width: '100%',
+                          background: opcaoAmbosAem === 'mesclar' ? '#000' : '#fff',
+                          color: opcaoAmbosAem === 'mesclar' ? '#22c55e' : '#000',
+                          border: `2px solid ${opcaoAmbosAem === 'mesclar' ? '#22c55e' : '#000'}`,
+                          borderRadius: '10px',
+                          padding: '10px',
+                          fontSize: '0.9rem',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          boxShadow: opcaoAmbosAem === 'mesclar' ? '0 0 8px #22c55e60' : 'none'
+                        }}
+                        onMouseEnter={(e) => !finalizandoPartida && !isAplicandoRotacaoManual && (e.currentTarget.style.transform = 'scale(1.02)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                      >
+                        MESCLAR TIMES
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* CENÁRIO AUTOMÁTICO: Empate com decisão de retorno à fila */}
+              {(() => {
+                const peladaId = buscar_pelada_id();
+                const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+                const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+                const filaAutomatizada = regrasConfig.fila_automatizada !== undefined ? regrasConfig.fila_automatizada : true;
+                return filaAutomatizada && placarTimeA === placarTimeB && regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide';
+              })() && (
                 <div style={{
                   background: '#fef3c7',
                   borderRadius: '12px',
@@ -8668,8 +9147,14 @@ export default function FilaPage() {
                 </div>
               )}
 
-              {/* CENÁRIO 3: Desempate na própria partida (1 time continua jogando) */}
-              {placarTimeA === placarTimeB && regrasEmpate.empate_modo === 'desempate' && (
+              {/* CENÁRIO AUTOMÁTICO: Desempate na própria partida */}
+              {(() => {
+                const peladaId = buscar_pelada_id();
+                const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+                const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+                const filaAutomatizada = regrasConfig.fila_automatizada !== undefined ? regrasConfig.fila_automatizada : true;
+                return filaAutomatizada && placarTimeA === placarTimeB && regrasEmpate.empate_modo === 'desempate';
+              })() && (
                 <div style={{
                   background: '#fef3c7',
                   borderRadius: '12px',
@@ -8723,59 +9208,157 @@ export default function FilaPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <button
                   onClick={() => {
-                    // Validar se precisa escolher time no desempate
+                    const peladaId = buscar_pelada_id();
+                    const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+                    const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+                    const filaAutomatizada = regrasConfig.fila_automatizada !== undefined ? regrasConfig.fila_automatizada : true;
+
+                    // Se modo manual, validar seleção
+                    if (!filaAutomatizada) {
+                      if (!acaoManualSelecionada) {
+                        alert('⚽ Por favor, escolha quem segue jogando!');
+                        return;
+                      }
+                      if (acaoManualSelecionada === 'ambos' && !opcaoAmbosAem) {
+                        alert('⚽ Por favor, escolha como os times retornarão à fila!');
+                        return;
+                      }
+                      aplicarAcaoManual(acaoManualSelecionada);
+                    } else {
+                      // Modo automático: validar desempate se necessário
+                      if (placarTimeA === placarTimeB && 
+                          ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
+                           regrasEmpate.desempate_modo === 'desempate') && 
+                          !timeEscolhidoDesempate) {
+                        alert('⚽ Por favor, selecione qual time venceu o desempate!');
+                        return;
+                      }
+                      finalizarPartidaComRotacao();
+                    }
+                  }}
+                  disabled={(() => {
+                    const peladaId = buscar_pelada_id();
+                    const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+                    const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+                    const filaAutomatizada = regrasConfig.fila_automatizada !== undefined ? regrasConfig.fila_automatizada : true;
+
+                    if (finalizandoPartida || isAplicandoRotacaoManual) return true;
+                    
+                    // Em modo manual, desabilitar se não houver seleção
+                    if (!filaAutomatizada) {
+                      if (!acaoManualSelecionada) return true;
+                      if (acaoManualSelecionada === 'ambos' && !opcaoAmbosAem) return true;
+                      return false;
+                    }
+                    
+                    // Modo automático: desabilitar se empate sem desempate selecionado
                     if (placarTimeA === placarTimeB && 
                         ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
                          regrasEmpate.desempate_modo === 'desempate') && 
                         !timeEscolhidoDesempate) {
-                      alert('⚽ Por favor, selecione qual time venceu o desempate!');
-                      return;
+                      return true;
                     }
-                    // Finalizar partida
-                    finalizarPartidaComRotacao();
-                  }}
-                  disabled={finalizandoPartida || (placarTimeA === placarTimeB && 
-                    ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
-                     regrasEmpate.desempate_modo === 'desempate') && 
-                    !timeEscolhidoDesempate)}
+                    
+                    return false;
+                  })()}
                   style={{
-                    background: (finalizandoPartida || (placarTimeA === placarTimeB && 
-                      ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
-                       regrasEmpate.desempate_modo === 'desempate') && 
-                      !timeEscolhidoDesempate)) ? '#9ca3af' : '#16a34a',
+                    background: (() => {
+                      const peladaId = buscar_pelada_id();
+                      const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+                      const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+                      const filaAutomatizada = regrasConfig.fila_automatizada !== undefined ? regrasConfig.fila_automatizada : true;
+
+                      if (finalizandoPartida || isAplicandoRotacaoManual) return '#9ca3af';
+                      
+                      if (!filaAutomatizada && (!acaoManualSelecionada || (acaoManualSelecionada === 'ambos' && !opcaoAmbosAem))) {
+                        return '#9ca3af';
+                      }
+                      
+                      if (placarTimeA === placarTimeB && 
+                          ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
+                           regrasEmpate.desempate_modo === 'desempate') && 
+                          !timeEscolhidoDesempate) {
+                        return '#9ca3af';
+                      }
+                      
+                      return '#16a34a';
+                    })(),
                     color: '#fff',
                     border: 'none',
                     borderRadius: '12px',
                     padding: '14px',
                     fontSize: '1rem',
                     fontWeight: '700',
-                    cursor: (finalizandoPartida || (placarTimeA === placarTimeB && 
-                      ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
-                       regrasEmpate.desempate_modo === 'desempate') && 
-                      !timeEscolhidoDesempate)) ? 'not-allowed' : 'pointer',
+                    cursor: (() => {
+                      const peladaId = buscar_pelada_id();
+                      const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+                      const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+                      const filaAutomatizada = regrasConfig.fila_automatizada !== undefined ? regrasConfig.fila_automatizada : true;
+
+                      if (finalizandoPartida || isAplicandoRotacaoManual) return 'not-allowed';
+                      
+                      if (!filaAutomatizada && (!acaoManualSelecionada || (acaoManualSelecionada === 'ambos' && !opcaoAmbosAem))) {
+                        return 'not-allowed';
+                      }
+                      
+                      if (placarTimeA === placarTimeB && 
+                          ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
+                           regrasEmpate.desempate_modo === 'desempate') && 
+                          !timeEscolhidoDesempate) {
+                        return 'not-allowed';
+                      }
+                      
+                      return 'pointer';
+                    })(),
                     boxShadow: '0 4px 12px rgba(22, 163, 74, 0.3)',
                     transition: 'all 0.2s',
-                    opacity: (finalizandoPartida || (placarTimeA === placarTimeB && 
-                      ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
-                       regrasEmpate.desempate_modo === 'desempate') && 
-                      !timeEscolhidoDesempate)) ? 0.5 : 1
+                    opacity: (() => {
+                      const peladaId = buscar_pelada_id();
+                      const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+                      const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+                      const filaAutomatizada = regrasConfig.fila_automatizada !== undefined ? regrasConfig.fila_automatizada : true;
+
+                      if (finalizandoPartida || isAplicandoRotacaoManual) return 0.5;
+                      
+                      if (!filaAutomatizada && (!acaoManualSelecionada || (acaoManualSelecionada === 'ambos' && !opcaoAmbosAem))) {
+                        return 0.5;
+                      }
+                      
+                      if (placarTimeA === placarTimeB && 
+                          ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
+                           regrasEmpate.desempate_modo === 'desempate') && 
+                          !timeEscolhidoDesempate) {
+                        return 0.5;
+                      }
+                      
+                      return 1;
+                    })()
                   }}
                   onMouseEnter={(e) => {
-                    if (!(finalizandoPartida || (placarTimeA === placarTimeB && 
-                      ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
-                       regrasEmpate.desempate_modo === 'desempate') && 
-                      !timeEscolhidoDesempate))) {
+                    const peladaId = buscar_pelada_id();
+                    const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
+                    const regrasConfig = regrasLocal ? JSON.parse(regrasLocal) : {};
+                    const filaAutomatizada = regrasConfig.fila_automatizada !== undefined ? regrasConfig.fila_automatizada : true;
+
+                    if (!(finalizandoPartida || isAplicandoRotacaoManual || 
+                        (!filaAutomatizada && (!acaoManualSelecionada || (acaoManualSelecionada === 'ambos' && !opcaoAmbosAem))) ||
+                        (placarTimeA === placarTimeB && 
+                         ((regrasEmpate.empate_modo === 'ambos_saem' && regrasEmpate.empate_retorno === 'desempate_decide') || 
+                          regrasEmpate.desempate_modo === 'desempate') && 
+                         !timeEscolhidoDesempate))) {
                       e.currentTarget.style.transform = 'scale(1.02)';
                     }
                   }}
                   onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
-                  {finalizandoPartida ? '⏳ Finalizando...' : '✅ Finalizar Partida'}
+                  {finalizandoPartida || isAplicandoRotacaoManual ? '⏳ Finalizando...' : '✅ Finalizar Partida'}
                 </button>
                 <button
                   onClick={() => {
                     setShowModalFinalizacao(false);
                     setTimeEscolhidoDesempate(null); // Resetar escolha ao cancelar
+                    setAcaoManualSelecionada(null); // Resetar ação manual ao cancelar
+                    setOpcaoAmbosAem(null); // Resetar opção de ambos
                   }}
                   style={{
                     background: '#f3f4f6',

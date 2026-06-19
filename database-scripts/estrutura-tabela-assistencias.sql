@@ -15,6 +15,9 @@ create index idx_assistencias_jogo_id on assistencias(jogo_id);
 create index idx_assistencias_jogador_id on assistencias(jogador_id);
 create index idx_assistencias_created_at on assistencias(created_at desc);
 
+-- 🔒 Segurança: Desabilitar RLS (sem restrições)
+ALTER TABLE assistencias DISABLE ROW LEVEL SECURITY;
+
 -- =========================================
 -- OBSERVAÇÕES:
 -- =========================================

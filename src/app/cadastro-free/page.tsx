@@ -156,32 +156,7 @@ export default function CadastroFree() {
       if (result.data && result.data.length > 0) {
         console.log('✅ Cliente criado com sucesso!');
 
-        // 3. Criar regras padrão para o novo cliente
-        console.log('📋 Criando regras padrão...');
-        const resultRegras = await supabase
-          .from('regras')
-          .insert([{
-            pelada_id: peladaId,
-            jogadores_por_time: 5,
-            modelo_sorteio: 'aleatorio',
-            duracao: 10,
-            vitorias_consecutivas: 0,
-            prioridade_retorno: 'mesclar',
-            regra_empate: 'desempate',
-            regra_apos_empate: 'desempate_decide',
-            empate_conta_vitoria: false,
-            tipo_fila: 'modo_prancheta',
-            modo_sincronizacao: 'tempo_real'
-          }]);
-
-        if (resultRegras.error) {
-          console.error('⚠️ Erro ao criar regras padrão:', resultRegras.error);
-          // Não bloqueia o cadastro, apenas avisa
-        } else {
-          console.log('✅ Regras padrão criadas com sucesso!');
-        }
-
-        // 4. Salvar credenciais e mostrar modal
+        // 3. Salvar credenciais e mostrar modal
         setCredenciais({ 
           peladaId: peladaId, 
           senha: senhaAdmin 

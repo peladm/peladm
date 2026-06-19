@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { CONTATO } from '../../config/contato';
 import { salvarCredenciais } from '../../lib/credenciais';
 
@@ -189,43 +188,43 @@ export default function Login() {
       <div className="max-w-md w-full">
         <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-200">
           <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">Acessar Pelada</h2>
-            <p className="text-gray-600">Digite suas credenciais</p>
+            <p className="text-lg font-bold text-gray-800">PeladaPLAY</p>
+            <p className="text-xs text-gray-500">Gestão Inteligente de Peladas</p>
           </div>
 
           <form onSubmit={handleLoginCompleto}>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Código da Pelada</label>
+            <div className="space-y-3 mb-6">
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap w-24">Código</label>
                 <input
                   type="text"
                   value={peladaId}
                   onChange={(e) => setPeladaId(e.target.value.toUpperCase())}
-                  placeholder="Digite o código"
-                  className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase"
+                  placeholder="Código"
+                  className="flex-1 h-10 px-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase text-sm"
                   maxLength={10}
                   required
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Usuário</label>
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap w-24">Usuário</label>
                 <input
                   type="text"
                   value={usuario}
                   onChange={(e) => setUsuario(e.target.value)}
-                  className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="flex-1 h-10 px-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                   required
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Senha</label>
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap w-24">Senha</label>
                 <input
                   type="password"
                   value={senha}
                   onChange={(e) => setSenha(e.target.value)}
-                  className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="flex-1 h-10 px-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                   required
                 />
               </div>
@@ -239,7 +238,7 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-xl font-semibold transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-xl font-semibold transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 mt-4"
               >
                 {loading ? (
                   <>
@@ -253,26 +252,28 @@ export default function Login() {
                   </>
                 )}
               </button>
+            </div>
 
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-300"></div>
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-4 bg-white text-gray-500">ou</span>
-                </div>
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300"></div>
               </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-white text-gray-500">ou</span>
+              </div>
+            </div>
 
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2 text-center">
-                  Código da Pelada (apenas visitante)
+                  Acesso Visitante
                 </label>
                 <input
                   type="text"
                   value={peladaId}
                   onChange={(e) => setPeladaId(e.target.value.toUpperCase())}
                   placeholder="Ex: GD3974"
-                  className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase text-center text-lg font-bold tracking-wider"
+                  className="w-full h-10 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase text-center text-sm font-bold tracking-wider"
                   maxLength={6}
                 />
               </div>
@@ -281,19 +282,27 @@ export default function Login() {
                 type="button"
                 onClick={handleAcessoVisitante}
                 disabled={loading}
-                className="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 py-3 px-4 rounded-xl font-medium transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 border border-blue-200"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-semibold transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
               >
-                <span>📊</span>
-                <span>Ver Estatísticas</span>
-                <span>📊</span>
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                    <span>Acessando...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📊</span>
+                    <span>Acesso Jogador</span>
+                  </>
+                )}
               </button>
               <p className="text-xs text-center text-gray-500">
                 Apenas código da pelada • Acesso limitado
               </p>
             </div>
           </form>
-          
-          <div className="mt-6 pt-6 border-t border-gray-200">
+
+          <div className="mt-8 pt-6 border-t border-gray-200">
             <p className="text-center text-sm text-gray-600 mb-3">Ainda não tem uma conta?</p>
             
             <button
@@ -307,30 +316,6 @@ export default function Login() {
             <p className="text-xs text-center text-gray-500 mt-2">
               25 jogadores • 10 partidas • Com Anúncios
             </p>
-            
-            <div className="mt-4 text-center">
-              <a
-                href={`https://wa.me/${CONTATO.whatsapp}?text=${encodeURIComponent(CONTATO.mensagemGoldPremium)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center space-x-2 text-sm font-medium text-purple-600 hover:text-purple-700 transition-colors"
-              >
-                <span>💎</span>
-                <span>Quer Gold ou Premium?</span>
-              </a>
-              <p className="text-xs text-gray-400 mt-1">Mais jogadores, sem anúncios, estatísticas completas</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="text-center mt-8 space-y-4">
-          <div>
-            <Image src="/logo.png" alt="PeladaPLAY Logo" width={90} height={90} className="mx-auto mb-3" />
-          </div>
-          
-          <div>
-            <p className="text-sm font-medium text-gray-700">PeladaPLAY - Gestão Inteligente de Peladas</p>
-            <p className="text-xs text-gray-500 mt-1">Versão 2.1.0</p>
           </div>
         </div>
       </div>

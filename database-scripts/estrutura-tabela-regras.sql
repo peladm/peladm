@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS regras (
   jogadores_por_time INTEGER,
   modelo_sorteio VARCHAR,
   duracao INTEGER,
+  fila_automatizada BOOLEAN,
   vitorias_consecutivas INTEGER,
   prioridade_retorno VARCHAR,
   regra_empate VARCHAR,
@@ -44,10 +45,11 @@ CREATE TABLE IF NOT EXISTS regras (
 -- DESCRIÇÃO DOS CAMPOS
 -- ================================================
 -- pelada_id: Identificador único da pelada (chave primária)
--- jogadores_por_time: Quantidade de jogadores por time (4, 5, 6 ou 7)
+-- jogadores_por_time: Quantidade de jogadores por time (3 a 11)
 -- modelo_sorteio: Tipo de sorteio usado
 -- duracao: Duração da partida em minutos
--- vitorias_consecutivas: Limite de vitórias consecutivas (0 = ilimitado)
+-- fila_automatizada: Se a fila deve ser automatizada (true) ou manual (false)
+-- vitorias_consecutivas: Limite de vitórias consecutivas (0 = sem limite, 1-10 = com limite)
 -- prioridade_retorno: Como lidar com times perdedores na fila
 -- regra_empate: O que acontece em caso de empate
 -- regra_apos_empate: Como resolver após empate

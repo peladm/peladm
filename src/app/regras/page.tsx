@@ -14,6 +14,7 @@ const REGRAS_PADRAO: Regras = {
   jogadores_por_time: 5,
   modelo_sorteio: 'equilibrado',
   duracao: 10,
+  fila_automatizada: true,
   vitorias_consecutivas: 0,
   prioridade_retorno: 'prioridade',
   regra_empate: 'ambos_saem',
@@ -27,6 +28,7 @@ interface Regras {
   jogadores_por_time: number;
   modelo_sorteio: 'equilibrado' | 'aleatorio';
   duracao: number;
+  fila_automatizada: boolean;
   vitorias_consecutivas: number;
   prioridade_retorno: 'prioridade' | 'sem_prioridade' | 'mesclar' | 'perdedor_continua';
   regra_empate: 'ambos_saem' | 'desempate';
@@ -71,8 +73,7 @@ export default function RegrasPage() {
         setRegras({
           jogadores_por_time: regrasCarregadas.jogadores_por_time || REGRAS_PADRAO.jogadores_por_time,
           modelo_sorteio: regrasCarregadas.modelo_sorteio || REGRAS_PADRAO.modelo_sorteio,
-          duracao: regrasCarregadas.duracao || REGRAS_PADRAO.duracao,
-          vitorias_consecutivas: regrasCarregadas.vitorias_consecutivas || REGRAS_PADRAO.vitorias_consecutivas,
+          duracao: regrasCarregadas.duracao || REGRAS_PADRAO.duracao,        fila_automatizada: regrasCarregadas.fila_automatizada !== undefined ? regrasCarregadas.fila_automatizada : REGRAS_PADRAO.fila_automatizada,          vitorias_consecutivas: regrasCarregadas.vitorias_consecutivas || REGRAS_PADRAO.vitorias_consecutivas,
           prioridade_retorno: regrasCarregadas.prioridade_retorno || REGRAS_PADRAO.prioridade_retorno,
           regra_empate: regrasCarregadas.regra_empate || REGRAS_PADRAO.regra_empate,
           regra_apos_empate: regrasCarregadas.regra_apos_empate || REGRAS_PADRAO.regra_apos_empate,
@@ -88,7 +89,7 @@ export default function RegrasPage() {
       const clienteDb = await getClienteSupabase(peladaId);
       const { data: regrasCliente, error: erroCliente } = await clienteDb
         .from('regras')
-        .select('jogadores_por_time, modelo_sorteio, duracao, vitorias_consecutivas, prioridade_retorno, regra_empate, regra_apos_empate, empate_conta_vitoria, tipo_fila, cores_coletes')
+        .select('jogadores_por_time, modelo_sorteio, duracao, fila_automatizada, vitorias_consecutivas, prioridade_retorno, regra_empate, regra_apos_empate, empate_conta_vitoria, tipo_fila, modo_sincronizacao, cores_coletes')
         .eq('pelada_id', peladaId)
         .maybeSingle();
 
@@ -99,6 +100,7 @@ export default function RegrasPage() {
           jogadores_por_time: regrasCliente.jogadores_por_time || REGRAS_PADRAO.jogadores_por_time,
           modelo_sorteio: regrasCliente.modelo_sorteio || REGRAS_PADRAO.modelo_sorteio,
           duracao: regrasCliente.duracao || REGRAS_PADRAO.duracao,
+          fila_automatizada: regrasCliente.fila_automatizada !== undefined ? regrasCliente.fila_automatizada : REGRAS_PADRAO.fila_automatizada,
           vitorias_consecutivas: regrasCliente.vitorias_consecutivas || REGRAS_PADRAO.vitorias_consecutivas,
           prioridade_retorno: regrasCliente.prioridade_retorno || REGRAS_PADRAO.prioridade_retorno,
           regra_empate: regrasCliente.regra_empate || REGRAS_PADRAO.regra_empate,
@@ -118,7 +120,7 @@ export default function RegrasPage() {
       const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
       const { data: regrasMaster, error } = await supabasePrincipal
         .from('regras')
-        .select('jogadores_por_time, modelo_sorteio, duracao, vitorias_consecutivas, prioridade_retorno, regra_empate, regra_apos_empate, empate_conta_vitoria, tipo_fila, cores_coletes')
+        .select('jogadores_por_time, modelo_sorteio, duracao, fila_automatizada, vitorias_consecutivas, prioridade_retorno, regra_empate, regra_apos_empate, empate_conta_vitoria, tipo_fila, modo_sincronizacao, cores_coletes')
         .eq('pelada_id', peladaId)
         .maybeSingle();
 
@@ -132,6 +134,7 @@ export default function RegrasPage() {
           jogadores_por_time: regrasMaster.jogadores_por_time || REGRAS_PADRAO.jogadores_por_time,
           modelo_sorteio: regrasMaster.modelo_sorteio || REGRAS_PADRAO.modelo_sorteio,
           duracao: regrasMaster.duracao || REGRAS_PADRAO.duracao,
+          fila_automatizada: regrasMaster.fila_automatizada !== undefined ? regrasMaster.fila_automatizada : REGRAS_PADRAO.fila_automatizada,
           vitorias_consecutivas: regrasMaster.vitorias_consecutivas || REGRAS_PADRAO.vitorias_consecutivas,
           prioridade_retorno: regrasMaster.prioridade_retorno || REGRAS_PADRAO.prioridade_retorno,
           regra_empate: regrasMaster.regra_empate || REGRAS_PADRAO.regra_empate,
@@ -180,6 +183,13 @@ export default function RegrasPage() {
       return;
     }
     
+    // Validar jogadores por time
+    if (typeof regras.jogadores_por_time !== 'number' || regras.jogadores_por_time < 3 || regras.jogadores_por_time > 11) {
+      setMessage('❌ Jogadores por Time deve ser entre 3 e 11');
+      setTimeout(() => setMessage(''), 4000);
+      return;
+    }
+    
     // Abrir modal de confirmação
     setShowConfirmModal(true);
   };
@@ -218,19 +228,29 @@ export default function RegrasPage() {
       console.log('☁️ Salvando regras nos 3 locais...');
       const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
       
+      // ⚠️ Se modo MANUAL (fila_automatizada: false), zerar colunas de automação
       const dadosRegras = {
         pelada_id: peladaId,
         jogadores_por_time: regras.jogadores_por_time,
         modelo_sorteio: regras.modelo_sorteio,
         tipo_fila: regras.tipo_fila,
         duracao: regras.duracao,
-        vitorias_consecutivas: regras.vitorias_consecutivas,
-        prioridade_retorno: regras.prioridade_retorno,
+        fila_automatizada: regras.fila_automatizada,
+        // Se modo MANUAL, zerar estas colunas para evitar conflitos
+        vitorias_consecutivas: regras.fila_automatizada ? regras.vitorias_consecutivas : 0,
+        prioridade_retorno: regras.fila_automatizada ? regras.prioridade_retorno : 'prioridade',
         regra_empate: regras.regra_empate,
         regra_apos_empate: regras.regra_apos_empate,
-        empate_conta_vitoria: regras.empate_conta_vitoria,
+        empate_conta_vitoria: false,
         cores_coletes: regras.cores_coletes
       };
+      
+      // Log de info se zerou valores por modo manual
+      if (!regras.fila_automatizada) {
+        console.log('🎮 MODO MANUAL DETECTADO - zerando colunas de automação');
+        console.log('   ❌ vitorias_consecutivas: foi ' + regras.vitorias_consecutivas + ' → agora 0');
+        console.log('   ❌ empate_conta_vitoria: foi ' + regras.empate_conta_vitoria + ' → agora false');
+      }
       
       // 1. Salvar no Supabase MASTER
       console.log('☁️ 1️⃣ Salvando no SUPABASE MASTER...');
@@ -285,6 +305,7 @@ export default function RegrasPage() {
       jogadores_por_time: 5,
       modelo_sorteio: 'equilibrado',
       duracao: 10,
+      fila_automatizada: true,
       vitorias_consecutivas: 0,
       prioridade_retorno: 'prioridade',
       regra_empate: 'ambos_saem',
@@ -297,8 +318,16 @@ export default function RegrasPage() {
     setTimeout(() => setMessage(''), 3000);
   };
 
-  const selecionarJogadores = (valor: number) => {
-    setRegras({ ...regras, jogadores_por_time: valor });
+  const handleEmpateVitoria = (valor: boolean) => {
+    if (regras.fila_automatizada && regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0) {
+      setRegras({ ...regras, empate_conta_vitoria: valor });
+    }
+  };
+
+  const handleRegraAposEmpate = (valor: 'desempate_decide' | 'mesclar_times') => {
+    if (regras.fila_automatizada && regras.regra_empate === 'ambos_saem') {
+      setRegras({ ...regras, regra_apos_empate: valor });
+    }
   };
 
 
@@ -316,21 +345,40 @@ export default function RegrasPage() {
                 <label className="block text-sm font-bold text-gray-800 mb-4">
                   ⚽ Jogadores por Time (sem o goleiro)
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[4, 5, 6, 7].map((valor) => (
-                    <button
-                      key={valor}
-                      type="button"
-                      onClick={() => selecionarJogadores(valor)}
-                      className={`py-3 px-4 rounded-lg text-sm font-medium transition-all ${
-                        regras.jogadores_por_time === valor
-                          ? 'bg-blue-500 text-white shadow-lg'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {valor}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="3"
+                    max="11"
+                    value={regras.jogadores_por_time}
+                    onChange={(e) => {
+                      const valor = e.target.value === '' ? '' : parseInt(e.target.value);
+                      setRegras({ ...regras, jogadores_por_time: valor as any });
+                    }}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                  <span className="text-gray-600 text-sm font-medium">jogadores</span>
+                </div>
+                {typeof regras.jogadores_por_time === 'number' && (regras.jogadores_por_time < 3 || regras.jogadores_por_time > 11) && (
+                  <p className="text-red-500 text-xs mt-2">Deve ser entre 3 e 11 jogadores</p>
+                )}
+              </div>
+
+              {/* Duração da Partida */}
+              <div className="bg-gray-50 p-4 rounded-lg border">
+                <label className="block text-sm font-bold text-gray-800 mb-4">
+                  ⏱️ Duração da Partida
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="5"
+                    max="90"
+                    value={regras.duracao}
+                    onChange={(e) => setRegras({ ...regras, duracao: parseInt(e.target.value) })}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                  <span className="text-gray-600 text-sm font-medium">minutos</span>
                 </div>
               </div>
 
@@ -388,230 +436,7 @@ export default function RegrasPage() {
                 </div>
               </div>
 
-              {/* Duração da Partida */}
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <label className="block text-sm font-bold text-gray-800 mb-4">
-                  ⏱️ Duração da Partida
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="5"
-                    max="90"
-                    value={regras.duracao}
-                    onChange={(e) => setRegras({ ...regras, duracao: parseInt(e.target.value) })}
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  />
-                  <span className="text-gray-600 text-sm font-medium">minutos</span>
-                </div>
-              </div>
-
-              {/* Vitórias Consecutivas */}
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <label className="block text-sm font-bold text-gray-800 mb-2">
-                  🏆 Vitórias Consecutivas?
-                </label>
-                <p className="text-xs text-gray-600 mb-4">
-                  Existe na pelada, limite para vitórias seguidas?
-                </p>
-                <div className="grid grid-cols-4 gap-2">
-                  {['Não', 2, 3, 4].map((valor) => (
-                    <button
-                      key={valor}
-                      type="button"
-                      onClick={() => {
-                        setRegras({ ...regras, vitorias_consecutivas: valor === 'Não' ? 0 : valor as number });
-                      }}
-                      className={`py-3 px-4 rounded-lg text-sm font-medium transition-all ${
-                        (valor === 'Não' && regras.vitorias_consecutivas === 0) || regras.vitorias_consecutivas === valor
-                          ? 'bg-blue-500 text-white shadow-lg'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {valor}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Prioridade de Retorno - Desabilitado se vitórias consecutivas = Não */}
-              <div className={`bg-gray-50 p-4 rounded-lg border ${regras.vitorias_consecutivas === 0 ? 'opacity-50' : ''}`}>
-                <label className="block text-sm font-bold text-gray-800 mb-2">
-                  🔄 Regra após Vitórias Consecutivas
-                </label>
-                <p className="text-xs text-gray-600 mb-4">
-                  Como a fila deve agir, após atingir o limite de vitórias consecutivas
-                </p>
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    disabled={regras.vitorias_consecutivas === 0}
-                    onClick={() => setRegras({ ...regras, prioridade_retorno: 'prioridade' })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      regras.prioridade_retorno === 'prioridade'
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    } ${regras.vitorias_consecutivas === 0 ? 'cursor-not-allowed' : ''}`}
-                  >
-                    Ambos saem e o VENCEDOR retorna 1º a fila
-                  </button>
-                  <button
-                    type="button"
-                    disabled={regras.vitorias_consecutivas === 0}
-                    onClick={() => setRegras({ ...regras, prioridade_retorno: 'sem_prioridade' })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      regras.prioridade_retorno === 'sem_prioridade'
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    } ${regras.vitorias_consecutivas === 0 ? 'cursor-not-allowed' : ''}`}
-                  >
-                    Ambos saem e o PERDEDOR retorna 1º a fila
-                  </button>
-                  <button
-                    type="button"
-                    disabled={regras.vitorias_consecutivas === 0}
-                    onClick={() => setRegras({ ...regras, prioridade_retorno: 'mesclar' })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      regras.prioridade_retorno === 'mesclar'
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    } ${regras.vitorias_consecutivas === 0 ? 'cursor-not-allowed' : ''}`}
-                  >
-                    Ambos saem e os times são mesclados no retorno
-                  </button>
-                  <button
-                    type="button"
-                    disabled={regras.vitorias_consecutivas === 0}
-                    onClick={() => setRegras({ ...regras, prioridade_retorno: 'perdedor_continua' })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      regras.prioridade_retorno === 'perdedor_continua'
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    } ${regras.vitorias_consecutivas === 0 ? 'cursor-not-allowed' : ''}`}
-                  >
-                    Vencedor sai e o PERDEDOR continua jogando
-                  </button>
-                </div>
-              </div>
-
-              {/* Regra de Empate */}
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <label className="block text-sm font-bold text-gray-800 mb-4">
-                  ⚖️ Como funciona o empate?
-                </label>
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setRegras({ ...regras, regra_empate: 'ambos_saem' })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      regras.regra_empate === 'ambos_saem'
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    AMBOS os times saem
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRegras({ ...regras, regra_empate: 'desempate' })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      regras.regra_empate === 'desempate'
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    DESEMPATE no final da partida
-                  </button>
-                </div>
-              </div>
-
-              {/* Empate conta como vitória? - Só aparece se desempate E vitórias consecutivas ativo */}
-              <div className={`p-4 rounded-lg border transition-all ${
-                regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0
-                  ? 'bg-purple-50 border-purple-200' 
-                  : 'bg-gray-50 border-gray-200 opacity-50'
-              }`}>
-                <label className={`block text-sm font-bold mb-4 ${
-                  regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0
-                    ? 'text-gray-800' 
-                    : 'text-gray-500'
-                }`}>
-                  🏆 Empate conta como vitória para as vitórias consecutivas?
-                </label>
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    disabled={!(regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0)}
-                    onClick={() => (regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0) && setRegras({ ...regras, empate_conta_vitoria: true })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      regras.empate_conta_vitoria
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    } ${!(regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0) ? 'cursor-not-allowed' : ''}`}
-                  >
-                    SIM - Empate conta como vitória
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!(regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0)}
-                    onClick={() => (regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0) && setRegras({ ...regras, empate_conta_vitoria: false })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      !regras.empate_conta_vitoria
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    } ${!(regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0) ? 'cursor-not-allowed' : ''}`}
-                  >
-                    NÃO - Empate não conta como vitória
-                  </button>
-                </div>
-              </div>
-
-              {/* Regra Após Empate */}
-              <div className={`p-4 rounded-lg border transition-all ${
-                regras.regra_empate === 'ambos_saem' 
-                  ? 'bg-yellow-50 border-yellow-200' 
-                  : 'bg-gray-50 border-gray-200 opacity-50'
-              }`}>
-                <label className={`block text-sm font-bold mb-4 ${
-                  regras.regra_empate === 'ambos_saem' 
-                    ? 'text-gray-800' 
-                    : 'text-gray-500'
-                }`}>
-                  🔄 Regra após empate onde ambos saem
-                </label>
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    disabled={regras.regra_empate !== 'ambos_saem'}
-                    onClick={() => regras.regra_empate === 'ambos_saem' && setRegras({ ...regras, regra_apos_empate: 'desempate_decide' })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      regras.regra_empate !== 'ambos_saem'
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        : regras.regra_apos_empate === 'desempate_decide'
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Desempate decide retorno a fila
-                  </button>
-                  <button
-                    type="button"
-                    disabled={regras.regra_empate !== 'ambos_saem'}
-                    onClick={() => regras.regra_empate === 'ambos_saem' && setRegras({ ...regras, regra_apos_empate: 'mesclar_times' })}
-                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
-                      regras.regra_empate !== 'ambos_saem'
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        : regras.regra_apos_empate === 'mesclar_times'
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Mesclar times no retorno
-                  </button>
-                </div>
-              </div>
-
-              {/* Tipo de Fila */}
+              {/* Tipo de Fila (Modo de Partida) */}
               <div className="bg-gray-50 p-4 rounded-lg border relative">
                 {/* Tarja Premium */}
                 {!possuiPermissao('usarPaginaPartida') && (
@@ -721,6 +546,264 @@ export default function RegrasPage() {
                   </p>
                 )}
               </div>
+
+              {/* NOVA SEÇÃO: Deseja automatizar o andamento da fila? */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border-2 border-blue-300 shadow-sm">
+                <label className="block text-sm font-bold text-gray-800 mb-2">
+                  DESEJA AUTOMATIZAR O ANDAMENTO DA FILA?
+                </label>
+                <p className="text-xs text-gray-600 mb-4">
+                  Se <strong>NÃO</strong>, todo andamento da fila será manual (você confirma a cada partida). Se <strong>SIM</strong>, as regras abaixo definem como a fila se comporta automaticamente.
+                </p>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setRegras({ ...regras, fila_automatizada: true })}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      regras.fila_automatizada
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Automatizado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRegras({ ...regras, fila_automatizada: false, vitorias_consecutivas: 0 })}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      !regras.fila_automatizada
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Manual
+                  </button>
+                </div>
+              </div>
+
+              {/* Vitórias Consecutivas - Habilitada apenas se fila_automatizada = true */}
+              <div className={`bg-gray-50 p-4 rounded-lg border transition-all ${!regras.fila_automatizada ? 'opacity-50' : ''}`}>
+                <label className={`block text-sm font-bold mb-2 ${!regras.fila_automatizada ? 'text-gray-500' : 'text-gray-800'}`}>
+                  🏆 Vitórias Consecutivas?
+                </label>
+                <p className={`text-xs mb-4 ${!regras.fila_automatizada ? 'text-gray-500' : 'text-gray-600'}`}>
+                  Existe na pelada, limite para vitórias seguidas?
+                </p>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={!regras.fila_automatizada}
+                    onClick={() => {
+                      if (regras.fila_automatizada) {
+                        setRegras({ ...regras, vitorias_consecutivas: 0 });
+                      }
+                    }}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all ${
+                      regras.vitorias_consecutivas === 0
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } ${!regras.fila_automatizada ? 'cursor-not-allowed' : ''}`}
+                  >
+                    Não - Sem limite de vitórias
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      disabled={!regras.fila_automatizada}
+                      placeholder="Digite de 1 a 10"
+                      value={regras.vitorias_consecutivas === 0 ? '' : regras.vitorias_consecutivas}
+                      onChange={(e) => {
+                        if (regras.fila_automatizada && e.target.value) {
+                          const valor = parseInt(e.target.value);
+                          if (valor >= 1 && valor <= 10) {
+                            setRegras({ ...regras, vitorias_consecutivas: valor });
+                          }
+                        }
+                      }}
+                      className={`flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${
+                        !regras.fila_automatizada ? 'bg-gray-200 cursor-not-allowed' : ''
+                      }`}
+                    />
+                    <span className="text-gray-600 text-sm font-medium">vitórias</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Prioridade de Retorno - Habilitada apenas se fila_automatizada = true E vitorias_consecutivas > 0 */}
+              <div className={`bg-gray-50 p-4 rounded-lg border transition-all ${!regras.fila_automatizada || regras.vitorias_consecutivas === 0 ? 'opacity-50' : ''}`}>
+                <label className={`block text-sm font-bold mb-2 ${!regras.fila_automatizada || regras.vitorias_consecutivas === 0 ? 'text-gray-500' : 'text-gray-800'}`}>
+                  🔄 Regra após Vitórias Consecutivas
+                </label>
+                <p className={`text-xs mb-4 ${!regras.fila_automatizada || regras.vitorias_consecutivas === 0 ? 'text-gray-500' : 'text-gray-600'}`}>
+                  Como a fila deve agir, após atingir o limite de vitórias consecutivas
+                </p>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={!regras.fila_automatizada || regras.vitorias_consecutivas === 0}
+                    onClick={() => setRegras({ ...regras, prioridade_retorno: 'prioridade' })}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      regras.prioridade_retorno === 'prioridade'
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } ${!regras.fila_automatizada || regras.vitorias_consecutivas === 0 ? 'cursor-not-allowed' : ''}`}
+                  >
+                    Ambos saem e o VENCEDOR retorna 1º a fila
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!regras.fila_automatizada || regras.vitorias_consecutivas === 0}
+                    onClick={() => setRegras({ ...regras, prioridade_retorno: 'sem_prioridade' })}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      regras.prioridade_retorno === 'sem_prioridade'
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } ${!regras.fila_automatizada || regras.vitorias_consecutivas === 0 ? 'cursor-not-allowed' : ''}`}
+                  >
+                    Ambos saem e o PERDEDOR retorna 1º a fila
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!regras.fila_automatizada || regras.vitorias_consecutivas === 0}
+                    onClick={() => setRegras({ ...regras, prioridade_retorno: 'mesclar' })}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      regras.prioridade_retorno === 'mesclar'
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } ${!regras.fila_automatizada || regras.vitorias_consecutivas === 0 ? 'cursor-not-allowed' : ''}`}
+                  >
+                    Ambos saem e os times são mesclados no retorno
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!regras.fila_automatizada || regras.vitorias_consecutivas === 0}
+                    onClick={() => setRegras({ ...regras, prioridade_retorno: 'perdedor_continua' })}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      regras.prioridade_retorno === 'perdedor_continua'
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } ${!regras.fila_automatizada || regras.vitorias_consecutivas === 0 ? 'cursor-not-allowed' : ''}`}
+                  >
+                    Vencedor sai e o PERDEDOR continua jogando
+                  </button>
+                </div>
+              </div>
+
+              {/* Regra de Empate - Habilitada apenas se fila_automatizada = true */}
+              <div className={`bg-gray-50 p-4 rounded-lg border transition-all ${!regras.fila_automatizada ? 'opacity-50' : ''}`}>
+                <label className={`block text-sm font-bold mb-4 ${!regras.fila_automatizada ? 'text-gray-500' : 'text-gray-800'}`}>
+                  ⚖️ Como funciona o empate?
+                </label>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={!regras.fila_automatizada}
+                    onClick={() => setRegras({ ...regras, regra_empate: 'ambos_saem' })}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      regras.regra_empate === 'ambos_saem'
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } ${!regras.fila_automatizada ? 'cursor-not-allowed' : ''}`}
+                  >
+                    AMBOS os times saem
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!regras.fila_automatizada}
+                    onClick={() => setRegras({ ...regras, regra_empate: 'desempate' })}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      regras.regra_empate === 'desempate'
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } ${!regras.fila_automatizada ? 'cursor-not-allowed' : ''}`}
+                  >
+                    DESEMPATE no final da partida
+                  </button>
+                </div>
+              </div>
+
+              {/* Regra Após Empate - Habilitada apenas se fila_automatizada = true E regra_empate = 'ambos_saem' */}
+              <div className={`p-4 rounded-lg border transition-all ${
+                regras.fila_automatizada && regras.regra_empate === 'ambos_saem' 
+                  ? 'bg-gray-50 border-gray-200' 
+                  : 'bg-gray-50 border-gray-200 opacity-50'
+              }`}>
+                <label className={`block text-sm font-bold mb-4 ${
+                  regras.fila_automatizada && regras.regra_empate === 'ambos_saem' 
+                    ? 'text-gray-800' 
+                    : 'text-gray-500'
+                }`}>
+                  🔄 Regra após empate onde ambos saem
+                </label>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={!regras.fila_automatizada || regras.regra_empate !== 'ambos_saem'}
+                    onClick={() => handleRegraAposEmpate('desempate_decide')}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      !regras.fila_automatizada || regras.regra_empate !== 'ambos_saem'
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : regras.regra_apos_empate === 'desempate_decide'
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Desempate decide retorno a fila
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!regras.fila_automatizada || regras.regra_empate !== 'ambos_saem'}
+                    onClick={() => handleRegraAposEmpate('mesclar_times')}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      !regras.fila_automatizada || regras.regra_empate !== 'ambos_saem'
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : regras.regra_apos_empate === 'mesclar_times'
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Mesclar times no retorno
+                  </button>
+                </div>
+              </div>
+
+              {/* Empate conta como vitória? - Habilitada apenas se fila_automatizada = true E regra_empate = 'desempate' E vitorias_consecutivas > 0 */}
+              {regras.fila_automatizada && regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0 && (
+              <div className="p-4 rounded-lg border bg-gray-50 border-gray-200 transition-all">
+                <label className="block text-sm font-bold mb-4 text-gray-800">
+                  🏆 Empate conta como vitória para as vitórias consecutivas?
+                </label>
+                <p className="text-xs mb-4 text-gray-600">
+                  Esta opção só funciona quando: Automático ✓ + Desempate ✓ + Vitórias Consecutivas &gt; 0
+                </p>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => handleEmpateVitoria(true)}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      regras.empate_conta_vitoria
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    SIM - Empate conta como vitória
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleEmpateVitoria(false)}
+                    className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      !regras.empate_conta_vitoria
+                        ? 'bg-blue-500 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    NÃO - Empate não conta como vitória
+                  </button>
+                </div>
+              </div>
+              )}
 
               {/* Botões de Ação */}
               <div className="flex gap-3 pt-4">

@@ -32,6 +32,9 @@ CREATE INDEX IF NOT EXISTS idx_sessoes_pelada ON sessoes(pelada_id);
 CREATE INDEX IF NOT EXISTS idx_sessoes_data ON sessoes(data);
 CREATE INDEX IF NOT EXISTS idx_sessoes_status ON sessoes(status);
 
+-- 🔒 Segurança: Desabilitar RLS (sem restrições)
+ALTER TABLE sessoes DISABLE ROW LEVEL SECURITY;
+
 -- =========================================
 -- OBSERVAÇÕES:
 -- =========================================

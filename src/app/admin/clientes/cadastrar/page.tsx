@@ -483,8 +483,7 @@ function CadastrarClienteContent() {
             }, { onConflict: 'pelada_id' });
 
           if (regrasError) {
-            console.error('⚠️ Cliente criado, mas falhou ao criar regras padrão:', regrasError);
-            alert('⚠️ Cliente criado, mas não foi possível inicializar as regras padrão.');
+            console.error('⚠️ Falha ao atualizar regras:', regrasError);
           }
 
           // Salvar credenciais para exibir no modal

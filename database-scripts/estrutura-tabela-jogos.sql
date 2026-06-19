@@ -45,6 +45,9 @@ CREATE INDEX IF NOT EXISTS idx_jogos_sessao ON jogos(sessao_id);
 CREATE INDEX IF NOT EXISTS idx_jogos_numero ON jogos(numero_jogo);
 CREATE INDEX IF NOT EXISTS idx_jogos_status ON jogos(status);
 
+-- 🔒 Segurança: Desabilitar RLS (sem restrições)
+ALTER TABLE jogos DISABLE ROW LEVEL SECURITY;
+
 -- =========================================
 -- OBSERVAÇÕES:
 -- =========================================

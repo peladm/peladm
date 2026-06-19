@@ -68,6 +68,8 @@ export default function Estatisticas() {
   const [jogos, setJogos] = useState<Jogo[]>([]);
   const [jogosFiltrados, setJogosFiltrados] = useState<Jogo[]>([]);
   const [jogadores, setJogadores] = useState<{ [id: string]: Jogador }>({});
+  const [jogadoresPorTime, setJogadoresPorTime] = useState(5); // padrão
+  const [statsCompletos, setStatsCompletos] = useState<{ [nome: string]: any }>({}); // Stats detalhados por jogador
 
   // Estados para filtros
   const [filtro, setFiltro] = useState<'atual' | 'mes' | 'ultimas' | 'ano' | 'historia'>('atual');
@@ -278,6 +280,7 @@ export default function Estatisticas() {
             gols: 0,
             assistencias: 0,
             mvp: 0,
+            cleanSheets: 0,
             deiteiRolei: 0,
             sequenciaInvicta: 0,
             sequenciaAtual: 0,
@@ -303,6 +306,14 @@ export default function Estatisticas() {
           }
           stats[nome].sequenciaAtual = 0;
           stats[nome].ultimosResultados.push('D');
+        }
+        
+        // Contar clean sheets (time não levou gols em vitória ou empate)
+        const golsSofridos = noTimeA ? jogo.placar_b : jogo.placar_a;
+        const venceu = (noTimeA && jogo.placar_a > jogo.placar_b) || (!noTimeA && jogo.placar_b > jogo.placar_a);
+        const empatou = jogo.placar_a === jogo.placar_b;
+        if (golsSofridos === 0 && (venceu || empatou)) {
+          stats[nome].cleanSheets++;
         }
       });
 
@@ -420,19 +431,48 @@ export default function Estatisticas() {
     const artilheiro = Object.values(stats)
       .filter((s: any) => s.gols > 0)
       .sort((a: any, b: any) => b.gols - a.gols)
-      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.gols} gols` }));
+      .map((s: any, idx) => ({ 
+        posicao: idx + 1, 
+        nome: s.nome, 
+        valor: `${s.gols} gols`,
+        gols: s.gols,
+        jogos: s.jogos,
+        media: s.jogos > 0 ? (s.gols / s.jogos).toFixed(2) : '0.00'
+      }));
 
     // 2. GARÇOM (assistências)
     const garcom = Object.values(stats)
       .filter((s: any) => s.assistencias > 0)
       .sort((a: any, b: any) => b.assistencias - a.assistencias)
-      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.assistencias} assist.` }));
+      .map((s: any, idx) => ({ 
+        posicao: idx + 1, 
+        nome: s.nome, 
+        valor: `${s.assistencias} assist.`,
+        assistencias: s.assistencias,
+        jogos: s.jogos,
+        media: s.jogos > 0 ? (s.assistencias / s.jogos).toFixed(2) : '0.00'
+      }));
 
     // 3. VITORIOSO
     const vitorioso = Object.values(stats)
       .filter((s: any) => s.vitorias > 0)
-      .sort((a: any, b: any) => b.vitorias - a.vitorias)
-      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.vitorias} vitórias` }));
+      .sort((a: any, b: any) => {
+        // Ordenar por quantidade de vitórias primeiro
+        const diffVitorias = b.vitorias - a.vitorias;
+        if (diffVitorias !== 0) return diffVitorias;
+        // Em caso de empate, melhor aproveitamento
+        const aproveitamentoB = b.jogos > 0 ? (b.vitorias / b.jogos) * 100 : 0;
+        const aproveitamentoA = a.jogos > 0 ? (a.vitorias / a.jogos) * 100 : 0;
+        return aproveitamentoB - aproveitamentoA;
+      })
+      .map((s: any, idx) => ({ 
+        posicao: idx + 1, 
+        nome: s.nome, 
+        valor: `${s.vitorias} vitórias`,
+        vitorias: s.vitorias,
+        jogos: s.jogos,
+        aproveitamento: s.jogos > 0 ? ((s.vitorias / s.jogos) * 100).toFixed(1) : '0.0'
+      }));
 
     // 4. SÓ DERROTA
     const soDerrota = Object.values(stats)
@@ -458,7 +498,13 @@ export default function Estatisticas() {
     const mvp = Object.values(stats)
       .filter((s: any) => s.mvp > 0)
       .sort((a: any, b: any) => b.mvp - a.mvp)
-      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.mvp} MVP` }));
+      .map((s: any, idx) => ({ 
+        posicao: idx + 1, 
+        nome: s.nome, 
+        valor: `${s.mvp} MVP`,
+        mvp: s.mvp,
+        jogos: s.jogos
+      }));
 
     // 6. HAT-TRICKS (3+ gols e/ou assistências no mesmo jogo)
     const hatTricks: { [nome: string]: number } = {};
@@ -523,6 +569,7 @@ export default function Estatisticas() {
       .map(([nome, data]) => ({
         nome,
         semSofrer: data.semSofrer,
+        jogos: data.jogos,
         percentual: data.jogos > 0 ? ((data.semSofrer / data.jogos) * 100).toFixed(1) : '0.0'
       }))
       .sort((a, b) => {
@@ -534,7 +581,10 @@ export default function Estatisticas() {
       .map((s, idx) => ({ 
         posicao: idx + 1, 
         nome: s.nome, 
-        valor: `${s.semSofrer} jogos (${s.percentual}%)` 
+        valor: `${s.semSofrer} jogos (${s.percentual}%)`,
+        semSofrer: s.semSofrer,
+        jogos: s.jogos,
+        percentual: s.percentual
       }));
 
     // 8. NÃO PERDI PELADA
@@ -543,7 +593,14 @@ export default function Estatisticas() {
       .sort((a: any, b: any) => b.jogos - a.jogos)
       .map((s: any, idx) => {
         const detalhes = s.empates > 0 ? `${s.vitorias}V e ${s.empates}E` : `${s.vitorias}V`;
-        return { posicao: idx + 1, nome: s.nome, valor: `${s.jogos}J = ${detalhes}` };
+        return { 
+          posicao: idx + 1, 
+          nome: s.nome, 
+          valor: `${s.jogos}J = ${detalhes}`,
+          jogos: s.jogos,
+          vitorias: s.vitorias,
+          empates: s.empates
+        };
       });
 
     // 8.5 CARREGOU O TIME (impacto ofensivo em jogos sem vitória: derrota ou empate)
@@ -587,25 +644,57 @@ export default function Estatisticas() {
         posicao: idx + 1,
         nome: s.nome,
         valor: `${s.pontos} pts (${s.jogosComImpacto} jogos)`,
+        pontos: s.pontos,
+        jogosComImpacto: s.jogosComImpacto
       }));
 
-    // 9. REI DA PELADA
+    // 9. REI DA PELADA (com critérios de desempate da classificação)
     const reiPelada = Object.values(stats)
       .map((s: any) => ({
         nome: s.nome,
-        pontos: s.vitorias + (s.gols * 0.5) + (s.assistencias * 0.5) + (s.empates * 0.5) - (s.derrotas * 0.5)
+        pontos: s.vitorias + (s.gols * 0.5) + (s.assistencias * 0.5) + (s.empates * 0.5) + (s.cleanSheets * 0.5) - (s.derrotas * 0.5),
+        gols: s.gols,
+        assistencias: s.assistencias,
+        vitorias: s.vitorias,
+        derrotas: s.derrotas,
+        cleanSheets: s.cleanSheets,
+        empates: s.empates,
+        jogos: s.jogos
       }))
-      .sort((a, b) => b.pontos - a.pontos)
-      .map((s, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.pontos.toFixed(1)} pts` }));
+      .sort((a, b) => {
+        // Critério de desempate: Pontos > Gols > Assistências > Vitórias > Derrotas (menos) > Clean Sheets > Empates > Jogos (menos)
+        if (b.pontos !== a.pontos) return b.pontos - a.pontos;
+        if (b.gols !== a.gols) return b.gols - a.gols;
+        if (b.assistencias !== a.assistencias) return b.assistencias - a.assistencias;
+        if (b.vitorias !== a.vitorias) return b.vitorias - a.vitorias;
+        if (a.derrotas !== b.derrotas) return a.derrotas - b.derrotas;
+        if (b.cleanSheets !== a.cleanSheets) return b.cleanSheets - a.cleanSheets;
+        if (b.empates !== a.empates) return b.empates - a.empates;
+        return a.jogos - b.jogos;
+      })
+      .map((s, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.pontos.toFixed(1)} pts`, nivel: jogadores[s.nome]?.nivel || 0 }));
 
     // 10. BOLA MURCHA (oposto do Rei da Pelada)
     const bolaMurcha = Object.values(stats)
       .map((s: any) => ({
         nome: s.nome,
-        pontos: s.vitorias + (s.gols * 0.5) + (s.assistencias * 0.5) + (s.empates * 0.5) - (s.derrotas * 0.5)
+        pontos: s.vitorias + (s.gols * 0.5) + (s.assistencias * 0.5) + (s.empates * 0.5) - (s.derrotas * 0.5),
+        gols: s.gols,
+        assistencias: s.assistencias,
+        derrotas: s.derrotas,
+        jogos: s.jogos
       }))
       .sort((a, b) => a.pontos - b.pontos)
-      .map((s, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.pontos.toFixed(1)} pts` }));
+      .map((s, idx) => ({ 
+        posicao: idx + 1, 
+        nome: s.nome, 
+        valor: `${s.pontos.toFixed(1)} pts`,
+        gols: s.gols,
+        assistencias: s.assistencias,
+        derrotas: s.derrotas,
+        jogos: s.jogos,
+        participacoes: s.gols + s.assistencias
+      }));
 
     // 11. NOTA (média por sessão/dia de pelada)
     const sessoes = [...new Set(jogosFiltrados.map(j => j.sessao_id))];
@@ -738,31 +827,78 @@ export default function Estatisticas() {
       .sort((a: any, b: any) => b.sequenciaInvicta - a.sequenciaInvicta)
       .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.sequenciaInvicta} jogos` }));
 
+    // FOMINHA (jogador que jogou mais partidas)
+    // Opções de emoji: 🍖 🔥 💪 🎯 ⚡ 🚀 👊 💯 🎪 🎭 🎨 🎬 🎤 🎸 🎹
+    const totalPartidas = jogosFiltrados.length;
+    const fominha = Object.values(stats)
+      .sort((a: any, b: any) => b.jogos - a.jogos)
+      .map((s: any, idx) => ({ 
+        posicao: idx + 1, 
+        nome: s.nome, 
+        valor: `${s.jogos} dos ${totalPartidas} jogos`,
+        jogos: s.jogos,
+        total: totalPartidas
+      }));
+
     // 15. DEITEI E ROLEI (vitória + gol + assistência na mesma partida)
     const deiteiRolei = Object.values(stats)
       .filter((s: any) => s.deiteiRolei > 0)
       .sort((a: any, b: any) => b.deiteiRolei - a.deiteiRolei)
       .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.deiteiRolei} vezes` }));
 
+    // 16. DECISIVO (gols que definiram a vitória)
+    const decisivo = Object.values(stats)
+      .map((s: any) => {
+        let golsDecisivos = 0;
+        jogosFiltrados.forEach((jogo: any) => {
+          const todosIds = [...jogo.time_a, ...jogo.time_b];
+          const jogadorId = todosIds.find(id => buscarJogador(id) === s.nome);
+          if (!jogadorId) return;
+          
+          const noTimeA = jogo.time_a.includes(jogadorId);
+          const venceu = (noTimeA && jogo.placar_a > jogo.placar_b) || (!noTimeA && jogo.placar_b > jogo.placar_a);
+          
+          if (venceu) {
+            const golsNoJogo = (jogo.gols || []).filter((g: any) => buscarJogador(g.jogador_id) === s.nome).length;
+            golsDecisivos += golsNoJogo;
+          }
+        });
+        
+        return {
+          nome: s.nome,
+          golsDecisivos,
+        };
+      })
+      .filter((s: any) => s.golsDecisivos > 0)
+      .sort((a: any, b: any) => b.golsDecisivos - a.golsDecisivos)
+      .map((s: any, idx) => ({ posicao: idx + 1, nome: s.nome, valor: `${s.golsDecisivos} gols em vitórias` }));
+
+    // 17. GOLEIRO MENOS VAZADO (menos gols sofridos - placeholder)
+    const goleiroMenosVazado = []
+      .map((s: any, idx) => ({ posicao: idx + 1, nome: s?.nome || '-', valor: 'em desenvolvimento' }));
+
     // Montar array de estatísticas
     const estatisticasCalculadas: Estatistica[] = [
       { id: 'artilheiro', emoji: '⚽', nome: 'Artilheiro', descricao: 'Quem marcou mais gols', primeiroColocado: formatarPrimeiroColocado(artilheiro), ranking: artilheiro },
-      { id: 'mediaGols', emoji: '📊', nome: 'Média de Gols', descricao: 'Maior média de gols por jogo', primeiroColocado: formatarPrimeiroColocado(mediaGols), ranking: mediaGols },
       { id: 'garcom', emoji: '👟', nome: 'Assistências', descricao: 'Quem mais deu assistências', primeiroColocado: formatarPrimeiroColocado(garcom), ranking: garcom },
       { id: 'hatTricks', emoji: '🎩', nome: 'Hat-Trick', descricao: '3+ gols ou 3+ assistências no mesmo jogo', primeiroColocado: formatarPrimeiroColocado(hatTricksRanking), ranking: hatTricksRanking },
       { id: 'mvp', emoji: '⭐', nome: 'MVP', descricao: 'Vitória + gol/assist na mesma partida', primeiroColocado: formatarPrimeiroColocado(mvp), ranking: mvp },
+      { id: 'decisivo', emoji: '🎯', nome: 'Decisivo', descricao: 'Gols que definiram a vitória', primeiroColocado: formatarPrimeiroColocado(decisivo), ranking: decisivo },
       { id: 'deiteiRolei', emoji: '🎯', nome: 'Deitei e Rolei', descricao: 'Vitória + gol + assist no mesmo jogo', primeiroColocado: formatarPrimeiroColocado(deiteiRolei), ranking: deiteiRolei },
       { id: 'vitorioso', emoji: '🏆', nome: 'Vitorioso', descricao: 'Quem conquistou mais vitórias', primeiroColocado: formatarPrimeiroColocado(vitorioso), ranking: vitorioso },
+      { id: 'naoPerdi', emoji: '🔥', nome: 'Invicto', descricao: 'Jogou e nunca perdeu', primeiroColocado: naoPerdi.length > 0 ? formatarPrimeiroColocado(naoPerdi) : 'Ninguém', ranking: naoPerdi },
       { id: 'carregouTime', emoji: '🚛', nome: 'Carregou o Time', descricao: 'Impacto ofensivo em jogos sem vitória (derrota + empate)', primeiroColocado: formatarPrimeiroColocado(carregouTime), ranking: carregouTime },
-      { id: 'naoPerdi', emoji: '🔥', nome: 'Invicto', descricao: 'Jogou e nunca perdeu', primeiroColocado: formatarPrimeiroColocado(naoPerdi), ranking: naoPerdi },
       { id: 'semSofrerGols', emoji: '🛡️', nome: 'Muralha', descricao: 'Maior % de jogos sem levar gols', primeiroColocado: formatarPrimeiroColocado(semSofrerGolsRanking), ranking: semSofrerGolsRanking },
+      { id: 'goleiro', emoji: '🧤', nome: 'Goleiro Destaque', descricao: 'em desenvolvimento', primeiroColocado: 'em desenvolvimento', ranking: [] },
+      { id: 'goleiroMenosVazado', emoji: '🚫', nome: 'Goleiro Menos Vazado', descricao: 'em desenvolvimento', primeiroColocado: 'em desenvolvimento', ranking: [] },
+      { id: 'fominha', emoji: '⚡', nome: 'Fominha', descricao: 'Quem jogou mais partidas', primeiroColocado: formatarPrimeiroColocado(fominha), ranking: fominha },
       { id: 'zeroImpacto', emoji: '🚫', nome: 'Zero Impacto', descricao: 'Mais jogos sem gol, sem assist e sem clean sheet', primeiroColocado: formatarPrimeiroColocado(zeroImpacto), ranking: zeroImpacto },
-      { id: 'soDerrota', emoji: '❌', nome: 'Só Derrota', descricao: 'Maior % de derrotas (derrotas / jogos)', primeiroColocado: formatarPrimeiroColocado(soDerrota), ranking: soDerrota },
       { id: 'nota', emoji: '🏅', nome: 'Nota', descricao: 'Média de desempenho por pelada (0–10)', primeiroColocado: formatarPrimeiroColocado(notaRanking), ranking: notaRanking },
       { id: 'reiPelada', emoji: '👑', nome: 'Rei da Pelada', descricao: 'Maior pontuação geral', primeiroColocado: formatarPrimeiroColocado(reiPelada), ranking: reiPelada },
-      { id: 'bolaMurcha', emoji: '', icone: '/bolamurcha.png', nome: 'Bola Murcha', descricao: 'Menor pontuação geral no filtro (oposto do Rei)', primeiroColocado: formatarPrimeiroColocado(bolaMurcha), ranking: bolaMurcha },
+      { id: 'bolaMurcha', emoji: '⚰️', nome: 'Bola Murcha', descricao: 'Menor pontuação geral no filtro (oposto do Rei)', primeiroColocado: formatarPrimeiroColocado(bolaMurcha), ranking: bolaMurcha },
     ];
 
+    setStatsCompletos(stats);
     setEstatisticas(estatisticasCalculadas);
   };
 
@@ -847,6 +983,17 @@ export default function Estatisticas() {
         setJogos([]);
       }
 
+      // Buscar regras para obter quantidade de jogadores por time
+      const { data: regrasData } = await clienteDb
+        .from('regras')
+        .select('jogadores_por_time')
+        .eq('pelada_id', peladaId)
+        .single();
+      
+      if (regrasData) {
+        setJogadoresPorTime(regrasData.jogadores_por_time || 5);
+      }
+
       // Buscar todos os jogadores
       const { data: jogadoresData } = await clienteDb
         .from('jogadores')
@@ -884,7 +1031,7 @@ export default function Estatisticas() {
   }
 
   const reiPeladaEstatistica = estatisticas.find((estatistica) => estatistica.id === 'reiPelada');
-  const estatisticasVisiveis = ['artilheiro', 'mediaGols', 'garcom', 'mvp', 'vitorioso', 'naoPerdi', 'carregouTime', 'semSofrerGols', 'soDerrota', 'bolaMurcha'];
+  const estatisticasVisiveis = ['artilheiro', 'garcom', 'mvp', 'decisivo', 'vitorioso', 'naoPerdi', 'carregouTime', 'semSofrerGols', 'fominha', 'bolaMurcha'];
   const outrasEstatisticas = estatisticas.filter(
     (estatistica) => estatistica.id !== 'reiPelada' && estatisticasVisiveis.includes(estatistica.id)
   );
@@ -1035,180 +1182,422 @@ export default function Estatisticas() {
           </div>
         </section>
 
-        {/* Badge do filtro ativo */}
+        {/* Seção: Time da Pelada */}
         {(() => {
-          let label = '';
-          if (filtro === 'atual') label = 'Pelada mais recente';
-          else if (filtro === 'ultimas') label = `Últimas ${quantidadePeladas} peladas`;
-          else if (filtro === 'historia') label = 'Histórico completo';
-          else if (filtro === 'mes') label = periodoSelecionado ? periodoSelecionado : 'Todos os meses';
-          else if (filtro === 'ano') label = periodoSelecionado ? periodoSelecionado : 'Todos os anos';
-          if (dataSelecionada) label = `Pelada: ${dataSelecionada}`;
+          // Buscar as melhores estatísticas gerais (Rei da Pelada)
+          const reiPeladaEstat = estatisticas.find(e => e.id === 'reiPelada');
+          if (!reiPeladaEstat || reiPeladaEstat.ranking.length === 0) return null;
+          
+          // Usar quantidade dinâmica de jogadores por time
+          const timeDaPelada = reiPeladaEstat.ranking.slice(0, jogadoresPorTime);
+          const primeiroLugarJogador = timeDaPelada[0];
+          const demaisJogadores = timeDaPelada.slice(1);
+          
+          // Função para obter rótulo do filtro
+          const obterRotuloFiltro = () => {
+            let label = '';
+            if (filtro === 'atual') label = 'Pelada mais recente';
+            else if (filtro === 'ultimas') label = `Últimas ${quantidadePeladas} peladas`;
+            else if (filtro === 'historia') label = 'Histórico completo';
+            else if (filtro === 'mes') label = periodoSelecionado ? periodoSelecionado : 'Todos os meses';
+            else if (filtro === 'ano') label = periodoSelecionado ? periodoSelecionado : 'Todos os anos';
+            if (dataSelecionada) label = `Pelada: ${dataSelecionada}`;
+            return label;
+          };
+          
           return (
-            <div className="flex items-center justify-center mb-3">
-              <div className="w-full bg-green-500 rounded-lg px-4 py-1.5 flex items-center justify-center gap-2 shadow-sm">
-                <span className="text-white text-xs font-medium">Filtro:</span>
-                <span className="text-white text-xs font-bold">{label}</span>
+            <div className="mb-6 mt-8">
+              {/* Título + Filtro */}
+              <div className="mb-3">
+                {/* Titulo */}
+                <h2 className="text-lg font-black text-black tracking-widest text-center mb-2">🏆 TIME DA PELADA 🏆</h2>
+                
+                {/* Badge do filtro */}
+                <div className="flex items-center justify-center mb-2">
+                  <div className="w-full bg-green-500 rounded-lg px-4 py-1.5 flex items-center justify-center gap-2 shadow-sm">
+                    <span className="text-white text-xs font-bold">{obterRotuloFiltro()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 1º COLOCADO - REI DA PELADA */}
+              {primeiroLugarJogador && (
+                <div className="mb-1.5 p-2.5 rounded-xl bg-white border-2 border-yellow-300 shadow-lg">
+                  {/* Conteúdo centralizado - dividido ao meio */}
+                  <div className="flex items-center justify-center gap-4">
+                    {/* ESQUERDA: Coroa + Badge - alinhados à direita */}
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="text-4xl">👑</div>
+                      <div className="inline-block px-2 py-0.5 bg-yellow-300 border-2 border-yellow-500 text-black font-bold text-xs rounded-md shadow-sm">
+                        Rei da Pelada
+                      </div>
+                    </div>
+                    
+                    {/* DIREITA: Nome + Estrelas + Pontos - alinhados à esquerda */}
+                    <div className="flex flex-col items-start gap-0">
+                      {/* Nome */}
+                      <span className="font-black text-lg text-gray-900 uppercase tracking-wide">
+                        {primeiroLugarJogador.nome}
+                      </span>
+                      
+                      {/* Estrelas */}
+                      <div className="flex items-center gap-0.5">
+                        {(() => {
+                          const nivelJogador = jogadores[primeiroLugarJogador.nome]?.nivel || 0;
+                          if (nivelJogador > 0) {
+                            return Array.from({ length: 5 }).map((_, i) => (
+                              <span key={i} className={`text-lg ${i < nivelJogador ? 'text-yellow-400' : 'text-gray-300'}`}>★</span>
+                            ));
+                          }
+                          return <span className="text-xs text-gray-400">Sem classificação</span>;
+                        })()}
+                      </div>
+                      
+                      {/* Pontos */}
+                      <span className="text-sm font-black text-amber-600">
+                        {primeiroLugarJogador.valor}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Stats: Tabela sutil com linhas invisíveis */}
+                  {statsCompletos[primeiroLugarJogador.nome] && (
+                    <div className="border-t border-gray-200 pt-0.5 mt-1">
+                      {/* Linha 1: Jogos, Vitórias, Empates, Derrotas */}
+                      <div className="grid grid-cols-4 gap-0 mb-0.5 pb-0.5 border-b border-gray-200 text-xs">
+                        <div className="text-center border-r border-gray-200 border-opacity-30 pr-1">
+                          <div className="font-black text-base text-gray-600">{statsCompletos[primeiroLugarJogador.nome].jogos}</div>
+                          <div className="text-gray-600 font-semibold text-xs">Jogos</div>
+                        </div>
+                        <div className="text-center border-r border-gray-200 border-opacity-30 px-1">
+                          <div className="font-black text-base text-green-600">{statsCompletos[primeiroLugarJogador.nome].vitorias}</div>
+                          <div className="text-gray-600 font-semibold text-xs">Vitórias</div>
+                        </div>
+                        <div className="text-center border-r border-gray-200 border-opacity-30 px-1">
+                          <div className="font-black text-base text-yellow-500">{statsCompletos[primeiroLugarJogador.nome].empates}</div>
+                          <div className="text-gray-600 font-semibold text-xs">Empates</div>
+                        </div>
+                        <div className="text-center pl-1">
+                          <div className="font-black text-base text-red-600">{statsCompletos[primeiroLugarJogador.nome].derrotas}</div>
+                          <div className="text-gray-600 font-semibold text-xs">Derrotas</div>
+                        </div>
+                      </div>
+                      
+                      {/* Linha 2: Gols, Assistências, MVP, Clean Sheets */}
+                      <div className="grid grid-cols-4 gap-0 text-xs">
+                        <div className="text-center border-r border-gray-200 border-opacity-30 pr-1">
+                          <div className="flex items-center justify-center gap-0.5">
+                            <span className="text-base">⚽</span>
+                            <span className="text-base font-black text-gray-600">{statsCompletos[primeiroLugarJogador.nome].gols || 0}</span>
+                          </div>
+                        </div>
+                        <div className="text-center border-r border-gray-200 border-opacity-30 px-1">
+                          <div className="flex items-center justify-center gap-0.5">
+                            <span className="text-base">👟</span>
+                            <span className="text-base font-black text-gray-600">{statsCompletos[primeiroLugarJogador.nome].assistencias || 0}</span>
+                          </div>
+                        </div>
+                        <div className="text-center border-r border-gray-200 border-opacity-30 px-1">
+                          <div className="flex items-center justify-center gap-0.5">
+                            <span className="text-base">⭐</span>
+                            <span className="text-base font-black text-gray-600">{statsCompletos[primeiroLugarJogador.nome].mvp || 0}</span>
+                          </div>
+                        </div>
+                        <div className="text-center pl-1">
+                          <div className="flex items-center justify-center gap-0.5">
+                            <span className="text-base">🛡️</span>
+                            <span className="text-base font-black text-gray-600">{statsCompletos[primeiroLugarJogador.nome].cleanSheets || 0}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* DEMAIS JOGADORES - LISTA LIMPA */}
+              {demaisJogadores.length > 0 && (
+                <div className="space-y-1">
+                  {demaisJogadores.map((jogador, idx) => {
+                    const posicao = idx + 2;
+                    const statsJogador = statsCompletos[jogador.nome] || {};
+                    
+                    // Cores por posição: 2º prata, 3º bronze, demais verde
+                    let posicaoBg = 'text-gray-400';
+                    
+                    if (posicao === 2) {
+                      posicaoBg = 'text-gray-400'; // Prata
+                    } else if (posicao === 3) {
+                      posicaoBg = 'text-amber-600'; // Bronze
+                    } else {
+                      posicaoBg = 'text-green-500'; // Verde para demais
+                    }
+                    
+                    return (
+                      <div key={idx} className="py-2 px-2.5 rounded bg-white border border-gray-200">
+                        {/* Linha 1: Número + Nome + Pontuação */}
+                        <div className="flex items-center gap-1 mb-1.5">
+                          <span className={`font-black text-base flex-shrink-0 ${posicaoBg}`}>
+                            {posicao}º
+                          </span>
+                          
+                          {/* Nome - mais destacado */}
+                          <span className="font-black text-sm text-gray-900 uppercase flex-1 min-w-0">
+                            {jogador.nome}
+                          </span>
+                          
+                          {/* Pontuação do Jogador - DEPOIS DO NOME */}
+                          <span className="text-sm font-black text-amber-600 flex-shrink-0">
+                            {jogador.valor}
+                          </span>
+                        </div>
+                        
+                        {/* Linha 2: Stats - Separado em categorias com mais espaço */}
+                        <div className="flex items-center gap-2.5 text-xs opacity-60">
+                          {/* Jogos/Vitórias/Empates/Derrotas */}
+                          <div className="flex items-center gap-0 pr-2 border-r border-gray-200 border-opacity-40">
+                            <span className="font-semibold text-gray-600 px-1 border-r border-gray-200 border-opacity-30">J <span className="font-black">{statsJogador.jogos || 0}</span></span>
+                            <span className="font-semibold text-green-600 px-1 border-r border-gray-200 border-opacity-30">V <span className="font-black">{statsJogador.vitorias || 0}</span></span>
+                            <span className="font-semibold text-yellow-500 px-1 border-r border-gray-200 border-opacity-30">E <span className="font-black">{statsJogador.empates || 0}</span></span>
+                            <span className="font-semibold text-red-600 px-1">D <span className="font-black">{statsJogador.derrotas || 0}</span></span>
+                          </div>
+                          
+                          {/* Gols/Assistências/MVP/Clean Sheets */}
+                          <div className="flex items-center gap-2.5 flex-1">
+                            <span className="text-gray-600">⚽ <span className="font-semibold">{statsJogador.gols || 0}</span></span>
+                            <span className="text-gray-600">👟 <span className="font-semibold">{statsJogador.assistencias || 0}</span></span>
+                            <span className="text-gray-600">⭐ <span className="font-semibold">{statsJogador.mvp || 0}</span></span>
+                            <span className="text-gray-600">🛡️ <span className="font-semibold">{statsJogador.cleanSheets || 0}</span></span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* MODAL GOLEIRO - ESCONDIDO */}
+              <div className="hidden py-2 px-2.5 rounded bg-white border border-amber-700 border-opacity-30">
+                {/* Linha 1: Luvinha + Nome Goleiro */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="font-black text-base flex-shrink-0 w-5">🧤</span>
+                  
+                  {/* Nome */}
+                  <span className="font-semibold text-sm text-gray-900 uppercase flex-1 min-w-0 truncate">
+                    Goleiro
+                  </span>
+                </div>
+                
+                {/* Linha 2: Stats vazios (aguardando integração de goleiros) */}
+                <div className="flex items-center gap-2.5 text-xs opacity-60">
+                  {/* Jogos/Vitórias/Empates/Derrotas */}
+                  <div className="flex items-center gap-0 pr-2 border-r border-gray-200 border-opacity-40">
+                    <span className="font-semibold text-gray-600 px-1 border-r border-gray-200 border-opacity-30">J <span className="font-black">0</span></span>
+                    <span className="font-semibold text-green-600 px-1 border-r border-gray-200 border-opacity-30">V <span className="font-black">0</span></span>
+                    <span className="font-semibold text-yellow-500 px-1 border-r border-gray-200 border-opacity-30">E <span className="font-black">0</span></span>
+                    <span className="font-semibold text-red-600 px-1">D <span className="font-black">0</span></span>
+                  </div>
+                  
+                  {/* Gols/Assistências/MVP/Clean Sheets + Pontos */}
+                  <div className="flex items-center gap-2.5 flex-1">
+                    <span className="text-gray-600">⚽ <span className="font-semibold">0</span></span>
+                    <span className="text-gray-600">👟 <span className="font-semibold">0</span></span>
+                    <span className="text-gray-600">⭐ <span className="font-semibold">0</span></span>
+                    <span className="text-gray-600">🛡️ <span className="font-semibold">0</span></span>
+                    <span className="text-gray-600 font-bold ml-auto">0.0 pts</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* LEGENDAS DAS ESTATÍSTICAS */}
+              <div className="mt-4 pt-3 border-t border-gray-300">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-600 justify-center place-items-center">
+                  <div className="flex items-center gap-1"><span>⚽</span> <span>Gols</span></div>
+                  <div className="flex items-center gap-1"><span>👟</span> <span>Assistências</span></div>
+                  <div className="flex items-center gap-1"><span>⭐</span> <span>MVP</span></div>
+                  <div className="flex items-center gap-1"><span>🛡️</span> <span>Sem Sofrer Gols</span></div>
+                </div>
               </div>
             </div>
           );
         })()}
 
-        {/* Destaque principal: Rei da Pelada */}
-        {reiPeladaEstatistica && (
-          <button
-            onClick={() => abrirModal(reiPeladaEstatistica)}
-            className="w-full mb-4 bg-white rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-[0.99] overflow-hidden border border-amber-200"
-          >
-            <div className="bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 px-4 py-2 border-b border-amber-200">
-              <div className="flex items-center justify-center gap-2">
-                <h2 className="text-[13px] font-black tracking-wide text-amber-950">REI DA PELADA</h2>
-              </div>
+        {/* TÍTULO E FILTRO DAS ESTATÍSTICAS */}
+        <div className="mb-3 mt-4">
+          {/* Titulo */}
+          <h2 className="text-base font-black text-black tracking-widest text-center mb-2">ESTATÍSTICAS E RANKINGS</h2>
+          
+          {/* Badge do filtro */}
+          <div className="flex items-center justify-center mb-2">
+            <div className="w-full bg-blue-600 rounded-lg px-4 py-1.5 flex items-center justify-center gap-2 shadow-sm">
+              <span className="text-white text-xs font-bold">
+                {(() => {
+                  let label = '';
+                  if (filtro === 'atual') label = 'Pelada mais recente';
+                  else if (filtro === 'ultimas') label = `Últimas ${quantidadePeladas} peladas`;
+                  else if (filtro === 'historia') label = 'Histórico completo';
+                  else if (filtro === 'mes') label = periodoSelecionado ? periodoSelecionado : 'Todos os meses';
+                  else if (filtro === 'ano') label = periodoSelecionado ? periodoSelecionado : 'Todos os anos';
+                  if (dataSelecionada) label = `Pelada: ${dataSelecionada}`;
+                  return label;
+                })()}
+              </span>
             </div>
+          </div>
+        </div>
 
-            <div className="px-3 pt-2 pb-1.5 bg-gradient-to-br from-amber-50 via-white to-yellow-50">
-              <div className="flex items-end justify-center gap-2 min-h-[118px]">
-                <div className="flex-1 max-w-[88px]">
-                  {segundoLugar ? (
-                    <div className="text-center">
-                      <div className="min-h-[20px] flex items-end justify-center px-1">
-                        <div className="text-[11px] leading-tight font-bold text-slate-700 break-words line-clamp-2">{segundoLugar.nome}</div>
-                      </div>
-                      <div className="text-[10px] font-semibold text-slate-500 mt-0">{segundoLugar.valor}</div>
-                      <div className="mt-0.5 h-15 rounded-t-xl bg-gradient-to-b from-slate-200 to-slate-300 flex items-center justify-center shadow-inner border border-slate-300">
-                        <span className="text-base font-bold text-slate-600">2º</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="h-full" />
-                  )}
-                </div>
-
-                <div className="flex-1 max-w-[104px]">
-                  {primeiroLugar ? (
-                    <div className="text-center">
-                      <div className="min-h-[22px] flex items-end justify-center px-1">
-                        <div className="text-sm leading-tight font-black text-amber-950 break-words line-clamp-2">{primeiroLugar.nome}</div>
-                      </div>
-                      <div className="text-[11px] font-bold text-amber-700 mt-0">{primeiroLugar.valor}</div>
-                      <div className="mt-0.5 h-20 rounded-t-xl bg-gradient-to-b from-yellow-300 to-amber-400 flex items-center justify-center shadow-inner border border-amber-300">
-                        <span className="text-3xl">👑</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="h-full" />
-                  )}
-                </div>
-
-                <div className="flex-1 max-w-[88px]">
-                  {terceiroLugar ? (
-                    <div className="text-center">
-                      <div className="min-h-[20px] flex items-end justify-center px-1">
-                        <div className="text-[11px] leading-tight font-bold text-orange-800 break-words line-clamp-2">{terceiroLugar.nome}</div>
-                      </div>
-                      <div className="text-[10px] font-semibold text-orange-600 mt-0">{terceiroLugar.valor}</div>
-                      <div className="mt-0.5 h-11 rounded-t-xl bg-gradient-to-b from-orange-200 to-orange-300 flex items-center justify-center shadow-inner border border-orange-300">
-                        <span className="text-sm font-bold text-orange-700">3º</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="h-full" />
-                  )}
-                </div>
-              </div>
-            </div>
-          </button>
-        )}
-
-        {/* Grid de Estatísticas */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          {outrasEstatisticas.length > 0 ? (
-            outrasEstatisticas.map((estatistica) => (
-              (() => {
+        {/* Estatísticas em Formato de Linhas Profissional */}
+        {outrasEstatisticas.length > 0 ? (
+          <div>
+            {outrasEstatisticas.map((estatistica, idx) => {
                 const cores = obterCoresEstatistica(estatistica.id);
-                return (
-              <button
-                key={estatistica.id}
-                onClick={() => abrirModal(estatistica)}
-                className="bg-white rounded-lg shadow-md hover:shadow-lg transition-all active:scale-95 overflow-hidden border border-gray-200"
-              >
-                {/* Linha 1: Emoji (25%) + Nome (75%) */}
-                <div className="flex items-center border-b border-gray-100 p-1.5">
-                  <div className="w-1/4 flex items-center justify-center">
-                    {estatistica.icone ? (
-                      <img src={estatistica.icone} alt={estatistica.nome} className="w-8 h-8 object-contain scale-[2]" />
-                    ) : (
-                      <span className="text-2xl">{estatistica.emoji}</span>
-                    )}
-                  </div>
-                  <div className="w-3/4 flex items-center justify-center px-1">
-                    <h3 className="text-xs font-bold text-black text-center leading-tight">
-                      {estatistica.nome}
-                    </h3>
-                  </div>
-                </div>
+                const primeiro = estatistica.ranking[0];
                 
-                {/* Linha 2: Nome do 1º colocado (100%) */}
-                <div className={`py-1.5 px-2 ${
-                  estatistica.primeiroColocado === '-' 
-                    ? 'bg-gray-100' 
-                    : cores.fundoNome
-                }`}>
-                  <p className={`text-xs font-semibold text-center truncate ${
-                    estatistica.primeiroColocado === '-'
-                      ? 'text-black'
-                      : cores.textoNome
-                  }`}>
-                    {estatistica.primeiroColocado}
-                  </p>
-                </div>
-              </button>
+                // Renderizar descrição com destaque no número principal
+                const renderDescricao = () => {
+                  if (!primeiro) return 'N/A';
+                  
+                  switch (estatistica.id) {
+                    case 'artilheiro':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-green-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'garcom':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-blue-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'mvp':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-amber-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'vitorioso':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-purple-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'carregouTime':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-orange-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'semSofrerGols':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-red-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'fominha':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-cyan-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'naoPerdi':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-red-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'bolaMurcha':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-red-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'decisivo':
+                      return (
+                        <div className="text-xs text-gray-600">
+                          <span className="text-sm font-bold text-orange-600">{primeiro.valor}</span>
+                        </div>
+                      );
+                    case 'goleiro':
+                      return <span className="text-xs text-gray-500">Recurso em desenvolvimento</span>;
+                    default:
+                      return <span className="text-xs text-gray-600">{primeiro?.valor || 'N/A'}</span>;
+                  }
+                };
+                
+                return (
+                  <button
+                    key={estatistica.id}
+                    onClick={() => abrirModal(estatistica)}
+                    className={`w-full flex items-center gap-2 p-2 border-b border-gray-100 hover:bg-gray-50 transition-colors text-left active:bg-gray-100 last:border-b-0`}
+                  >
+                    <div className="flex-shrink-0 text-base mt-0.5 w-5 h-5 flex items-center justify-center overflow-visible">
+                      {estatistica.icone ? (
+                        <img src={estatistica.icone} alt={estatistica.nome} className="object-contain w-10 h-10" />
+                      ) : (
+                        <span>{estatistica.emoji}</span>
+                      )}
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-1 flex-wrap">
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">{estatistica.nome}:</span>
+                        <span className="text-sm font-black text-gray-900 truncate">
+                          {primeiro ? primeiro.nome : '-'}
+                        </span>
+                      </div>
+                      <div className="mt-1">
+                        {renderDescricao()}
+                      </div>
+                    </div>
+
+                    <div className="text-right text-xs text-gray-400 flex-shrink-0">›</div>
+                  </button>
                 );
-              })()
-            ))
+              })}
+            </div>
           ) : (
-            <div className="col-span-2 text-center py-12">
+            <div className="text-center py-12">
               <div className="text-5xl mb-3">📊</div>
               <p className="text-gray-600">Nenhuma estatística disponível</p>
             </div>
           )}
-        </div>
 
         {/* Modal de Ranking Completo */}
         {modalAberto && estatisticaSelecionada && (
           <div 
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4"
             onClick={fecharModal}
           >
             <div 
-              className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden"
+              className="bg-white rounded-xl shadow-2xl w-[90vw] h-[90vh] max-w-6xl overflow-hidden flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header do Modal */}
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-3 sm:p-4 flex-shrink-0">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2 sm:gap-3">
                     {estatisticaSelecionada.icone ? (
-                      <img src={estatisticaSelecionada.icone} alt={estatisticaSelecionada.nome} className="w-10 h-10 object-contain" />
+                      <img src={estatisticaSelecionada.icone} alt={estatisticaSelecionada.nome} className="w-8 h-8 sm:w-10 sm:h-10 object-contain" />
                     ) : (
-                      <span className="text-3xl">{estatisticaSelecionada.emoji}</span>
+                      <span className="text-2xl sm:text-3xl">{estatisticaSelecionada.emoji}</span>
                     )}
-                    <h3 className="text-lg font-bold text-white">{estatisticaSelecionada.nome}</h3>
+                    <h3 className="text-base sm:text-lg font-bold text-white">{estatisticaSelecionada.nome}</h3>
                   </div>
                   <button 
                     onClick={fecharModal}
-                    className="text-white text-2xl hover:text-gray-200 transition-colors"
+                    className="text-white text-xl sm:text-2xl hover:text-gray-200 transition-colors"
                   >
                     ✕
                   </button>
                 </div>
-                <p className="text-sm text-blue-100 ml-12">{estatisticaSelecionada.descricao}</p>
+                <p className="text-xs sm:text-sm text-blue-100">{estatisticaSelecionada.descricao}</p>
               </div>
 
-              {/* Ranking */}
-              <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {/* Ranking - Scrollable */}
+              <div className="flex-1 overflow-y-auto">
                 {estatisticaSelecionada.ranking.length > 0 ? (
-                  <div className="space-y-2">
+                  <div className="p-2 sm:p-3 space-y-1.5">
                     {estatisticaSelecionada.ranking.map((item) => {
                       const isTop3 = item.posicao <= 3;
                       const medalha = item.posicao === 1 ? '🥇' : item.posicao === 2 ? '🥈' : item.posicao === 3 ? '🥉' : '';
@@ -1220,18 +1609,59 @@ export default function Estatisticas() {
                         ? 'bg-gradient-to-r from-orange-100 to-orange-200'
                         : 'bg-gray-50';
                       
+                      // Renderizar detalhes específicos por estatística
+                      const renderDetalhes = () => {
+                        switch (estatisticaSelecionada.id) {
+                          case 'artilheiro':
+                            return <span className="text-xs text-gray-600">⚽ {item.valor}</span>;
+                          case 'garcom':
+                            return <span className="text-xs text-gray-600">👟 {item.valor}</span>;
+                          case 'mvp':
+                            return <span className="text-xs text-gray-600">⭐ {item.valor}</span>;
+                          case 'vitorioso':
+                            return <span className="text-xs text-gray-600">🏆 {item.valor}</span>;
+                          case 'hatTricks':
+                            return <span className="text-xs text-gray-600">🎩 {item.valor}</span>;
+                          case 'deiteiRolei':
+                            return <span className="text-xs text-gray-600">🎯 {item.valor}</span>;
+                          case 'naoPerdi':
+                            return <span className="text-xs text-gray-600">🔥 {item.valor}</span>;
+                          case 'carregouTime':
+                            return <span className="text-xs text-gray-600">🚛 {item.valor}</span>;
+                          case 'semSofrerGols':
+                            return <span className="text-xs text-gray-600">🛡️ {item.valor}</span>;
+                          case 'fominha':
+                            return <span className="text-xs text-gray-600">⚡ {item.valor}</span>;
+                          case 'zeroImpacto':
+                            return <span className="text-xs text-gray-600">🚫 {item.valor}</span>;
+                          case 'nota':
+                            return <span className="text-xs text-gray-600">🏅 Nota: {item.valor}/10</span>;
+                          case 'reiPelada':
+                            return <span className="text-xs text-gray-600">👑 {item.valor}</span>;
+                          case 'bolaMurcha':
+                            return <span className="text-xs text-gray-600">💀 {item.valor}</span>;
+                          default:
+                            return <span className="text-xs text-gray-600">{item.valor}</span>;
+                        }
+                      };
+                      
                       return (
                         <div 
                           key={item.posicao}
-                          className={`flex items-center justify-between p-3 rounded-lg ${bgColor} border border-gray-200`}
+                          className={`p-2 rounded-lg ${bgColor} border border-gray-200`}
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-bold text-gray-700 w-8">
-                              {isTop3 ? medalha : `${item.posicao}º`}
-                            </span>
-                            <span className="text-sm font-medium text-gray-800">{item.nome}</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <span className="text-xs font-bold text-gray-700 w-5 flex-shrink-0">
+                                {isTop3 ? medalha : `${item.posicao}º`}
+                              </span>
+                              <span className="text-xs sm:text-sm font-bold text-gray-800 truncate">{item.nome}</span>
+                            </div>
+                            <span className="text-xs sm:text-sm font-bold text-blue-600 flex-shrink-0">{item.valor}</span>
                           </div>
-                          <span className="text-sm font-bold text-blue-600">{item.valor}</span>
+                          <div className="ml-6 text-[10px] sm:text-xs">
+                            {renderDetalhes()}
+                          </div>
                         </div>
                       );
                     })}

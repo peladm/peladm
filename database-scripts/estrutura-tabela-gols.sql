@@ -26,6 +26,9 @@ CREATE INDEX IF NOT EXISTS idx_gols_jogo ON gols(jogo_id);
 CREATE INDEX IF NOT EXISTS idx_gols_jogador ON gols(jogador_id);
 CREATE INDEX IF NOT EXISTS idx_gols_time ON gols(time);
 
+-- 🔒 Segurança: Desabilitar RLS (sem restrições)
+ALTER TABLE gols DISABLE ROW LEVEL SECURITY;
+
 -- =========================================
 -- OBSERVAÇÕES:
 -- =========================================

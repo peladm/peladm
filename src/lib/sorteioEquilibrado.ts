@@ -72,14 +72,9 @@ export const executarSorteioEquilibrado = (
   times: Time[],
   jogadoresPorTime: number
 ) => {
-  console.log('🎲 EXECUTANDO SORTEIO COM FOCO EM DIVERSIDADE E EQUILÍBRIO');
+  console.log('🎲 EXECUTANDO SORTEIO COM ESTRATÉGIA DE 2 FASES');
 
   const jogadoresPorNivel = separarJogadoresPorNivel(jogadores);
-  const niveisDisponiveis = Object.keys(jogadoresPorNivel)
-    .map(n => parseInt(n, 10))
-    .filter(n => jogadoresPorNivel[n].length > 0)
-    .sort((a, b) => b - a);
-
   const jogadoresNoTimeIncompleto = jogadores.length % jogadoresPorTime;
   const temTimeIncompleto = jogadoresNoTimeIncompleto > 0;
 
@@ -92,22 +87,84 @@ export const executarSorteioEquilibrado = (
 
   console.log(`📋 Times: ${times.length} (${Math.floor(jogadores.length / jogadoresPorTime)} completos + ${temTimeIncompleto ? '1 incompleto' : '0'})`);
   console.log(`🎯 Limites: ${limitesPorTime.join(', ')}`);
-  console.log(`📊 Níveis disponíveis: ${niveisDisponiveis.join(', ')}`);
 
   // Rastreamento de disponibilidade
   const disponiveisPorNivel: { [key: number]: Jogador[] } = {};
-  niveisDisponiveis.forEach(nivel => {
-    disponiveisPorNivel[nivel] = [...jogadoresPorNivel[nivel]];
+  Object.keys(jogadoresPorNivel).forEach(nivel => {
+    const n = parseInt(nivel, 10);
+    disponiveisPorNivel[n] = [...jogadoresPorNivel[n]];
   });
 
   const somasTimes = times.map(() => 0);
 
-  console.log('\n🌈 DISTRIBUINDO COM FOCO EM DIVERSIDADE:');
+  // ===== FASE 1: DISTRIBUIR EXTREMOS =====
+  console.log('\n⭐ FASE 1: DISTRIBUINDO EXTREMOS ENTRE TODOS');
+  
+  // Distribuir 5⭐ entre TODOS os times (completos + incompleto)
+  if (disponiveisPorNivel[5] && disponiveisPorNivel[5].length > 0) {
+    console.log(`  📍 Distribuindo ${disponiveisPorNivel[5].length} jogador(es) 5⭐ entre todos os times`);
+    let timerRound = 0;
+    let attemptsMax = times.length * 10; // Proteção contra loop infinito
+    
+    while (disponiveisPorNivel[5].length > 0 && attemptsMax > 0) {
+      attemptsMax--;
+      const timeIdx = timerRound % times.length;
+      if (times[timeIdx].jogadores.length < limitesPorTime[timeIdx]) {
+        const jogador = disponiveisPorNivel[5].shift()!;
+        times[timeIdx].jogadores.push(jogador);
+        somasTimes[timeIdx] += jogador.nivel;
+        console.log(`    → ${jogador.nome} (5⭐) → Time ${timeIdx + 1}`);
+      }
+      timerRound++;
+    }
+  }
 
-  // Preenche cada vaga preferencialmente com diversidade
+  // Distribuir 1-2⭐ entre TODOS os times (completos + incompleto)
+  const extremosBaixos = [...(disponiveisPorNivel[1] || []), ...(disponiveisPorNivel[2] || [])];
+  if (extremosBaixos.length > 0) {
+    console.log(`  📍 Distribuindo ${extremosBaixos.length} jogador(es) 1-2⭐ entre todos os times`);
+    let timerRound = 0;
+    let attemptsMax = times.length * 10; // Proteção contra loop infinito
+    
+    while (extremosBaixos.length > 0 && attemptsMax > 0) {
+      attemptsMax--;
+      const timeIdx = timerRound % times.length;
+      if (times[timeIdx].jogadores.length < limitesPorTime[timeIdx]) {
+        const jogador = extremosBaixos.shift()!;
+        times[timeIdx].jogadores.push(jogador);
+        somasTimes[timeIdx] += jogador.nivel;
+        // Remove do disponível
+        const nível = jogador.nivel;
+        if (disponiveisPorNivel[nível]) {
+          const idx = disponiveisPorNivel[nível].indexOf(jogador);
+          if (idx > -1) disponiveisPorNivel[nível].splice(idx, 1);
+        }
+        console.log(`    → ${jogador.nome} (${nível}⭐) → Time ${timeIdx + 1}`);
+      }
+      timerRound++;
+    }
+  }
+
+  // ===== FASE 2: PREENCHER COMPLETOS COM MEIO =====
+  console.log('\n🎯 FASE 2: PREENCHENDO TIMES COMPLETOS COM MEIO (3-4⭐)');
+  
+  const niveisDisponiveis = Object.keys(disponiveisPorNivel)
+    .map(n => parseInt(n, 10))
+    .filter(n => disponiveisPorNivel[n].length > 0)
+    .sort((a, b) => b - a);
+
+  console.log(`  Níveis disponíveis: ${niveisDisponiveis.join(', ')}`);
+
+  // Preencher apenas times COMPLETOS
   for (let t = 0; t < times.length; t++) {
+    // Pula time incompleto
+    if (temTimeIncompleto && t === times.length - 1) {
+      console.log(`  ⏭️  Time ${t + 1} é incompleto, pulando...`);
+      continue;
+    }
+
     while (times[t].jogadores.length < limitesPorTime[t]) {
-      // Encontra níveis ainda disponíveis
+      // Encontra níveis ainda disponíveis (priorizando 3 e 4)
       const niveisComJogadores = niveisDisponiveis.filter(n => disponiveisPorNivel[n].length > 0);
 
       if (niveisComJogadores.length === 0) break;
@@ -116,7 +173,6 @@ export const executarSorteioEquilibrado = (
       const nivelEscolhido = encontrarNivelSubutilizado(times[t], niveisComJogadores);
 
       if (disponiveisPorNivel[nivelEscolhido].length > 0) {
-        // Pega aleatoriamente da lista de disponíveis daquele nível
         const indexAleatorio = Math.floor(Math.random() * disponiveisPorNivel[nivelEscolhido].length);
         const jogador = disponiveisPorNivel[nivelEscolhido][indexAleatorio];
 
@@ -124,8 +180,22 @@ export const executarSorteioEquilibrado = (
         somasTimes[t] += jogador.nivel;
         disponiveisPorNivel[nivelEscolhido].splice(indexAleatorio, 1);
 
-        const diversidadeTime = Array.from(calcularDiversidadeTime(times[t])).sort((a, b) => b - a).join(', ');
-        console.log(`  → ${jogador.nome} (${jogador.nivel}⭐) → Time ${t + 1} | Diversidade: [${diversidadeTime}]`);
+        console.log(`  → ${jogador.nome} (${jogador.nivel}⭐) → Time ${t + 1}`);
+      }
+    }
+  }
+
+  // Preencher time incompleto com jogadores restantes
+  if (temTimeIncompleto) {
+    const timeIncompleto = times.length - 1;
+    console.log(`\n📌 Preenchendo Time ${timeIncompleto + 1} (incompleto) com restantes`);
+    
+    for (let nivel of niveisDisponiveis) {
+      while (disponiveisPorNivel[nivel].length > 0 && times[timeIncompleto].jogadores.length < limitesPorTime[timeIncompleto]) {
+        const jogador = disponiveisPorNivel[nivel].shift()!;
+        times[timeIncompleto].jogadores.push(jogador);
+        somasTimes[timeIncompleto] += jogador.nivel;
+        console.log(`  → ${jogador.nome} (${jogador.nivel}⭐) → Time ${timeIncompleto + 1}`);
       }
     }
   }
@@ -145,5 +215,5 @@ export const executarSorteioEquilibrado = (
     }
   });
 
-  console.log('\n✅ Sorteio com diversidade concluído');
+  console.log('\n✅ Sorteio em 2 fases concluído');
 };

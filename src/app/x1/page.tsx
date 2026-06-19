@@ -239,10 +239,27 @@ export default function X1Page() {
       detalhes.push({ resultado, gols: gj, assistencias: aj, mvp, hatTrick: ht, semSofrer: ss, deiteiERolei: ganhou && gj > 0 && aj > 0 });
     });
 
+    // Decisivo: Gols + Assistências em vitórias
+    const decisivo = detalhes.filter(d => d.resultado === 'vitoria').reduce((sum, d) => sum + d.gols + d.assistencias, 0);
+
+    // Invicto: Maior sequência sem derrota (vitória ou empate consecutivos)
+    let maiorSequencia = 0, sequenciaAtual = 0;
+    detalhes.forEach(d => {
+      if (d.resultado !== 'derrota') {
+        sequenciaAtual++;
+        maiorSequencia = Math.max(maiorSequencia, sequenciaAtual);
+      } else {
+        sequenciaAtual = 0;
+      }
+    });
+
+    // Carregou o time: Partidas com gols ou assists em derrotas/empates
+    const carregouTime = detalhes.filter(d => d.resultado !== 'vitoria' && (d.gols > 0 || d.assistencias > 0)).length;
+
     const pts = vitorias * 3 + empates;
     const aproveitamento = jogosJogados > 0 ? ((pts / (jogosJogados * 3)) * 100).toFixed(1) : '0.0';
     const mediaGols = jogosJogados > 0 ? (gols / jogosJogados).toFixed(2) : '0.00';
-    return { nome, jogosJogados, vitorias, derrotas, empates, gols, assistencias, semSofrer, hatTricks, mvps, mediaGols, aproveitamento, detalhes };
+    return { nome, jogosJogados, vitorias, derrotas, empates, gols, assistencias, semSofrer, hatTricks, mvps, mediaGols, aproveitamento, detalhes, decisivo, invicto: maiorSequencia, carregouTime };
   };
 
 
@@ -290,12 +307,13 @@ export default function X1Page() {
     );
   }
 
-  const StatBar = ({ valA, valB, label }: { valA: number; valB: number; label: string }) => {
+  const StatBar = ({ valA, valB, label, invertido }: { valA: number; valB: number; label: string; invertido?: boolean }) => {
     const total = valA + valB;
     const pctA = total === 0 ? 50 : Math.round((valA / total) * 100);
     const pctB = 100 - pctA;
-    const melhorA = valA > valB;
-    const melhorB = valB > valA;
+    // Se invertido, quem tem MENOR valor é melhor
+    const melhorA = invertido ? valA < valB : valA > valB;
+    const melhorB = invertido ? valB < valA : valB > valA;
     return (
       <div className="mb-3">
         <div className="flex justify-between text-xs text-gray-500 mb-1">
@@ -360,6 +378,11 @@ export default function X1Page() {
             )}
           </div>
         </section>
+
+        {/* Filtro ativo */}
+        <div className="w-full bg-blue-600 rounded-lg px-4 py-1.5 flex items-center justify-center gap-2 shadow-sm mb-4">
+          <span className="text-white text-xs font-bold">{labelFiltro()}</span>
+        </div>
 
         {/* Seleção dos jogadores */}
         <div className="mb-3">
@@ -439,51 +462,72 @@ export default function X1Page() {
           </div>
         </div>
 
-        {/* Filtro ativo */}
-        <div className="flex justify-center mb-3">
-          <span className="text-[11px] text-gray-500 font-medium">Filtro ativo: <span className="text-gray-700 font-semibold">{labelFiltro()}</span></span>
-        </div>
-
         {/* Comparativo */}
         {statsA && statsB && (
           <>
-            {/* Confronto direto */}
-            <div className="mb-4 mx-auto w-full max-w-[640px]">
-              <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-2 text-center">⚔️ Confronto Direto</h3>
-
-              {comuns.length === 0 ? (
-                <div className="text-center text-gray-400 text-sm py-4">Nenhum jogo em comum nesse período. Tente "História" ou aumente o filtro de peladas.</div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-3 gap-2 text-center mb-2">
-                    <div className="bg-blue-50 rounded-lg p-1.5 border border-blue-200">
-                      <div className="text-2xl font-black text-blue-600">{confronto.vitoriasA}</div>
+            {(() => {
+              // Contar vitórias em cada estatística
+              const stats_para_contar = [
+                { val: statsA.jogosJogados, valB: statsB.jogosJogados, inv: false },
+                { val: confronto.vitoriasA, valB: confronto.vitoriasB, inv: false }, // Confronto Direto
+                { val: statsA.vitorias, valB: statsB.vitorias, inv: false },
+                { val: statsA.empates, valB: statsB.empates, inv: false },
+                { val: statsA.derrotas, valB: statsB.derrotas, inv: true }, // INVERTIDO: menos é melhor
+                { val: statsA.gols, valB: statsB.gols, inv: false },
+                { val: parseFloat(statsA.mediaGols), valB: parseFloat(statsB.mediaGols), inv: false },
+                { val: statsA.decisivo, valB: statsB.decisivo, inv: false }, // Decisivo
+                { val: statsA.invicto, valB: statsB.invicto, inv: false }, // Invicto
+                { val: statsA.carregouTime, valB: statsB.carregouTime, inv: false }, // Carregou Time
+                { val: statsA.assistencias, valB: statsB.assistencias, inv: false },
+                { val: statsA.semSofrer, valB: statsB.semSofrer, inv: false },
+                { val: statsA.mvps, valB: statsB.mvps, inv: false },
+              ];
+              let venceuA = 0, empatados = 0, venceuB = 0;
+              stats_para_contar.forEach(s => {
+                if (s.inv) {
+                  // Invertido: menor é melhor
+                  if (s.val < s.valB) venceuA++;
+                  else if (s.val === s.valB) empatados++;
+                  else venceuB++;
+                } else {
+                  // Normal: maior é melhor
+                  if (s.val > s.valB) venceuA++;
+                  else if (s.val === s.valB) empatados++;
+                  else venceuB++;
+                }
+              });
+              return (
+                <div className="mb-4 mx-auto w-full max-w-[640px]">
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                      <div className="text-3xl font-black text-blue-600">{venceuA}</div>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-1.5 border border-gray-200">
-                      <div className="text-2xl font-black text-gray-500">{confronto.empates}</div>
-                      <div className="text-xs text-gray-500 font-semibold mt-0.5">Empates</div>
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <div className="text-3xl font-black text-gray-500">{empatados}</div>
                     </div>
-                    <div className="bg-orange-50 rounded-lg p-1.5 border border-orange-200">
-                      <div className="text-2xl font-black text-orange-500">{confronto.vitoriasB}</div>
+                    <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
+                      <div className="text-3xl font-black text-orange-500">{venceuB}</div>
                     </div>
                   </div>
-                  <div className="text-center text-xs text-gray-500">{comuns.length} jogo(s) em comum, {confronto.juntos} no mesmo time e {jogosContra} contra</div>
-                </>
-              )}
-            </div>
+                </div>
+              );
+            })()}
 
             {/* Comparativo de estatísticas */}
             <section className="bg-white rounded-xl shadow-md p-4 mb-4 border border-gray-300">
               <div className="text-xs font-bold text-gray-500 text-center mb-4">ESTATÍSTICAS</div>
               <StatBar valA={statsA.jogosJogados} valB={statsB.jogosJogados} label="Jogos" />
+              {comuns.length > 0 && <StatBar valA={confronto.vitoriasA} valB={confronto.vitoriasB} label="Confronto Direto" />}
               <StatBar valA={statsA.vitorias} valB={statsB.vitorias} label="Vitórias" />
-              <StatBar valA={statsA.empates} valB={statsB.empates} label="Empates" />
-              <StatBar valA={statsA.derrotas} valB={statsB.derrotas} label="Derrotas" />
-              <StatBar valA={statsA.gols} valB={statsB.gols} label="⚽ Gols" />
+              <StatBar valA={statsA.derrotas} valB={statsB.derrotas} label="Derrotas" invertido={true} />
+              <StatBar valA={statsA.gols} valB={statsB.gols} label="Gols" />
               <StatBar valA={parseFloat(statsA.mediaGols)} valB={parseFloat(statsB.mediaGols)} label="Média de Gols" />
-              <StatBar valA={statsA.assistencias} valB={statsB.assistencias} label="👟 Assistências" />
-              <StatBar valA={statsA.semSofrer} valB={statsB.semSofrer} label="🛡️ Sem Sofrer Gols" />
-              <StatBar valA={statsA.mvps} valB={statsB.mvps} label="⭐ MVP" />
+              <StatBar valA={statsA.decisivo} valB={statsB.decisivo} label="Decisivo" />
+              <StatBar valA={statsA.invicto} valB={statsB.invicto} label="Invicto" />
+              <StatBar valA={statsA.carregouTime} valB={statsB.carregouTime} label="Carregou o Time" />
+              <StatBar valA={statsA.assistencias} valB={statsB.assistencias} label="Assistências" />
+              <StatBar valA={statsA.semSofrer} valB={statsB.semSofrer} label="Sem Sofrer Gols" />
+              <StatBar valA={statsA.mvps} valB={statsB.mvps} label="MVP" />
 
               {/* Aproveitamento */}
               <div className="mt-4 pt-3 border-t border-gray-100">
@@ -498,7 +542,7 @@ export default function X1Page() {
           </>
         )}
 
-        {(!jogadorA || !jogadorB) && (
+        {(!jogadorA || !jogadorB || !statsA || !statsB) && (
           <div className="text-center py-12 text-gray-400">
             <span className="text-5xl block mb-3">⚔️</span>
             <p className="text-sm">Selecione dois jogadores acima para comparar</p>

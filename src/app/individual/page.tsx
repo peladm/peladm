@@ -497,6 +497,29 @@ export default function IndividualPage() {
         .map((s: any) => ({ nome: s.nome, media: s.jogos > 0 ? s.gols / s.jogos : 0 }))
         .sort((a, b) => b.media - a.media)
         .map((s, i) => ({ posicao: i + 1, nome: s.nome, valor: s.media.toFixed(2) }))),
+      mk('decisivo', (() => {
+        const decisivos: { [nome: string]: number } = {};
+        Object.values(stats).forEach((s: any) => {
+          let golsDecisivos = 0;
+          jogosFiltrados.forEach((jogo: any) => {
+            const todosIds = [...jogo.time_a, ...jogo.time_b];
+            const jogadorId = todosIds.find(id => buscarJogador(id) === s.nome);
+            if (!jogadorId) return;
+            const noTimeA = jogo.time_a.includes(jogadorId);
+            const venceu = (noTimeA && jogo.placar_a > jogo.placar_b) || (!noTimeA && jogo.placar_b > jogo.placar_a);
+            if (venceu) {
+              const golsNoJogo = (jogo.gols || []).filter((g: any) => buscarJogador(g.jogador_id) === s.nome).length;
+              golsDecisivos += golsNoJogo;
+            }
+          });
+          if (golsDecisivos > 0) decisivos[s.nome] = golsDecisivos;
+        });
+        return Object.entries(decisivos).sort(([, a], [, b]) => b - a).map(([nome, valor], i) => ({ posicao: i + 1, nome, valor: `${valor}` }));
+      })()),
+      mk('fominha', Object.values(stats)
+        .filter((s: any) => s.jogos > 0)
+        .sort((a: any, b: any) => b.jogos - a.jogos)
+        .map((s: any, i) => ({ posicao: i + 1, nome: s.nome, valor: `${s.jogos}x` }))),
     ]);
   };
 
@@ -660,7 +683,6 @@ export default function IndividualPage() {
           if (!stats) return null;
 
           const totalJogos = jogosFiltrados.length;
-          const notaJogador = getRanking('nota').find(r => r.nome === stats.nome)?.valor || null;
           const pontosRei = getRanking('reiPelada').find(r => r.nome === stats.nome)?.valor || '';
           const posRei = posicao('reiPelada', stats.nome);
           const vezesInvicto = getRanking('naoPerdi').find(r => r.nome === stats.nome)?.valor || '0x';
@@ -682,227 +704,463 @@ export default function IndividualPage() {
           return (
             <div className="mb-4">
               {/* Header */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-24 h-24 rounded-lg overflow-hidden bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-4xl font-bold text-blue-700 border-2 border-blue-300 shadow-sm flex-shrink-0">
-                    {fotoUrl ? <img src={fotoUrl} alt={stats.nome} className="w-full h-full object-cover" /> : stats.nome.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-xl font-bold text-gray-800 mb-1 break-words">{stats.nome}</h3>
-                    <div className="flex items-center gap-1">
-                      {estrelas > 0 ? Array.from({ length: 5 }).map((_, i) => (
-                        <span key={i} className={`text-lg ${i < estrelas ? 'text-yellow-500' : 'text-gray-300'}`}>★</span>
-                      )) : <span className="text-xs text-gray-400">Sem classificação</span>}
-                    </div>
-                  </div>
-                  <div style={{ width: '72px', height: '96px', flexShrink: 0 }} className="bg-gradient-to-br from-amber-50 to-yellow-100 border-2 border-amber-400 rounded-lg shadow-md flex flex-col items-center justify-center gap-1">
-                    <div className="text-xs font-semibold text-amber-700">NOTA</div>
-                    <span className="text-2xl font-bold text-amber-600">{notaJogador ?? '--'}</span>
-                    <div className="text-[10px] text-amber-600 font-medium">{notaJogador ? 'por pelada' : 'sem dados'}</div>
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg shadow-lg p-5 mb-3">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="text-2xl font-black text-white">{stats.nome}</h3>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {estrelas > 0 ? Array.from({ length: 5 }).map((_, i) => (
+                      <span key={i} className={`text-xl ${i < estrelas ? 'text-yellow-300' : 'text-blue-200'}`}>★</span>
+                    )) : <span className="text-sm text-blue-100">Sem classificação</span>}
                   </div>
                 </div>
               </div>
 
               {/* Badge filtro */}
               <div className="w-full bg-blue-600 rounded-lg px-4 py-1.5 flex items-center justify-center gap-2 shadow-sm mb-3">
-                <span className="text-white text-xs font-medium">Filtro:</span>
                 <span className="text-white text-xs font-bold">{labelFiltro()}</span>
               </div>
 
-              {/* Grid de estatísticas */}
-              <div className="grid grid-cols-3 gap-2 text-xs mb-4">
-                {[
-                  { label: 'Jogos', val: `${stats.jogos} / ${totalJogos}`, bg: 'bg-blue-50', text: 'text-blue-700' },
-                  { label: 'Vitórias', val: `${stats.vitorias}${posicao('vitorioso', stats.nome) > 0 ? ` / ${posicao('vitorioso', stats.nome)}º` : ''}`, bg: 'bg-green-50', text: 'text-green-700' },
-                  { label: 'Empates', val: `${stats.empates}`, bg: 'bg-yellow-50', text: 'text-yellow-700' },
-                  { label: 'Derrotas', val: `${stats.derrotas}${posicao('derrotas', stats.nome) > 0 ? ` / ${posicao('derrotas', stats.nome)}º` : ''}`, bg: 'bg-red-50', text: 'text-red-700' },
-                  { label: 'Aproveitamento', val: stats.aproveitamento, bg: 'bg-green-50', text: 'text-green-700' },
-                  { label: 'Sem Sofrer Gols', val: `${stats.semSofrerGols}${posicao('semSofrer', stats.nome) > 0 ? ` / ${posicao('semSofrer', stats.nome)}º` : ''}`, bg: 'bg-green-50', text: 'text-green-700' },
-                  { label: 'Gols', val: `${stats.gols}${posicao('artilheiro', stats.nome) > 0 ? ` / ${posicao('artilheiro', stats.nome)}º` : ''}`, bg: 'bg-blue-50', text: 'text-blue-700' },
-                  { label: 'Média de Gols', val: `${stats.mediaGols}${posicao('mediaGols', stats.nome) > 0 ? ` / ${posicao('mediaGols', stats.nome)}º` : ''}`, bg: 'bg-blue-50', text: 'text-blue-700' },
-                  { label: 'Assistências', val: `${stats.assistencias}${posicao('garcom', stats.nome) > 0 ? ` / ${posicao('garcom', stats.nome)}º` : ''}`, bg: 'bg-blue-50', text: 'text-blue-700' },
-                  { label: 'Hat-trick', val: `${stats.hatTricks}${posicao('hatTricks', stats.nome) > 0 ? ` / ${posicao('hatTricks', stats.nome)}º` : ''}`, bg: 'bg-green-50', text: 'text-green-700' },
-                  { label: 'Invicto', val: `${vezesInvicto}${posInvicto > 0 ? ` / ${posInvicto}º` : ''}`, bg: 'bg-orange-50', text: 'text-orange-700' },
-                  { label: 'Bola Murcha', val: `${vezesBolaMurcha}${posBolaMurcha > 0 ? ` / ${posBolaMurcha}º` : ''}`, bg: 'bg-red-50', text: 'text-red-700' },
-                ].map((item, i) => (
-                  <div key={i} className={`${item.bg} p-3 rounded text-center flex flex-col justify-center min-h-[72px]`}>
-                    <div className="text-gray-600 mb-0.5">{item.label}</div>
-                    <div className={`text-lg font-bold ${item.text}`}>{item.val}</div>
-                  </div>
-                ))}
-                <div className="col-span-3 grid grid-cols-2 gap-2">
-                  <div className="bg-orange-50 p-3 rounded text-center flex flex-col justify-center min-h-[72px]">
-                    <div className="text-gray-600 mb-0.5">MVPs</div>
-                    <div className="text-lg font-bold text-orange-700">{stats.mvps}{posicao('mvp', stats.nome) > 0 ? ` / ${posicao('mvp', stats.nome)}º` : ''}</div>
-                  </div>
-                  <div className="bg-orange-50 p-3 rounded text-center flex flex-col justify-center min-h-[72px]">
-                    <div className="text-gray-600 mb-1">Participação sem Vitória</div>
-                    <div className="text-sm font-bold leading-snug">
-                      <span className="text-red-700">{derrotasSemVitoria}D</span>
-                      <span className="text-gray-600"> e </span>
-                      <span className="text-yellow-600">{empatesSemVitoria}E</span>
-                      <span className="text-gray-600"> = </span>
-                      <span className="text-green-700">{golsSemVitoria}G</span>
-                      <span className="text-gray-600"> e </span>
-                      <span className="text-green-700">{assistenciasSemVitoria}A</span>
-                    </div>
-                  </div>
+              {/* Linha 1: Jogos, Vitórias, Empates, Derrotas */}
+              <div className="grid grid-cols-4 gap-2 mb-3">
+                <div className="bg-blue-50 p-2 rounded text-center flex flex-col justify-center min-h-[60px] border border-blue-200">
+                  <div className="text-[11px] font-bold text-gray-600 leading-tight">JOGOS</div>
+                  <div className="text-lg font-black text-blue-700">{stats.jogos}</div>
                 </div>
-                <div className="bg-yellow-50 p-3 rounded text-center col-span-3 border border-yellow-200 min-h-[72px] flex flex-col justify-center">
-                  <div className="text-gray-600 mb-0.5">👑 Rei da Pelada 👑</div>
-                  <div className="text-xl font-bold text-yellow-700">{posRei > 0 ? `${posRei}º Lugar com ${pontosRei}` : 'Fora do ranking'}</div>
+                <div className="bg-green-50 p-2 rounded text-center flex flex-col justify-center min-h-[60px] border border-green-200">
+                  <div className="text-[11px] font-bold text-gray-600 leading-tight">VITÓRIAS</div>
+                  <div className="text-lg font-black text-green-700">{stats.vitorias}</div>
+                </div>
+                <div className="bg-yellow-50 p-2 rounded text-center flex flex-col justify-center min-h-[60px] border border-yellow-200">
+                  <div className="text-[11px] font-bold text-gray-600 leading-tight">EMPATES</div>
+                  <div className="text-lg font-black text-yellow-700">{stats.empates}</div>
+                </div>
+                <div className="bg-red-50 p-2 rounded text-center flex flex-col justify-center min-h-[60px] border border-red-200">
+                  <div className="text-[11px] font-bold text-gray-600 leading-tight">DERROTAS</div>
+                  <div className="text-lg font-black text-red-700">{stats.derrotas}</div>
                 </div>
               </div>
 
-              {/* Histórico de partidas */}
-              {stats.detalhesJogos.length > 0 && (() => {
-                const notaHist = getRanking('nota').find(r => r.nome === stats.nome)?.valor || null;
+              {/* Linha 2: Gols com detalhes */}
+              {(() => {
+                const particidasComGol = stats.detalhesJogos.filter(j => j.gols > 0).length;
+                const mediaGols = stats.jogos > 0 ? stats.gols / stats.jogos : 0;
+                const posGols = posicao('artilheiro', stats.nome);
                 return (
-                  <div className="mt-8 mb-6">
-                    <div className="rounded-lg border border-gray-200 overflow-hidden shadow-sm mb-3">
-                      <div className="px-4 py-3 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">📋</span>
-                          <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wide">Histórico de Partidas</h4>
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">⚽</span>
+                      <div className="flex-1">
+                        <div className="text-sm text-gray-700 leading-tight">
+                          <span className="font-black text-gray-900">{stats.gols}</span>
+                          <span className="text-gray-600"> gols em </span>
+                          <span className="font-black text-gray-900">{stats.jogos}</span>
+                          <span className="text-gray-600"> partidas</span>
                         </div>
-                        <div className="flex gap-2">
-                          <span className="w-4 h-4 rounded-full bg-red-500 inline-block shadow-sm"></span>
-                          <span className="w-4 h-4 rounded-full bg-yellow-400 inline-block shadow-sm"></span>
-                          <span className="w-4 h-4 rounded-full bg-green-500 inline-block shadow-sm"></span>
+                        <div className="text-xs text-gray-500 leading-tight">
+                          Média: <span className="font-bold text-gray-700">{mediaGols.toFixed(2)}</span> gols por partida
                         </div>
                       </div>
-                      <div className="border-t border-gray-200 bg-gray-50 px-4 py-2 flex items-center justify-center gap-2">
-                        <span className="text-gray-700 text-xs font-medium">Filtro:</span>
-                        <span className="text-gray-800 text-xs font-bold">{labelFiltro()}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5 justify-center">
-                      {[...stats.detalhesJogos].reverse().map((jogo, index) => {
-                        const numJogo = stats.detalhesJogos.length - index;
-                        const bg = jogo.resultado === 'vitoria' ? 'bg-green-500' : jogo.resultado === 'empate' ? 'bg-yellow-400' : 'bg-red-500';
-                        const badges: string[] = [];
-                        if (jogo.gols > 0) badges.push('⚽'.repeat(jogo.gols));
-                        if (jogo.assistencias > 0) badges.push('👟'.repeat(jogo.assistencias));
-                        if (jogo.semSofrer) badges.push('🛡️');
-                        if (jogo.hatTrick) badges.push('🎩');
-                        if (jogo.deiteiERolei) badges.push('🎯');
-                        if (jogo.mvp) badges.push('⭐');
-                        return (
-                          <div key={index} className={`${bg} rounded-lg px-2 py-1.5 flex flex-col items-center min-w-[36px]`} title={`Jogo ${numJogo}`}>
-                            <span className="text-white font-bold text-[13px] leading-none">{numJogo}</span>
-                            {badges.length > 0 && (
-                              <div className="flex flex-wrap justify-center gap-px mt-1">
-                                {badges.map((b, i) => <span key={i} className="text-[14px] leading-none">{b}</span>)}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="mt-5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600 justify-center">
-                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span>Vitória</span>
-                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block"></span>Empate</span>
-                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>Derrota</span>
-                      <span>⚽ Gol</span>
-                      <span>👟 Assistências</span>
-                      <span>🛡️ Sem Sofrer Gols</span>
-                      <span>🎩 Hat-trick</span>
-                      <span>🎯 Deitei e Rolei</span>
-                      <span>⭐ MVP</span>
+                      {posGols > 0 && (
+                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100 border border-blue-300 flex-shrink-0">
+                          <span className="text-xs font-black text-blue-700">{posGols}º</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Resultados dos Jogos */}
-              {stats.detalhesJogos.length > 0 && (
-                <div className="mt-8">
-                  <div className="rounded-lg border border-gray-200 overflow-hidden shadow-sm mb-3">
-                    <div className="px-4 py-3 flex items-center justify-between bg-gray-50">
-                      <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wide">📊 Resultados dos Jogos</h4>
+              {/* Linha 3: Assistências com detalhes */}
+              {(() => {
+                const participacaoComAssist = stats.detalhesJogos.filter(j => j.assistencias > 0).length;
+                const mediaAssist = stats.jogos > 0 ? stats.assistencias / stats.jogos : 0;
+                const posAssist = posicao('garcom', stats.nome);
+                return (
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">👟</span>
+                      <div className="flex-1">
+                        <div className="text-sm text-gray-700 leading-tight">
+                          <span className="font-black text-gray-900">{stats.assistencias}</span>
+                          <span className="text-gray-600"> assists em </span>
+                          <span className="font-black text-gray-900">{stats.jogos}</span>
+                          <span className="text-gray-600"> partidas</span>
+                        </div>
+                        <div className="text-xs text-gray-500 leading-tight">
+                          Média: <span className="font-bold text-gray-700">{mediaAssist.toFixed(2)}</span> assists por partida
+                        </div>
+                      </div>
+                      {posAssist > 0 && (
+                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100 border border-blue-300 flex-shrink-0">
+                          <span className="text-xs font-black text-blue-700">{posAssist}º</span>
+                        </div>
+                      )}
                     </div>
                   </div>
+                );
+              })()}
 
-                  <div className="space-y-4">
-                    {jogosFiltrados.map((jogo, index) => {
-                      const nomeJogador = stats.nome;
-                      const todosIds = [...jogo.time_a, ...jogo.time_b];
-                      const jId = todosIds.find(id => buscarJogador(id) === nomeJogador);
-                      if (!jId) return null;
+              {/* Linha 4: MVPs com detalhes */}
+              {(() => {
+                const posMvp = posicao('mvp', stats.nome);
+                return (
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">⭐</span>
+                      <div className="flex-1">
+                        <div className="text-sm text-gray-700 leading-tight">
+                          <span className="font-black text-gray-900">{stats.mvps}</span>
+                          <span className="text-gray-600">/</span>
+                          <span className="font-black text-gray-900">{stats.vitorias}</span>
+                          <span className="text-gray-600"> vitórias com gol/assist</span>
+                        </div>
+                      </div>
+                      {posMvp > 0 && (
+                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-yellow-100 border border-yellow-300 flex-shrink-0">
+                          <span className="text-xs font-black text-yellow-700">{posMvp}º</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
-                      const emTimeA = jogo.time_a.includes(jId);
-                      const timeDoJogador = emTimeA ? 'A' : 'B';
-                      const venceu = (timeDoJogador === 'A' && jogo.placar_a > jogo.placar_b) || (timeDoJogador === 'B' && jogo.placar_b > jogo.placar_a);
-                      const empatou = jogo.placar_a === jogo.placar_b;
+              {/* Linha 5: Decisivo */}
+              {(() => {
+                let decisivos = 0;
+                let jogosComVitoria = 0;
+                jogosFiltrados.forEach(jogo => {
+                  const todos = [...jogo.time_a, ...jogo.time_b];
+                  const jId = todos.find(id => buscarJogador(id) === stats.nome);
+                  if (!jId) return;
+                  const noA = jogo.time_a.includes(jId);
+                  const venceu = (noA && jogo.placar_a > jogo.placar_b) || (!noA && jogo.placar_b > jogo.placar_a);
+                  if (venceu) {
+                    jogosComVitoria++;
+                    const gols = (jogo.gols || []).filter(g => buscarJogador(g.jogador_id) === stats.nome).length;
+                    decisivos += gols;
+                  }
+                });
+                const posDec = posicao('decisivo', stats.nome);
+                return (
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🎯</span>
+                      <div className="flex-1">
+                        <div className="text-sm text-gray-700 leading-tight">
+                          <span className="font-black text-gray-900">{decisivos}</span>
+                          <span className="text-gray-600"> gols em </span>
+                          <span className="font-black text-gray-900">{jogosComVitoria}</span>
+                          <span className="text-gray-600"> jogos que deram vitória</span>
+                        </div>
+                      </div>
+                      {posDec > 0 && (
+                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-red-100 border border-red-300 flex-shrink-0">
+                          <span className="text-xs font-black text-red-700">{posDec}º</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
-                      // Emojis do jogador pesquisado nessa partida
-                      const golsJog = (jogo.gols || []).filter(g => buscarJogador(g.jogador_id) === nomeJogador).length;
-                      const assistJog = (jogo.assistencias || []).filter(a => buscarJogador(a.jogador_id) === nomeJogador).length;
-                      const hatTrick = golsJog >= 3 || assistJog >= 3;
-                      const mvp = venceu && (golsJog > 0 || assistJog > 0);
-                      const deiteiERolei = venceu && golsJog > 0 && assistJog > 0;
-                      const semSofrer = (emTimeA && jogo.placar_b === 0) || (!emTimeA && jogo.placar_a === 0);
-                      const emojisJog: string[] = [];
-                      if (golsJog > 0) emojisJog.push('⚽'.repeat(golsJog));
-                      if (assistJog > 0) emojisJog.push('👟'.repeat(assistJog));
-                      if (semSofrer) emojisJog.push('🛡️');
-                      if (hatTrick) emojisJog.push('🎩');
-                      if (deiteiERolei) emojisJog.push('🎯');
-                      if (mvp) emojisJog.push('⭐');
+              {/* Linha 6: Carregou o Time */}
+              {(() => {
+                const carregou = stats.detalhesJogos
+                  .filter(j => j.resultado !== 'vitoria')
+                  .reduce((acc, j) => acc + j.gols + j.assistencias, 0);
+                const jogosComContrib = stats.detalhesJogos.filter(j => j.resultado !== 'vitoria' && (j.gols > 0 || j.assistencias > 0)).length;
+                const posCarr = posicao('carregouTime', stats.nome);
+                return (
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🚛</span>
+                      <div className="flex-1">
+                        <div className="text-sm text-gray-700 leading-tight">
+                          <span className="font-black text-gray-900">{carregou}</span>
+                          <span className="text-gray-600"> contribuições em </span>
+                          <span className="font-black text-gray-900">{stats.jogos}</span>
+                          <span className="text-gray-600"> partidas</span>
+                        </div>
+                      </div>
+                      {posCarr > 0 && (
+                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100 border border-blue-300 flex-shrink-0">
+                          <span className="text-xs font-black text-blue-700">{posCarr}º</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
-                      return (
-                        <div key={jogo.id} className="pb-4 border-b border-gray-200 last:border-b-0">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-semibold text-gray-500">Jogo #{jogosFiltrados.length - index}</span>
-                            <span className={`text-xs font-bold px-2 py-1 rounded ${venceu ? 'bg-green-100 text-green-700' : empatou ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                              {venceu ? '✅ VITÓRIA' : empatou ? '➖ EMPATE' : '❌ DERROTA'}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="text-2xl font-bold" style={{color: emTimeA ? '#16a34a' : '#9ca3af'}}>{jogo.placar_a}</div>
-                            <div className="text-gray-400 font-semibold">VS</div>
-                            <div className="text-2xl font-bold" style={{color: !emTimeA ? '#16a34a' : '#9ca3af'}}>{jogo.placar_b}</div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className={`rounded p-2 ${emTimeA ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'}`}>
-                              <div className="font-semibold mb-1 text-center text-gray-700">Time 1</div>
-                              {jogo.time_a.map((jogadorId, i) => {
-                                const nomeJ = buscarJogador(jogadorId);
-                                const isDestaque = nomeJ === nomeJogador;
-                                const golsJ = (jogo.gols || []).filter(g => g.jogador_id === jogadorId && g.time === 'A').length;
-                                return (
-                                  <div key={i} className={isDestaque ? 'font-bold text-green-700 bg-green-100 px-1 rounded mb-0.5' : 'text-gray-700 mb-0.5'}>
-                                    {nomeJ}{isDestaque
-                                      ? (emojisJog.length > 0 ? ` ${emojisJog.join(' ')}` : '')
-                                      : (golsJ > 0 ? ` ⚽${golsJ}` : '')}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div className={`rounded p-2 ${!emTimeA ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'}`}>
-                              <div className="font-semibold mb-1 text-center text-gray-700">Time 2</div>
-                              {jogo.time_b.map((jogadorId, i) => {
-                                const nomeJ = buscarJogador(jogadorId);
-                                const isDestaque = nomeJ === nomeJogador;
-                                const golsJ = (jogo.gols || []).filter(g => g.jogador_id === jogadorId && g.time === 'B').length;
-                                return (
-                                  <div key={i} className={isDestaque ? 'font-bold text-green-700 bg-green-100 px-1 rounded mb-0.5' : 'text-gray-700 mb-0.5'}>
-                                    {nomeJ}{isDestaque
-                                      ? (emojisJog.length > 0 ? ` ${emojisJog.join(' ')}` : '')
-                                      : (golsJ > 0 ? ` ⚽${golsJ}` : '')}
-                                  </div>
-                                );
-                              })}
-                            </div>
+              {/* Linha 7: Muralha com detalhes */}
+              {(() => {
+                const posMuralha = posicao('semSofrer', stats.nome);
+                return (
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🛡️</span>
+                      <div className="flex-1">
+                        <div className="text-sm text-gray-700 leading-tight">
+                          <span className="font-black text-gray-900">{stats.semSofrerGols}</span>
+                          <span className="text-gray-600">/</span>
+                          <span className="font-black text-gray-900">{stats.jogos}</span>
+                          <span className="text-gray-600"> partidas sem levar gols</span>
+                        </div>
+                      </div>
+                      {posMuralha > 0 && (
+                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-green-100 border border-green-300 flex-shrink-0">
+                          <span className="text-xs font-black text-green-700">{posMuralha}º</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Linha 8: Fominha com detalhes */}
+              {(() => {
+                const posFominha = posicao('fominha', stats.nome);
+                const percentualPresenca = stats.jogos > 0 ? ((stats.jogos / jogosFiltrados.length) * 100).toFixed(0) : '0';
+                return (
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mb-8">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">⚡</span>
+                      <div className="flex-1">
+                        <div className="text-sm text-gray-700 leading-tight">
+                          <span className="font-black text-gray-900">{stats.jogos}</span>
+                          <span className="text-gray-600">/</span>
+                          <span className="font-black text-gray-900">{jogosFiltrados.length}</span>
+                          <span className="text-gray-600"> partidas jogadas</span>
+                        </div>
+                        <div className="text-xs text-gray-500 leading-tight">
+                          Presença: <span className="font-bold text-gray-700">{percentualPresenca}%</span>
+                        </div>
+                      </div>
+                      {posFominha > 0 && (
+                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-100 border border-purple-300 flex-shrink-0">
+                          <span className="text-xs font-black text-purple-700">{posFominha}º</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Linha 9: Stats únicas - Invicto, Hat-Trick, Rei da Pelada */}
+              {(() => {
+                const partidasComHatTrick = stats.detalhesJogos.filter(j => j.hatTrick).length;
+                return (
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="bg-orange-50 p-3 rounded text-center flex flex-col justify-center min-h-[72px] border border-orange-200">
+                      <div className="text-2xl mb-1">🔥</div>
+                      <div className="text-xs font-bold text-gray-600">INVICTO</div>
+                      <div className="text-lg font-black text-orange-700">{vezesInvicto}</div>
+                      <div className="text-[10px] text-gray-500">sessões</div>
+                    </div>
+                    <div className="bg-green-50 p-3 rounded text-center flex flex-col justify-center min-h-[72px] border border-green-200">
+                      <div className="text-2xl mb-1">🎩</div>
+                      <div className="text-xs font-bold text-gray-600">HAT-TRICK</div>
+                      <div className="text-lg font-black text-green-700">{stats.hatTricks}</div>
+                      <div className="text-[10px] text-gray-500">{partidasComHatTrick} {partidasComHatTrick === 1 ? 'partida' : 'partidas'}</div>
+                    </div>
+                    <div className="bg-yellow-50 p-3 rounded text-center flex flex-col justify-center min-h-[72px] border border-yellow-200">
+                      <div className="text-2xl mb-1">👑</div>
+                      <div className="text-xs font-bold text-gray-600">REI DA PELADA</div>
+                      <div className="text-lg font-black text-yellow-700">{posRei > 0 ? posRei + 'º' : '—'}</div>
+                      <div className="text-[10px] text-gray-500">{pontosRei} pontos</div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Melhores Amigos */}
+              {stats.detalhesJogos.length > 0 && (() => {
+                // Calcular parceiros e adversários com mais detalhes
+                const parceiroStats: { [nome: string]: { victorias: number; empates: number; derrotas: number; gols: number; assistenciasRecebidas: number; assistenciasGivens: number; partidas: number; semSofrerGols: number } } = {};
+                const adversarioStats: { [nome: string]: { victorias: number; derrotas: number; partidas: number } } = {};
+
+                jogosFiltrados.forEach((jogo: any) => {
+                  const todos = [...jogo.time_a, ...jogo.time_b];
+                  const jId = todos.find(id => buscarJogador(id) === stats.nome);
+                  if (!jId) return;
+
+                  const noTimeA = jogo.time_a.includes(jId);
+                  const timeJogador = noTimeA ? jogo.time_a : jogo.time_b;
+                  const timeAdversario = noTimeA ? jogo.time_b : jogo.time_a;
+                  const placarJogador = noTimeA ? jogo.placar_a : jogo.placar_b;
+                  const placarAdversario = noTimeA ? jogo.placar_b : jogo.placar_a;
+                  const venceu = placarJogador > placarAdversario;
+                  const empatou = placarJogador === placarAdversario;
+                  const sofreu = placarAdversario === 0;
+
+                  // Parceiros
+                  timeJogador.forEach((id: any) => {
+                    const nome = buscarJogador(id);
+                    if (nome === stats.nome) return;
+                    if (!parceiroStats[nome]) parceiroStats[nome] = { victorias: 0, empates: 0, derrotas: 0, gols: 0, assistenciasRecebidas: 0, assistenciasGivens: 0, partidas: 0, semSofrerGols: 0 };
+                    parceiroStats[nome].partidas++;
+                    if (venceu) parceiroStats[nome].victorias++;
+                    else if (empatou) parceiroStats[nome].empates++;
+                    else parceiroStats[nome].derrotas++;
+                    if (sofreu) parceiroStats[nome].semSofrerGols++;
+                    const golsParceiro = (jogo.gols || []).filter((g: any) => buscarJogador(g.jogador_id) === nome).length;
+                    parceiroStats[nome].gols += golsParceiro;
+                    // Assistências: procurar assists que resultaram em gol de stats.nome ou nome
+                    const assistPara = (jogo.assistencias || []).filter((a: any) => {
+                      // Quem deu a assistência foi stats.nome, quem recebeu foi nome
+                      if (buscarJogador(a.jogador_id) !== stats.nome) return false;
+                      // Verificar se a assistência foi para um gol de 'nome'
+                      const golAssistido = (jogo.gols || []).find((g: any) => g.id === a.gol_id);
+                      return golAssistido && buscarJogador(golAssistido.jogador_id) === nome;
+                    }).length;
+                    const assistDe = (jogo.assistencias || []).filter((a: any) => {
+                      // Quem deu a assistência foi nome, quem recebeu foi stats.nome
+                      if (buscarJogador(a.jogador_id) !== nome) return false;
+                      // Verificar se a assistência foi para um gol de stats.nome
+                      const golAssistido = (jogo.gols || []).find((g: any) => g.id === a.gol_id);
+                      return golAssistido && buscarJogador(golAssistido.jogador_id) === stats.nome;
+                    }).length;
+                    parceiroStats[nome].assistenciasRecebidas += assistDe;
+                    parceiroStats[nome].assistenciasGivens += assistPara;
+                  });
+
+                  // Adversários
+                  timeAdversario.forEach((id: any) => {
+                    const nome = buscarJogador(id);
+                    if (!adversarioStats[nome]) adversarioStats[nome] = { victorias: 0, derrotas: 0, partidas: 0 };
+                    adversarioStats[nome].partidas++;
+                    if (venceu) adversarioStats[nome].derrotas++;
+                    else adversarioStats[nome].victorias++;
+                  });
+                });
+
+                const melhorAmigo = Object.entries(parceiroStats).sort(([, a], [, b]) => b.victorias - a.victorias)[0];
+                const maiorAssistRecebidas = Object.entries(parceiroStats).sort(([, a], [, b]) => b.assistenciasRecebidas - a.assistenciasRecebidas)[0];
+                const maiorAssistGivens = Object.entries(parceiroStats).sort(([, a], [, b]) => b.assistenciasGivens - a.assistenciasGivens)[0];
+                const maiorParceiroVitorias = Object.entries(parceiroStats).sort(([, a], [, b]) => (b.victorias - b.derrotas) - (a.victorias - a.derrotas))[0];
+                const maiorParceiroDerrotas = Object.entries(parceiroStats).sort(([, a], [, b]) => b.derrotas - a.derrotas)[0];
+                const maiorAdversarioDerrotas = Object.entries(adversarioStats).sort(([, a], [, b]) => b.derrotas - a.derrotas)[0];
+                const maiorAdversarioVitorias = Object.entries(adversarioStats).sort(([, a], [, b]) => b.victorias - a.victorias)[0];
+
+                const totalGolsComMelhorAmigo = melhorAmigo ? jogosFiltrados.reduce((acc, jogo) => {
+                  const todos = [...jogo.time_a, ...jogo.time_b];
+                  const jId = todos.find(id => buscarJogador(id) === stats.nome);
+                  if (!jId) return acc;
+                  const noTimeA = jogo.time_a.includes(jId);
+                  const timeJogador = noTimeA ? jogo.time_a : jogo.time_b;
+                  if (!timeJogador.some(id => buscarJogador(id) === melhorAmigo[0])) return acc;
+                  
+                  // Gols com participação mútua: um fez o gol e o outro deu assistência
+                  const golsComAssist = (jogo.gols || []).filter((g: any) => {
+                    const golPor = buscarJogador(g.jogador_id);
+                    // Gol de stats.nome com assistência de melhorAmigo[0]
+                    if (golPor === stats.nome) {
+                      return (jogo.assistencias || []).some((a: any) => {
+                        if (buscarJogador(a.jogador_id) !== melhorAmigo[0]) return false;
+                        const golAssistido = (jogo.gols || []).find((gol: any) => gol.id === a.gol_id);
+                        return golAssistido && buscarJogador(golAssistido.jogador_id) === stats.nome;
+                      });
+                    }
+                    // Gol de melhorAmigo[0] com assistência de stats.nome
+                    if (golPor === melhorAmigo[0]) {
+                      return (jogo.assistencias || []).some((a: any) => {
+                        if (buscarJogador(a.jogador_id) !== stats.nome) return false;
+                        const golAssistido = (jogo.gols || []).find((gol: any) => gol.id === a.gol_id);
+                        return golAssistido && buscarJogador(golAssistido.jogador_id) === melhorAmigo[0];
+                      });
+                    }
+                    return false;
+                  }).length;
+                  
+                  return acc + golsComAssist;
+                }, 0) : 0;
+
+                const totalAssistMelhorAmigo = melhorAmigo ? jogosFiltrados.reduce((acc, jogo) => {
+                  const todos = [...jogo.time_a, ...jogo.time_b];
+                  const jId = todos.find(id => buscarJogador(id) === stats.nome);
+                  if (!jId) return acc;
+                  const noTimeA = jogo.time_a.includes(jId);
+                  const timeJogador = noTimeA ? jogo.time_a : jogo.time_b;
+                  if (!timeJogador.some(id => buscarJogador(id) === melhorAmigo[0])) return acc;
+                  
+                  // Assistências com participação mútua: assistência que resultou em gol de um dos dois
+                  const assistComGol = (jogo.assistencias || []).filter((a: any) => {
+                    const assistPor = buscarJogador(a.jogador_id);
+                    // Assistência de stats.nome para gol de melhorAmigo[0]
+                    if (assistPor === stats.nome) {
+                      return (jogo.gols || []).some((g: any) => {
+                        if (buscarJogador(g.jogador_id) !== melhorAmigo[0]) return false;
+                        return (jogo.assistencias || []).some((ass: any) => ass.gol_id === g.id && buscarJogador(ass.jogador_id) === stats.nome);
+                      });
+                    }
+                    // Assistência de melhorAmigo[0] para gol de stats.nome
+                    if (assistPor === melhorAmigo[0]) {
+                      return (jogo.gols || []).some((g: any) => {
+                        if (buscarJogador(g.jogador_id) !== stats.nome) return false;
+                        return (jogo.assistencias || []).some((ass: any) => ass.gol_id === g.id && buscarJogador(ass.jogador_id) === melhorAmigo[0]);
+                      });
+                    }
+                    return false;
+                  }).length;
+                  
+                  return acc + assistComGol;
+                }, 0) : 0;
+
+                return (
+                  <div className="mt-8">
+                    {melhorAmigo && (
+                      <div className="mb-8 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-lg p-4 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <div className="w-full">
+                            <div className="text-xs font-bold text-green-700 uppercase tracking-wide mb-1">Melhor Amigo</div>
+                            <div className="text-lg font-black text-gray-900 mb-2">{melhorAmigo[0]}</div>
+                            <div className="text-sm text-gray-700 leading-relaxed">Jogando juntos temos <span className="font-bold text-green-700">{melhorAmigo[1].victorias}V</span> / <span className="font-bold text-green-700">{melhorAmigo[1].empates}E</span> / <span className="font-bold text-red-700">{melhorAmigo[1].derrotas}D</span> + <span className="font-bold text-emerald-600">{totalGolsComMelhorAmigo}</span> gols e <span className="font-bold text-blue-600">{totalAssistMelhorAmigo}</span> assistências, ficamos sem levar gols em <span className="font-bold text-purple-600">{melhorAmigo[1].semSofrerGols}</span> jogos de um total de <span className="font-bold">{melhorAmigo[1].partidas} jogos</span>.</div>
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className={`${maiorAssistRecebidas?.[1].assistenciasRecebidas > 0 ? 'bg-blue-50' : 'bg-blue-50 opacity-40'} border ${maiorAssistRecebidas?.[1].assistenciasRecebidas > 0 ? 'border-blue-200' : 'border-blue-100'} rounded-lg p-2.5`}>
+                        <div className="text-xs font-bold text-blue-700 mb-0.5">Recebo Mais Assistências</div>
+                        <div className="text-sm font-black text-gray-900 truncate">{maiorAssistRecebidas?.[1].assistenciasRecebidas > 0 ? maiorAssistRecebidas[0] : '—'}</div>
+                        <div className="text-xs text-gray-600 mt-1">{maiorAssistRecebidas ? <><span className="font-bold">{maiorAssistRecebidas[1].assistenciasRecebidas}</span> assistências em <span className="font-bold">{maiorAssistRecebidas[1].partidas} jogos</span></> : '—'}</div>
+                      </div>
+
+                      <div className={`${maiorAssistGivens?.[1].assistenciasGivens > 0 ? 'bg-green-50' : 'bg-green-50 opacity-40'} border ${maiorAssistGivens?.[1].assistenciasGivens > 0 ? 'border-green-200' : 'border-green-100'} rounded-lg p-2.5`}>
+                        <div className="text-xs font-bold text-green-700 mb-0.5">Gols com minhas assistências</div>
+                        <div className="text-sm font-black text-gray-900 truncate">{maiorAssistGivens?.[1].assistenciasGivens > 0 ? maiorAssistGivens[0] : '—'}</div>
+                        <div className="text-xs text-gray-600 mt-1">{maiorAssistGivens ? <><span className="font-bold">{maiorAssistGivens[1].assistenciasGivens}</span> assistências em <span className="font-bold">{maiorAssistGivens[1].partidas} jogos</span></> : '—'}</div>
+                      </div>
+
+                      <div className={`${maiorParceiroVitorias?.[1].victorias > 0 ? 'bg-purple-50' : 'bg-purple-50 opacity-40'} border ${maiorParceiroVitorias?.[1].victorias > 0 ? 'border-purple-200' : 'border-purple-100'} rounded-lg p-2.5`}>
+                        <div className="text-xs font-bold text-purple-700 mb-0.5">Parceiro Vitorioso</div>
+                        <div className="text-sm font-black text-gray-900 truncate">{maiorParceiroVitorias?.[1].victorias > 0 ? maiorParceiroVitorias[0] : '—'}</div>
+                        <div className="text-xs text-gray-600 mt-1">{maiorParceiroVitorias ? <><span className="font-bold">{maiorParceiroVitorias[1].victorias}</span> vitórias em <span className="font-bold">{maiorParceiroVitorias[1].partidas} jogos</span></> : '—'}</div>
+                      </div>
+
+                      <div className={`${maiorParceiroDerrotas?.[1].derrotas > 0 ? 'bg-red-50' : 'bg-red-50 opacity-40'} border ${maiorParceiroDerrotas?.[1].derrotas > 0 ? 'border-red-200' : 'border-red-100'} rounded-lg p-2.5`}>
+                        <div className="text-xs font-bold text-red-700 mb-0.5">Parceiro nas Derrotas</div>
+                        <div className="text-sm font-black text-gray-900 truncate">{maiorParceiroDerrotas?.[1].derrotas > 0 ? maiorParceiroDerrotas[0] : '—'}</div>
+                        <div className="text-xs text-gray-600 mt-1">{maiorParceiroDerrotas ? <><span className="font-bold">{maiorParceiroDerrotas[1].derrotas}</span> derrotas em <span className="font-bold">{maiorParceiroDerrotas[1].partidas} jogos</span></> : '—'}</div>
+                      </div>
+
+                      <div className={`${maiorAdversarioDerrotas?.[1].derrotas > 0 ? 'bg-yellow-50' : 'bg-yellow-50 opacity-40'} border ${maiorAdversarioDerrotas?.[1].derrotas > 0 ? 'border-yellow-200' : 'border-yellow-100'} rounded-lg p-2.5`}>
+                        <div className="text-xs font-bold text-yellow-700 mb-0.5">Mais Derrotei</div>
+                        <div className="text-sm font-black text-gray-900 truncate">{maiorAdversarioDerrotas?.[1].derrotas > 0 ? maiorAdversarioDerrotas[0] : '—'}</div>
+                        <div className="text-xs text-gray-600 mt-1">{maiorAdversarioDerrotas ? <>Ganhei <span className="font-bold">{maiorAdversarioDerrotas[1].derrotas}</span> em <span className="font-bold">{maiorAdversarioDerrotas[1].partidas} jogos</span></> : '—'}</div>
+                      </div>
+
+                      <div className={`${maiorAdversarioVitorias?.[1].victorias > 0 ? 'bg-orange-50' : 'bg-orange-50 opacity-40'} border ${maiorAdversarioVitorias?.[1].victorias > 0 ? 'border-orange-200' : 'border-orange-100'} rounded-lg p-2.5`}>
+                        <div className="text-xs font-bold text-orange-700 mb-0.5">Mais Perdi Para</div>
+                        <div className="text-sm font-black text-gray-900 truncate">{maiorAdversarioVitorias?.[1].victorias > 0 ? maiorAdversarioVitorias[0] : '—'}</div>
+                        <div className="text-xs text-gray-600 mt-1">{maiorAdversarioVitorias ? <>Perdi <span className="font-bold">{maiorAdversarioVitorias[1].victorias}</span> em <span className="font-bold">{maiorAdversarioVitorias[1].partidas} jogos</span></> : '—'}</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           );
         })()}

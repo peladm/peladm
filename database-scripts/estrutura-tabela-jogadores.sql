@@ -88,3 +88,6 @@ CREATE TABLE IF NOT EXISTS jogadores (
 -- Índices recomendados
 CREATE INDEX IF NOT EXISTS idx_jogadores_pelada_id ON jogadores(pelada_id);
 CREATE INDEX IF NOT EXISTS idx_jogadores_status ON jogadores(status);
+
+-- 🔒 Segurança: Desabilitar RLS (sem restrições)
+ALTER TABLE jogadores DISABLE ROW LEVEL SECURITY;

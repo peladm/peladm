@@ -45,7 +45,7 @@ export default function ClassificacaoPage() {
   const [jogosFiltrados, setJogosFiltrados] = useState<Jogo[]>([]);
   const [jogadores, setJogadores] = useState<{ [id: string]: Jogador }>({});
   const [loading, setLoading] = useState(true);
-  const [ordenarPor, setOrdenarPor] = useState<'pontos' | 'vitorias' | 'jogos' | 'gols' | 'assistencias' | 'derrotas' | 'empates'>('pontos');
+  const [ordenarPor, setOrdenarPor] = useState<'pontos' | 'vitorias' | 'jogos' | 'gols' | 'assistencias' | 'cleanSheets' | 'derrotas' | 'empates'>('pontos');
 
   // Estados para filtros
   const [filtro, setFiltro] = useState<'atual' | 'mes' | 'ultimas' | 'ano' | 'historia'>('atual');
@@ -470,13 +470,13 @@ export default function ClassificacaoPage() {
 
         {/* Tabela de Classificação Dinâmica */}
         {(() => {
-          const estatisticasPorJogador: { [nome: string]: { jogos: number; gols: number; assistencias: number; vitorias: number; derrotas: number; empates: number; jogadorId: string } } = {};
+          const estatisticasPorJogador: { [nome: string]: { jogos: number; gols: number; assistencias: number; vitorias: number; derrotas: number; empates: number; cleanSheets: number; jogadorId: string } } = {};
           
           jogosFiltrados.forEach(jogo => {
             [...jogo.time_a, ...jogo.time_b].forEach(jogadorId => {
               const nome = buscarJogador(jogadorId);
               if (!estatisticasPorJogador[nome]) {
-                estatisticasPorJogador[nome] = { jogos: 0, gols: 0, assistencias: 0, vitorias: 0, derrotas: 0, empates: 0, jogadorId: jogadorId };
+                estatisticasPorJogador[nome] = { jogos: 0, gols: 0, assistencias: 0, vitorias: 0, derrotas: 0, empates: 0, cleanSheets: 0, jogadorId: jogadorId };
               }
               estatisticasPorJogador[nome].jogos++;
               
@@ -488,6 +488,14 @@ export default function ClassificacaoPage() {
                 estatisticasPorJogador[nome].vitorias++;
               } else {
                 estatisticasPorJogador[nome].derrotas++;
+              }
+              
+              // Contar clean sheets (time não levou gols em vitória ou empate)
+              const golsSofridos = noTimeA ? jogo.placar_b : jogo.placar_a;
+              const venceu = (noTimeA && jogo.placar_a > jogo.placar_b) || (!noTimeA && jogo.placar_b > jogo.placar_a);
+              const empatou = jogo.placar_a === jogo.placar_b;
+              if (golsSofridos === 0 && (venceu || empatou)) {
+                estatisticasPorJogador[nome].cleanSheets++;
               }
             });
           });
@@ -516,18 +524,29 @@ export default function ClassificacaoPage() {
           const jogadoresComPontos = Object.entries(estatisticasPorJogador).map(([nome, stats]) => ({
             nome,
             ...stats,
-            pontos: stats.vitorias + (stats.gols * 0.5) + (stats.assistencias * 0.5) + (stats.empates * 0.5) - (stats.derrotas * 0.5)
+            pontos: stats.vitorias + (stats.gols * 0.5) + (stats.assistencias * 0.5) + (stats.empates * 0.5) + (stats.cleanSheets * 0.5) - (stats.derrotas * 0.5)
           }));
 
-          // Ordenar
+          // Ordenar com critério de desempate
           const jogadoresOrdenados = [...jogadoresComPontos].sort((a, b) => {
-            if (ordenarPor === 'pontos') return b.pontos - a.pontos;
-            if (ordenarPor === 'vitorias') return b.vitorias - a.vitorias;
-            if (ordenarPor === 'jogos') return b.jogos - a.jogos;
+            if (ordenarPor === 'pontos') {
+              // Critério de desempate: Gols > Assistências > Vitórias > Derrotas (menos) > Clean Sheets > Empates > Jogos (menos)
+              if (b.pontos !== a.pontos) return b.pontos - a.pontos;
+              if (b.gols !== a.gols) return b.gols - a.gols;
+              if (b.assistencias !== a.assistencias) return b.assistencias - a.assistencias;
+              if (b.vitorias !== a.vitorias) return b.vitorias - a.vitorias;
+              if (a.derrotas !== b.derrotas) return a.derrotas - b.derrotas; // Menos derrotas é melhor
+              if (b.cleanSheets !== a.cleanSheets) return b.cleanSheets - a.cleanSheets;
+              if (b.empates !== a.empates) return b.empates - a.empates;
+              return a.jogos - b.jogos; // Menos jogos é melhor
+            }
             if (ordenarPor === 'gols') return b.gols - a.gols;
             if (ordenarPor === 'assistencias') return b.assistencias - a.assistencias;
-            if (ordenarPor === 'derrotas') return b.derrotas - a.derrotas;
+            if (ordenarPor === 'vitorias') return b.vitorias - a.vitorias;
+            if (ordenarPor === 'derrotas') return a.derrotas - b.derrotas;
+            if (ordenarPor === 'cleanSheets') return b.cleanSheets - a.cleanSheets;
             if (ordenarPor === 'empates') return b.empates - a.empates;
+            if (ordenarPor === 'jogos') return a.jogos - b.jogos;
             return 0;
           });
 
@@ -568,17 +587,24 @@ export default function ClassificacaoPage() {
                     </th>
                     <th 
                       className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
-                      onClick={() => setOrdenarPor('empates')}
-                      title="Empates"
-                    >
-                      <span className={ordenarPor === 'empates' ? 'text-base sm:text-xl' : 'text-sm'}>🤝</span>
-                    </th>
-                    <th 
-                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
                       onClick={() => setOrdenarPor('derrotas')}
                       title="Derrotas"
                     >
                       <span className={ordenarPor === 'derrotas' ? 'text-base sm:text-xl' : 'text-sm'}>❌</span>
+                    </th>
+                    <th 
+                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
+                      onClick={() => setOrdenarPor('cleanSheets')}
+                      title="Muralha - Clean Sheets"
+                    >
+                      <span className={ordenarPor === 'cleanSheets' ? 'text-base sm:text-xl' : 'text-sm'}>🛡️</span>
+                    </th>
+                    <th 
+                      className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
+                      onClick={() => setOrdenarPor('empates')}
+                      title="Empates"
+                    >
+                      <span className={ordenarPor === 'empates' ? 'text-base sm:text-xl' : 'text-sm'}>🤝</span>
                     </th>
                     <th 
                       className="sticky top-16 z-20 bg-gray-100 px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors shadow-sm"
@@ -613,8 +639,9 @@ export default function ClassificacaoPage() {
                         <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-green-600 text-xs sm:text-sm">{jogador.gols}</td>
                         <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-green-600 text-xs sm:text-sm">{jogador.assistencias}</td>
                         <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-green-600 text-xs sm:text-sm">{jogador.vitorias}</td>
-                        <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-amber-600 text-xs sm:text-sm">{jogador.empates}</td>
                         <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-red-600 text-xs sm:text-sm">{jogador.derrotas}</td>
+                        <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-red-600 text-xs sm:text-sm">{jogador.cleanSheets}</td>
+                        <td className="px-1 py-2 sm:px-2 sm:py-3 text-center font-bold text-amber-600 text-xs sm:text-sm">{jogador.empates}</td>
                         <td className="px-1 py-2 sm:px-2 sm:py-3 text-center text-gray-700 text-xs sm:text-sm">{jogador.jogos}</td>
                       </tr>
                     );
@@ -632,32 +659,37 @@ export default function ClassificacaoPage() {
 
         {/* Legenda do Sistema de Pontuação */}
         {jogosFiltrados.length > 0 && (
-          <section className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg shadow-sm p-3 mt-4 border border-blue-200">
-            <h3 className="text-sm font-bold text-gray-800 mb-2 text-center">
+          <section className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg shadow-sm p-4 mt-4 border border-blue-200">
+            <h3 className="text-sm font-bold text-gray-800 mb-3 text-center">
               📊 Sistema de Pontuação
             </h3>
-            <div className="flex flex-wrap justify-center gap-2 text-xs">
-              <div className="flex items-center gap-1 bg-white rounded px-2 py-1">
+            <div className="flex flex-wrap justify-center items-center gap-3 text-xs">
+              <div className="flex items-center gap-1.5 bg-white rounded px-3 py-1.5 whitespace-nowrap">
                 <span>🏆</span>
                 <span className="font-semibold">Vitória:</span>
                 <span className="font-bold text-green-600">+1.0</span>
               </div>
-              <div className="flex items-center gap-1 bg-white rounded px-2 py-1">
+              <div className="flex items-center gap-1.5 bg-white rounded px-3 py-1.5 whitespace-nowrap">
                 <span>⚽</span>
                 <span className="font-semibold">Gol:</span>
                 <span className="font-bold text-green-600">+0.5</span>
               </div>
-              <div className="flex items-center gap-1 bg-white rounded px-2 py-1">
+              <div className="flex items-center gap-1.5 bg-white rounded px-3 py-1.5 whitespace-nowrap">
                 <span>👟</span>
-                <span className="font-semibold">Assist.:</span>
+                <span className="font-semibold">Assistência:</span>
                 <span className="font-bold text-green-600">+0.5</span>
               </div>
-              <div className="flex items-center gap-1 bg-white rounded px-2 py-1">
+              <div className="flex items-center gap-1.5 bg-white rounded px-3 py-1.5 whitespace-nowrap">
                 <span>🤝</span>
                 <span className="font-semibold">Empate:</span>
                 <span className="font-bold text-amber-600">+0.5</span>
               </div>
-              <div className="flex items-center gap-1 bg-white rounded px-2 py-1">
+              <div className="flex items-center gap-1.5 bg-white rounded px-3 py-1.5 whitespace-nowrap">
+                <span>🛡️</span>
+                <span className="font-semibold">Sem Sofrer Gols:</span>
+                <span className="font-bold text-purple-600">+0.5</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-white rounded px-3 py-1.5 whitespace-nowrap">
                 <span>❌</span>
                 <span className="font-semibold">Derrota:</span>
                 <span className="font-bold text-red-600">-0.5</span>
