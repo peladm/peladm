@@ -494,6 +494,21 @@ export default function DashboardCliente() {
               <span className="text-xs text-gray-600 block mb-0.5">Senha:</span>
               <span className="text-sm font-bold text-gray-800 font-mono">{cliente.senha}</span>
             </div>
+
+            <div className="p-2.5 bg-red-50 rounded-lg border border-red-200">
+              <span className="text-xs text-gray-600 block mb-0.5">Nome da Pelada:</span>
+              <span className="text-sm font-bold text-gray-800">{cliente.nome_pelada || 'Não informado'}</span>
+            </div>
+
+            <div className="p-2.5 bg-yellow-50 rounded-lg border border-yellow-200">
+              <span className="text-xs text-gray-600 block mb-0.5">Cidade:</span>
+              <span className="text-sm font-bold text-gray-800">{cliente.cidade || 'Não informado'}</span>
+            </div>
+
+            <div className="p-2.5 bg-indigo-50 rounded-lg border border-indigo-200">
+              <span className="text-xs text-gray-600 block mb-0.5">UF:</span>
+              <span className="text-sm font-bold text-gray-800">{cliente.uf || 'Não informado'}</span>
+            </div>
           </div>
         </div>
 

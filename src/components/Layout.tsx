@@ -423,7 +423,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
           </div>
 
           {/* Navegação rápida */}
-          {isLoggedIn && (
+          {isLoggedIn && !ehVisitante() && (
             <div className="px-6 py-3 border-b border-gray-200 flex gap-2">
               <button
                 onClick={() => { navigateTo(''); toggleSidebar(); }}
@@ -470,7 +470,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
           )}
 
           {/* Botão Esqueci a Senha */}
-          {isLoggedIn && (
+          {isLoggedIn && !ehVisitante() && (
             <div className="px-6 pb-4">
               <button
                 onClick={handleEsqueciSenha}
@@ -483,7 +483,8 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
           )}
 
           {/* Botão de Verificar Atualizações */}
-          <div className="px-6 pb-3">
+          {isLoggedIn && !ehVisitante() && (
+            <div className="px-6 pb-3">
             <button
               onClick={checkForUpdates}
               disabled={checkingUpdate}
@@ -497,7 +498,8 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
               </svg>
               <span>{checkingUpdate ? 'Verificando...' : 'Verificar Atualizações'}</span>
             </button>
-          </div>
+            </div>
+          )}
 
           {/* Botão de Suporte WhatsApp */}
           <div className="px-6 pb-4">
@@ -542,13 +544,9 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
             <div className="flex items-center justify-between py-3 sm:py-4">
               <div className="flex items-center space-x-3 sm:space-x-4">
                 <button
-                  onClick={() => !ehVisitante() && toggleSidebar()}
-                  className={`p-2 rounded-lg transition-colors ${
-                    ehVisitante() ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-100'
-                  }`}
-                  title={ehVisitante() ? 'Menu indisponível para visitantes' : 'Menu'}
-                  disabled={ehVisitante()}
-                  style={{ pointerEvents: ehVisitante() ? 'none' : 'auto' }}
+                  onClick={() => toggleSidebar()}
+                  className="p-2 rounded-lg transition-colors hover:bg-gray-100"
+                  title="Menu"
                 >
                   <div className="w-5 h-5 sm:w-6 sm:h-6 flex flex-col justify-center space-y-1">
                     <div className="w-full h-0.5 bg-gray-600"></div>

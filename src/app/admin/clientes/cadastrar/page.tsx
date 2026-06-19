@@ -101,6 +101,10 @@ function CadastrarClienteContent() {
   const [formData, setFormData] = useState({
     telefone: '',
     nome: '',
+    nomePelada: '',
+    peladaId: '',
+    cidade: '',
+    uf: '',
     plano: 'Free',
     status: 'ativo',
     bloqueado: false,
@@ -157,6 +161,10 @@ function CadastrarClienteContent() {
         setFormData({
           telefone: data.telefone || '',
           nome: data.nome || '',
+          nomePelada: data.nome_pelada || '',
+          peladaId: data.pelada_id || '',
+          cidade: data.cidade || '',
+          uf: data.uf || '',
           plano: data.plano || 'Free',
           status: data.status || 'ativo',
           bloqueado: false,
@@ -420,6 +428,9 @@ function CadastrarClienteContent() {
       const dadosCliente = {
         telefone: formData.telefone,
         nome: formData.nome,
+        nome_pelada: formData.nomePelada,
+        cidade: formData.cidade,
+        uf: formData.uf,
         plano: formData.plano,
         is_master: false,
         status: formData.status,
@@ -448,15 +459,28 @@ function CadastrarClienteContent() {
           return;
         }
 
-        // Insert com pelada_id customizado
-        const peladaId = await gerarPeladaIdUnico(formData.nome, formData.telefone);
+        // Usar peladaId fornecido ou gerar automaticamente
+        let peladaId = formData.peladaId.trim().toUpperCase();
+        
+        if (!peladaId) {
+          // Se não preencheu, gera automaticamente
+          peladaId = await gerarPeladaIdUnico(formData.nome, formData.telefone);
+        } else {
+          // Se preencheu, valida se já existe
+          if (await verificarPeladaIdExiste(peladaId)) {
+            alert('❌ Este código de pelada já existe! Digite outro código ou deixe em branco para gerar automaticamente.');
+            setLoading(false);
+            return;
+          }
+        }
+
         const username = gerarUsername(formData.nome);
         const senhaAdmin = gerarSenhaAdmin();
         
         result = await supabase
           .from('clientes')
           .insert([{
-            pelada_id: peladaId,  // Usar pelada_id customizado
+            pelada_id: peladaId,  // Usar pelada_id customizado ou gerado
             username: username,    // Incluir username direto (primeiro nome)
             senha: senhaAdmin,     // Incluir senha direto
             ...dadosCliente
@@ -550,6 +574,21 @@ function CadastrarClienteContent() {
         <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-200">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Nome Responsável */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nome Responsável *
+                </label>
+                <input
+                  type="text"
+                  value={formData.nome}
+                  onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                  disabled={loading}
+                />
+              </div>
+
               {/* Telefone */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -566,19 +605,110 @@ function CadastrarClienteContent() {
                 />
               </div>
 
-              {/* Nome */}
+              {/* Nome da Pelada */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nome *
+                  Nome da Pelada *
                 </label>
                 <input
                   type="text"
-                  value={formData.nome}
-                  onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                  value={formData.nomePelada}
+                  onChange={(e) => setFormData({...formData, nomePelada: e.target.value})}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="Ex: Pelada do Parque"
                   required
                   disabled={loading}
                 />
+              </div>
+
+              {/* Código da Pelada */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Código da Pelada (ID) *
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={formData.peladaId}
+                    onChange={(e) => setFormData({...formData, peladaId: e.target.value.toUpperCase()})}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase"
+                    placeholder="Ex: GD3974"
+                    maxLength={6}
+                    required
+                    disabled={loading || isEdicao}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const gerado = gerarPeladaId(formData.nome, formData.telefone);
+                      setFormData({...formData, peladaId: gerado});
+                    }}
+                    disabled={loading || !formData.nome || !formData.telefone}
+                    className="px-4 py-3 bg-blue-100 hover:bg-blue-200 disabled:bg-gray-100 text-blue-700 rounded-xl font-medium transition-colors"
+                    title="Gerar código automaticamente"
+                  >
+                    🔄
+                  </button>
+                </div>
+              </div>
+
+              {/* Cidade */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Cidade *
+                </label>
+                <input
+                  type="text"
+                  value={formData.cidade}
+                  onChange={(e) => setFormData({...formData, cidade: e.target.value})}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="Ex: Rio de Janeiro"
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+              {/* UF */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  UF (Estado) *
+                </label>
+                <select
+                  value={formData.uf}
+                  onChange={(e) => setFormData({...formData, uf: e.target.value})}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                  disabled={loading}
+                >
+                  <option value="">Selecione o estado</option>
+                  <option value="AC">Acre (AC)</option>
+                  <option value="AL">Alagoas (AL)</option>
+                  <option value="AP">Amapá (AP)</option>
+                  <option value="AM">Amazonas (AM)</option>
+                  <option value="BA">Bahia (BA)</option>
+                  <option value="CE">Ceará (CE)</option>
+                  <option value="DF">Distrito Federal (DF)</option>
+                  <option value="ES">Espírito Santo (ES)</option>
+                  <option value="GO">Goiás (GO)</option>
+                  <option value="MA">Maranhão (MA)</option>
+                  <option value="MT">Mato Grosso (MT)</option>
+                  <option value="MS">Mato Grosso do Sul (MS)</option>
+                  <option value="MG">Minas Gerais (MG)</option>
+                  <option value="PA">Pará (PA)</option>
+                  <option value="PB">Paraíba (PB)</option>
+                  <option value="PR">Paraná (PR)</option>
+                  <option value="PE">Pernambuco (PE)</option>
+                  <option value="PI">Piauí (PI)</option>
+                  <option value="RJ">Rio de Janeiro (RJ)</option>
+                  <option value="RN">Rio Grande do Norte (RN)</option>
+                  <option value="RS">Rio Grande do Sul (RS)</option>
+                  <option value="RO">Rondônia (RO)</option>
+                  <option value="RR">Roraima (RR)</option>
+                  <option value="SC">Santa Catarina (SC)</option>
+                  <option value="SP">São Paulo (SP)</option>
+                  <option value="SE">Sergipe (SE)</option>
+                  <option value="TO">Tocantins (TO)</option>
+                </select>
               </div>
 
               {/* Plano */}
