@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '../../components/Layout';
-import { getClienteSupabase } from '../../lib/supabase';
+import { getClienteSupabase, fetchAllRows } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { buscar_pelada_id } from '../../lib/credenciais';
 
@@ -952,16 +952,24 @@ export default function Estatisticas() {
         setAnosDisponiveis(anos);
 
         // Buscar gols e assistências de todos os jogos
+        // Paginação manual: o Supabase limita respostas a 1000 linhas por padrão,
+        // e uma pelada com muito histórico facilmente ultrapassa isso.
         const jogosIds = jogosData.map(j => j.id);
-        const { data: golsData } = await clienteDb
-          .from('gols')
-          .select('*')
-          .in('jogo_id', jogosIds);
-        
-        const { data: assistenciasData } = await clienteDb
-          .from('assistencias')
-          .select('*')
-          .in('jogo_id', jogosIds);
+        const golsData = await fetchAllRows((from, to) =>
+          clienteDb
+            .from('gols')
+            .select('*')
+            .in('jogo_id', jogosIds)
+            .range(from, to)
+        );
+
+        const assistenciasData = await fetchAllRows((from, to) =>
+          clienteDb
+            .from('assistencias')
+            .select('*')
+            .in('jogo_id', jogosIds)
+            .range(from, to)
+        );
 
         // Associar gols e assistências aos jogos  
         const jogosCompletos = jogosData.map(jogo => ({

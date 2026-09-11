@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '../../components/Layout';
-import { getClienteSupabase } from '../../lib/supabase';
+import { getClienteSupabase, fetchAllRows } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { buscar_pelada_id } from '../../lib/credenciais';
 
@@ -139,10 +139,12 @@ export default function X1Page() {
         setMesesDisponiveis(meses);
         setAnosDisponiveis(anos);
 
+        // Paginação manual: o Supabase limita respostas a 1000 linhas por padrão,
+        // e uma pelada com muito histórico facilmente ultrapassa isso.
         const ids = jogosData.map(j => j.id);
-        const [{ data: golsData }, { data: assistData }] = await Promise.all([
-          clienteDb.from('gols').select('*').in('jogo_id', ids),
-          clienteDb.from('assistencias').select('*').in('jogo_id', ids),
+        const [golsData, assistData] = await Promise.all([
+          fetchAllRows((from, to) => clienteDb.from('gols').select('*').in('jogo_id', ids).range(from, to)),
+          fetchAllRows((from, to) => clienteDb.from('assistencias').select('*').in('jogo_id', ids).range(from, to)),
         ]);
         setJogos(jogosData.map(j => ({
           ...j,

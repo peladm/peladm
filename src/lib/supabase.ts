@@ -67,6 +67,35 @@ export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseCli
   return supabase;
 };
 
+/**
+ * Busca TODAS as linhas de uma query, paginando com .range() para não cair
+ * no limite padrão de 1000 linhas por resposta do PostgREST/Supabase.
+ * `buildQuery` deve retornar uma nova query (sem .range aplicado) a cada chamada.
+ */
+export async function fetchAllRows<T>(
+  buildQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  pageSize = 1000
+): Promise<T[]> {
+  const resultado: T[] = [];
+  let pagina = 0;
+
+  while (true) {
+    const from = pagina * pageSize;
+    const to = from + pageSize - 1;
+    const { data, error } = await buildQuery(from, to);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    resultado.push(...data);
+
+    if (data.length < pageSize) break;
+    pagina++;
+  }
+
+  return resultado;
+}
+
 // Tipos para as tabelas
 export interface Jogador {
   id: string;
