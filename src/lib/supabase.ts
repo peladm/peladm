@@ -69,7 +69,7 @@ export interface Jogador {
   nome: string;
   nivel: number;
   status: 'ativo' | 'inativo';
-  posicao?: 'linha' | 'goleiro';
+  posicao?: 'linha' | 'gol' | 'ambos' | 'goleiro'; // 'goleiro' para compatibilidade com dados antigos
   pelada_id?: string; // Campo opcional pois é definido automaticamente
   created_at: string;
   updated_at?: string;
@@ -154,7 +154,7 @@ export const jogadoresService = {
   },
 
   // Criar novo jogador
-  async criar(nome: string, nivel: number, fotoUrl?: string | null, posicao?: 'linha' | 'goleiro') {
+  async criar(nome: string, nivel: number, fotoUrl?: string | null, posicao?: 'linha' | 'gol' | 'ambos') {
     const peladaId = getPeladaId();
     if (!peladaId) {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
@@ -186,7 +186,7 @@ export const jogadoresService = {
   },
 
   // Atualizar jogador
-  async atualizar(id: string, nome: string, nivel: number, fotoUrl?: string | null, posicao?: 'linha' | 'goleiro') {
+  async atualizar(id: string, nome: string, nivel: number, fotoUrl?: string | null, posicao?: 'linha' | 'gol' | 'ambos') {
     const peladaId = getPeladaId();
     if (!peladaId) {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');

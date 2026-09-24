@@ -12,6 +12,7 @@ export default function CadastroPage() {
   const { possuiPermissao, verificarLimite } = usePermissions();
   const [nome, setNome] = useState('');
   const [nivel, setNivel] = useState(3);
+  const [posicao, setPosicao] = useState<'linha' | 'gol' | 'ambos'>('linha');
   const [jogadores, setJogadores] = useState<Jogador[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -167,11 +168,9 @@ export default function CadastroPage() {
         logger.log('⚠️ Todas as chaves no localStorage:', Object.keys(localStorage));
       }
 
-      const posicaoPadrao: 'linha' = 'linha';
-
       if (editandoId) {
         // Atualizar jogador existente
-        logger.log('🔄 Atualizando jogador:', { id: editandoId, nome, nivel });
+        logger.log('🔄 Atualizando jogador:', { id: editandoId, nome, nivel, posicao });
         
         if (modoOffline) {
           // MODO OFFLINE: Atualizar localStorage + syncQueue
@@ -186,7 +185,7 @@ export default function CadastroPage() {
                 ...jogadoresArray[index],
                 nome: nome.trim(),
                 nivel,
-                posicao: posicaoPadrao
+                posicao
               };
               localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresArray));
             }
@@ -197,18 +196,18 @@ export default function CadastroPage() {
             tipo: 'atualizar_jogador',
             jogador_id: editandoId,
             pelada_id: peladaId,
-            dados: { nome: nome.trim(), nivel, posicao: posicaoPadrao }
+            dados: { nome: nome.trim(), nivel, posicao }
           });
           
           mostrarMensagem('✅ Jogador atualizado (sync pendente)', 'success');
         } else {
           // MODO TEMPO REAL: Salvar direto
-          await jogadoresService.atualizar(editandoId, nome, nivel, undefined, posicaoPadrao);
+          await jogadoresService.atualizar(editandoId, nome, nivel, undefined, posicao);
           mostrarMensagem('✅ Jogador atualizado com sucesso!', 'success');
         }
       } else {
         // Criar novo jogador
-        logger.log('➕ Criando novo jogador:', { nome, nivel });
+        logger.log('➕ Criando novo jogador:', { nome, nivel, posicao });
         
         if (modoOffline) {
           // MODO OFFLINE: Salvar no localStorage + syncQueue
@@ -218,7 +217,7 @@ export default function CadastroPage() {
             id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             nome: nome.trim(),
             nivel,
-            posicao: posicaoPadrao,
+            posicao,
             status: 'ativo',
             pelada_id: peladaId,
             created_at: new Date().toISOString(),
@@ -244,7 +243,7 @@ export default function CadastroPage() {
           mostrarMensagem('✅ Jogador cadastrado (sync pendente)', 'success');
         } else {
           // MODO TEMPO REAL: Salvar direto
-          await jogadoresService.criar(nome, nivel, undefined, posicaoPadrao);
+          await jogadoresService.criar(nome, nivel, undefined, posicao);
           mostrarMensagem('✅ Jogador cadastrado com sucesso!', 'success');
         }
       }
@@ -282,6 +281,7 @@ export default function CadastroPage() {
     if (jogador) {
       setNome(jogador.nome);
       setNivel(jogador.nivel);
+      setPosicao(jogador.posicao as 'linha' | 'gol' | 'ambos' || 'linha');
       setEditandoId(id);
       mostrarMensagem('✏️ Modo edição ativado', 'info');
       
@@ -293,6 +293,7 @@ export default function CadastroPage() {
   const cancelarEdicao = () => {
     setNome('');
     setNivel(3);
+    setPosicao('linha');
     setEditandoId(null);
   };
 
@@ -491,6 +492,19 @@ export default function CadastroPage() {
                   </div>
                 </div>
               )}
+
+              <div className="flex items-center justify-center gap-1">
+                <label className="text-xs font-medium text-gray-600">Posição:</label>
+                <select
+                  value={posicao}
+                  onChange={(e) => setPosicao(e.target.value as 'linha' | 'gol' | 'ambos')}
+                  className="p-1.5 border-2 border-gray-100 rounded-lg text-sm text-center bg-gray-50 focus:outline-none focus:border-green-600 focus:bg-white transition-colors"
+                >
+                  <option value="linha">⚽ Linha</option>
+                  <option value="gol">🥅 Goleiro</option>
+                  <option value="ambos">⚡ Ambos</option>
+                </select>
+              </div>
             </div>
 
             {/* Botão Submit */}
@@ -592,6 +606,11 @@ export default function CadastroPage() {
                         isInativo ? 'text-gray-500 line-through' : 'text-gray-800'
                       }`}>
                         {jogador.nome}
+                      </div>
+                      <div className="text-xs opacity-60 whitespace-nowrap">
+                        {jogador.posicao === 'gol' && '🥅'}
+                        {jogador.posicao === 'linha' && '⚽'}
+                        {jogador.posicao === 'ambos' && '⚡'}
                       </div>
                       {mostrarNiveisLista && (
                         <div className="text-xs text-gray-600 opacity-70 leading-none whitespace-nowrap">

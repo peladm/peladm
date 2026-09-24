@@ -41,6 +41,7 @@ export default function SorteioPage() {
   const [senhaConfirmar, setSenhaConfirmar] = useState('');
   const [erroSenhaConfirmar, setErroSenhaConfirmar] = useState('');
   const [isValidandoSenha, setIsValidandoSenha] = useState(false);
+  const [exibirGoleiros, setExibirGoleiros] = useState(false);
   
   // Estados para controle do sticky behavior
   const [botaoSortearSticky, setBotaoSortearSticky] = useState(false);
@@ -171,10 +172,10 @@ export default function SorteioPage() {
       localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresData));
       console.log('💾 localStorage sincronizado com dados do Supabase');
 
-      // Filtrar apenas jogadores de linha (agora todos normalizados para minúscula)
-      const jogadoresDeLinha = jogadoresFormatados.filter((j: any) => j.posicao === 'linha');
+      // Filtrar apenas jogadores de linha e ambos (agora todos normalizados para minúscula)
+      const jogadoresDeLinha = jogadoresFormatados.filter((j: any) => j.posicao === 'linha' || j.posicao === 'ambos');
       setJogadoresDisponiveis(jogadoresDeLinha);
-      console.log('🔍 Jogadores de linha carregados:', jogadoresDeLinha.length);
+      console.log('🔍 Jogadores de linha/ambos carregados:', jogadoresDeLinha.length);
       console.log('   Primeiros:', jogadoresDeLinha.slice(0, 3).map((j: any) => `${j.nome} (${j.id})`));
 
       if (jogadoresDeLinha.length === 0) {
@@ -794,6 +795,20 @@ export default function SorteioPage() {
         <section className="text-center py-1">
           <h2 className="text-sm font-semibold text-gray-500 tracking-wide">🎲 Sorteio Inicial 🎲</h2>
           <p className="text-xs text-gray-400 mt-1">Clique no nome do jogador para selecioná-lo para o sorteio</p>
+          
+          {/* Toggle Exibir Goleiros (sem funcionalidade ainda) */}
+          <div className="flex items-center justify-center gap-2 mt-3 opacity-50">
+            <label className="text-xs text-gray-600">Exibir Goleiros?</label>
+            <button
+              onClick={() => setExibirGoleiros(!exibirGoleiros)}
+              disabled={true}
+              className="w-8 h-5 bg-gray-300 rounded-full relative transition-colors duration-200 cursor-not-allowed flex items-center"
+              title="Funcionalidade em desenvolvimento"
+            >
+              <span className="w-4 h-4 bg-white rounded-full absolute left-0.5 transition-transform duration-200"></span>
+            </button>
+            <span className="text-xs text-gray-400">(em desenvolvimento)</span>
+          </div>
         </section>
 
         {/* Lista de Jogadores */}
