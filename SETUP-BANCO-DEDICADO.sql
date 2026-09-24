@@ -77,27 +77,13 @@ CREATE INDEX IF NOT EXISTS idx_gols_time ON gols(time);
 -- ============================================
 -- POLÍTICAS DE SEGURANÇA (RLS)
 -- ============================================
+-- 🔓 DESABILITAR RLS em todas as tabelas
+-- Nota: RLS é desabilitado para permitir acesso sem restrições
 
-ALTER TABLE jogadores ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sessoes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE jogos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE gols ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Acesso público por pelada_id" ON jogadores
-    FOR ALL
-    USING (true);
-
-CREATE POLICY "Acesso público por pelada_id" ON sessoes
-    FOR ALL
-    USING (true);
-
-CREATE POLICY "Acesso público" ON jogos
-    FOR ALL
-    USING (true);
-
-CREATE POLICY "Acesso público" ON gols
-    FOR ALL
-    USING (true);
+ALTER TABLE jogadores DISABLE ROW LEVEL SECURITY;
+ALTER TABLE sessoes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE jogos DISABLE ROW LEVEL SECURITY;
+ALTER TABLE gols DISABLE ROW LEVEL SECURITY;
 
 -- ============================================
 -- MENSAGEM FINAL

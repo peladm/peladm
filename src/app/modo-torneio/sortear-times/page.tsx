@@ -280,11 +280,17 @@ function SortearTimesPage() {
   const [incluirGoleiro, setIncluirGoleiro] = useState(false);
   const [timesFormados, setTimesFormados] = useState<TimeSorteado[]>([]);
   const [timesEditando, setTimesEditando] = useState<TimeEditando[]>([]);
-  const [modalAberto, setModalAberto] = useState(false);
-  const [modoManual, setModoManual] = useState(false);
   const [timesConfirmados, setTimesConfirmados] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const timesResultadoRef = useRef<HTMLDivElement>(null);
+  const resultadoSorteioRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (timesFormados.length === 0 || timesConfirmados) return;
+    const timer = window.setTimeout(() => {
+      resultadoSorteioRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [timesFormados, timesConfirmados]);
 
   const pendenciasContagem = timesFormados.reduce((count, time) => {
     return count + time.jogadores.filter((j) => !j.nome.trim()).length;
@@ -371,14 +377,12 @@ function SortearTimesPage() {
   const niveisComJogadores = [5, 4, 3, 2, 1].filter((n) => porNivel[n].length > 0);
 
   const sortear = () => {
-    setModoManual(false);
     const times = sortearEquilibrado(participantes, quantidadeTimes, jogadoresPorTime, incluirGoleiro);
     setTimesFormados(times);
-    setModalAberto(true);
+    setTimesConfirmados(false);
   };
 
   const abrirEscolhaManual = () => {
-    setModoManual(true);
     const nomesZoeiros = sortearNomesUnicos(quantidadeTimes);
     const times: TimeSorteado[] = Array.from({ length: quantidadeTimes }, (_, i) => ({
       id: gerarId(),
@@ -405,13 +409,13 @@ function SortearTimesPage() {
       corEmoji: CORES_EMOJIS[i] ?? '⭐',
     }));
     setTimesFormados(times);
-    setModalAberto(true);
+    setTimesConfirmados(false);
   };
 
   const resortear = () => {
-    setModoManual(false);
     const times = sortearEquilibrado(participantes, quantidadeTimes, jogadoresPorTime, incluirGoleiro);
     setTimesFormados(times);
+    setTimesConfirmados(false);
   };
 
   const confirmar = () => {
@@ -452,12 +456,26 @@ function SortearTimesPage() {
     });
     salvarJogadoresEquipesLocal(torneioId, mapaJogadores);
     ativarTorneioLocal(torneioId);
-    setModalAberto(false);
     setTimesConfirmados(true);
     // Notifica o Layout para re-ler os steps do torneio
     window.dispatchEvent(new CustomEvent('torneio-steps-changed'));
-    // Scroll para o topo para ver os times prontos
-    setTimeout(() => timesResultadoRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  };
+
+  const compartilharTimesWhatsApp = () => {
+    if (timesFormados.length === 0) return;
+
+    let texto = '*TIMES DO TORNEIO*\n\n';
+
+    timesFormados.forEach((time, index) => {
+      texto += `*Time ${index + 1} - ${time.nome}*\n`;
+      [...time.jogadores.filter((j) => !j.goleiroSlot), ...time.jogadores.filter((j) => j.goleiroSlot)].forEach((jogador) => {
+        texto += `- ${jogador.nome || 'Jogador sem nome'}${jogador.goleiroSlot ? ' (G)' : ''}\n`;
+      });
+      texto += '\n';
+    });
+
+    const textoEncoded = encodeURIComponent(texto + 'Bora jogar!');
+    window.open(`https://wa.me/?text=${textoEncoded}`, '_blank');
   };
 
   const iniciarTorneio = () => {
@@ -536,7 +554,7 @@ function SortearTimesPage() {
   if (timesConfirmados) {
     return (
       <Layout title="Sortear Times">
-        <div ref={timesResultadoRef}>
+        <div ref={resultadoSorteioRef}>
           {/* Header */}
           <section className="mb-4">
             <div className="bg-gray-800 border-emerald-600 rounded-2xl shadow-2xl p-4 sm:p-5 border-2">
@@ -553,8 +571,8 @@ function SortearTimesPage() {
             </div>
           </section>
 
-          {/* Lista de times — uma coluna para facilitar print */}
-          <div className="flex flex-col gap-3 mb-6">
+          {/* Lista de times — compacta para leitura rápida de nomes compostos */}
+          <div className="flex flex-col gap-3 mb-24">
             {timesFormados
               .filter((t) => t.jogadores.length > 0 || timesConfirmados)
               .map((time) => {
@@ -582,45 +600,64 @@ function SortearTimesPage() {
                   </div>
                   {/* Jogadores */}
                   <div className="px-4 py-3">
-                  {time.jogadores.length > 0 ? (
-                    <div className="flex flex-col gap-1">
-                      {[...time.jogadores.filter((j) => !j.goleiroSlot), ...time.jogadores.filter((j) => j.goleiroSlot)].map((j, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100"
-                        >
-                          <span className="text-sm font-medium text-gray-800">{j.nome}</span>
-                          {j.goleiroSlot ? (
-                            <span className="text-xs font-semibold text-sky-600 uppercase">Goleiro</span>
-                          ) : j.nivel != null ? (
-                            <span className="text-xs shrink-0 ml-2">
-                              {Array.from({ length: 5 }).map((_, i) => (
-                                <span key={i} style={{ color: i < j.nivel ? '#facc15' : '#e5e7eb' }}>★</span>
-                              ))}
-                            </span>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-400 text-center py-2">{jogadoresPorTime} jogadores</p>
-                  )}
+                    {time.jogadores.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        {[...time.jogadores.filter((j) => !j.goleiroSlot), ...time.jogadores.filter((j) => j.goleiroSlot)].map((j, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100"
+                          >
+                            <span className="text-xs font-bold text-gray-400 w-5 text-right">{idx + 1}.</span>
+                            <span className="text-sm font-medium text-gray-800 flex-1 min-w-0 truncate">{j.nome}</span>
+                            {j.goleiroSlot ? (
+                              <span className="text-[11px] font-semibold text-sky-600 uppercase shrink-0">Goleiro</span>
+                            ) : j.nivel != null ? (
+                              <span className="text-xs shrink-0">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                  <span key={i} style={{ color: i < j.nivel ? '#facc15' : '#e5e7eb' }}>★</span>
+                                ))}
+                              </span>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 text-center py-2">{jogadoresPorTime} jogadores</p>
+                    )}
                   </div>
                 </div>
                 );
               })}
           </div>
 
-          {/* Botão Re-sortear (desfazer) */}
-          <section className="mb-3">
-            <button
-              onClick={() => { setTimesConfirmados(false); setTimesFormados([]); }}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold bg-white border-2 border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-all"
-            >
-              <span>🔄</span>
-              <span>Refazer Sorteio</span>
-            </button>
-          </section>
+          {/* Rodapé fixo do modal */}
+          <div className="fixed bottom-0 left-0 right-0 z-50 px-5 pb-5 pointer-events-none">
+            <div className="mx-auto w-full max-w-2xl pointer-events-auto rounded-t-2xl border border-gray-200 bg-white/98 backdrop-blur-sm shadow-2xl p-4">
+              {pendenciasContagem > 0 && (
+                <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 mb-3">
+                  Existem <strong>{pendenciasContagem}</strong> campo{pendenciasContagem !== 1 ? 's' : ''} pendente{pendenciasContagem !== 1 ? 's' : ''}. Preencha tudo antes de confirmar.
+                </div>
+              )}
+
+              <div className="grid grid-cols-[1fr_auto] gap-3">
+                <button
+                  onClick={() => { setTimesConfirmados(false); setTimesFormados([]); }}
+                  className="w-full flex items-center justify-center gap-2 py-4 rounded-xl text-sm font-semibold bg-white border-2 border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-800 transition-all"
+                >
+                  <span>🔄</span>
+                  <span>Refazer Sorteio</span>
+                </button>
+
+                <button
+                  onClick={compartilharTimesWhatsApp}
+                  className="w-12 h-12 rounded-xl bg-green-500 hover:bg-green-600 text-white flex items-center justify-center shadow-md transition-all"
+                  title="Compartilhar no WhatsApp"
+                >
+                  <span className="text-xl">💬</span>
+                </button>
+              </div>
+            </div>
+          </div>
 
 
         </div>
@@ -689,9 +726,9 @@ function SortearTimesPage() {
         <section className="mb-6">
           <button
             onClick={confirmarProntos}
-            className="w-full rounded-xl shadow-md p-3.5 font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700 active:scale-95 transition-all"
+            className="w-full rounded-xl shadow-md p-3.5 font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700 active:scale-95 transition-all animate-pulse"
           >
-            ✅ Confirmar Times
+            Iniciar Pelada
           </button>
         </section>
       </Layout>
@@ -791,188 +828,95 @@ function SortearTimesPage() {
         </section>
       )}
 
-      {/* Modal de resultado */}
-      {modalAberto && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '20px',
-            overflowY: 'auto',
-          }}
-          onClick={() => setModalAberto(false)}
-        >
-          <div
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '24px',
-              padding: '24px',
-              maxWidth: '600px',
-              width: '100%',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
-              border: '3px solid #16a34a',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header do Modal */}
-            <div className="flex justify-between items-center mb-6 pb-4 border-b-2 border-green-100">
-              <h2 className="text-2xl font-bold text-green-600 flex items-center gap-2">
-                <span>⚽</span>
-                <span>Times Formados</span>
-              </h2>
-              <button
-                onClick={() => setModalAberto(false)}
-                className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-red-100 hover:text-red-600 transition-colors text-gray-600 font-bold text-xl"
-                title="Fechar"
-              >
-                ×
-              </button>
+      {/* Resultado do sorteio na página */}
+      {timesFormados.length > 0 && !timesConfirmados && (
+        <section ref={resultadoSorteioRef} className="mt-6 mb-6">
+          <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-3xl shadow-2xl border-2 border-emerald-400 overflow-hidden">
+            <div className="px-4 py-5 sm:px-6">
+              <div className="flex items-center gap-3 text-white">
+                <span className="text-3xl">⚽</span>
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">Resultado do Sorteio</h2>
+                  <p className="text-sm text-emerald-50 mt-1">Os times foram formados. Confira abaixo e confirme para iniciar.</p>
+                </div>
+              </div>
             </div>
 
-            {/* Times Sorteados */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* Times — lista vertical compacta */}
+            <div className="bg-gray-50 px-4 py-5 sm:px-6 space-y-3">
               {timesFormados
                 .filter((time) => time.jogadores.length > 0)
-                .map((time) => (
-                  <div
-                    key={time.id}
-                    className="bg-white border-2 border-gray-200 rounded-2xl p-4 hover:-translate-y-1 hover:shadow-lg hover:border-green-600 transition-all duration-200"
-                  >
-                    <div className="text-center mb-3 pb-2 border-b-2 border-gray-100">
-                      <div className="text-base font-bold text-green-600 mb-1">
-                        {time.corEmoji} {time.nome}
-                      </div>
-                      <div className="text-xs text-gray-600 font-medium">
-                        ⭐ {time.nivelMedio.toFixed(1).replace('.', ',')}
-                        <small className="ml-1">•</small>
-                        <small className="ml-1">({time.jogadores.length} jogadores)</small>
-                      </div>
-                    </div>
-                            <div className="space-y-1">
-                      {[...time.jogadores.filter((j) => !j.goleiroSlot), ...time.jogadores.filter((j) => j.goleiroSlot)].map((jogador, index) => {
-                        const pendente = !jogador.nome.trim();
-                        const isGoleiro = jogador.goleiroSlot;
-                        const currentSelectionId = jogador.goleiroSlot ? undefined : jogador.jogador_id;
-                        const selecionadosIds = new Set(
-                          timesFormados.flatMap((t) =>
-                            t.jogadores
-                              .filter((j) => j.jogador_id && j.jogador_id !== currentSelectionId && !j.goleiroSlot)
-                              .map((j) => j.jogador_id)
-                          )
-                        );
-                        const opcoes = participantes.filter((p) =>
-                          !selecionadosIds.has(p.jogador_id) || p.jogador_id === currentSelectionId
-                        );
-                        return (
-                          <div
-                            key={index}
-                            className={`p-2 rounded-lg border text-center transition-all duration-150 ${
-                              isGoleiro
-                                ? 'bg-sky-50 border-sky-300 hover:bg-sky-100'
-                                : 'bg-gray-50 border-gray-200 hover:bg-green-50 hover:border-green-600'
-                            } ${pendente ? 'border-orange-300' : ''}`}
-                          >
-                            {isGoleiro ? (
-                              <input
-                                type="text"
-                                value={jogador.nome}
-                                onChange={(e) => {
-                                  const next = timesFormados.map((t) => {
-                                    if (t.id !== time.id) return t;
-                                    return {
-                                      ...t,
-                                      jogadores: t.jogadores.map((j) =>
-                                        j.id === jogador.id
-                                          ? { ...j, nome: e.target.value, goleiroPendente: !e.target.value.trim() }
-                                          : j
-                                      ),
-                                    };
-                                  });
-                                  setTimesFormados(next);
-                                }}
-                                placeholder="Nome do goleiro"
-                                className="w-full text-sm text-gray-800 bg-white border border-sky-300 rounded-lg px-2 py-2 outline-none focus:border-sky-500"
-                              />
-                            ) : jogador.manualSlot || !jogador.nome.trim() ? (
-                              <select
-                                value={jogador.jogador_id || ''}
-                                onChange={(e) => {
-                                  const selecionado = participantes.find((p) => p.jogador_id === e.target.value);
-                                  const next = timesFormados.map((t) => {
-                                    if (t.id !== time.id) return t;
-                                    return {
-                                      ...t,
-                                      jogadores: t.jogadores.map((j) =>
-                                        j.id === jogador.id && selecionado
-                                          ? { ...selecionado, goleiroPendente: false, manualSlot: false }
-                                          : j
-                                      ),
-                                    };
-                                  });
-                                  setTimesFormados(next);
-                                }}
-                                className="w-full text-sm text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-2 outline-none focus:border-sky-500"
-                              >
-                                <option value="">Selecione o jogador</option>
-                                {opcoes.map((opcao) => (
-                                  <option key={opcao.jogador_id} value={opcao.jogador_id}>
-                                    {opcao.nome}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span className="text-sm font-medium text-gray-800 block truncate">
-                                {jogador.nome}
-                              </span>
-                            )}
+                .map((time, idx) => {
+                  const cor = corDoEmoji(time.corEmoji);
+                  const jogadores = [...time.jogadores.filter((j) => !j.goleiroSlot), ...time.jogadores.filter((j) => j.goleiroSlot)];
+                  return (
+                    <div key={time.id} className="bg-white rounded-2xl border-2 shadow-sm overflow-hidden transition-all hover:shadow-md" style={{ borderColor: cor + '55' }}>
+                      <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ background: cor + '15' }}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-2xl shrink-0">{time.corEmoji}</span>
+                          <div className="min-w-0">
+                            <p className="font-black text-base truncate" style={{ color: cor }}>{time.nome}</p>
+                            <p className="text-xs text-gray-500 font-semibold">{time.nivelMedio.toFixed(1).replace('.', ',')} · {jogadores.length} jog.</p>
                           </div>
-                        );
-                      })}
+                        </div>
+                        <span className="shrink-0 text-sm font-bold px-3 py-1 rounded-full" style={{ color: cor, background: cor + '20' }}>#{String(idx + 1).padStart(2, '0')}</span>
+                      </div>
+                      <div className="px-4 py-3 text-sm text-gray-700">
+                        <div className="flex flex-wrap gap-1">
+                          {jogadores.map((j, i) => (
+                            <span key={i} className="inline-block">
+                              <span className={`font-medium ${j.goleiroSlot ? 'text-sky-600' : 'text-gray-800'}`}>
+                                {j.nome || 'Jogador sem nome'}
+                              </span>
+                              {j.goleiroSlot && <span className="text-[10px] ml-1 font-bold text-sky-600">🧤</span>}
+                              {i < jogadores.length - 1 && <span className="mx-1 text-gray-300">•</span>}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
 
-            {/* Botões de ação */}
-            <div className="space-y-3">
-              <button
-                onClick={resortear}
-                className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200"
-              >
-                <span className="text-xl">🔄</span>
-                <span>Re-sortear</span>
-              </button>
-
+            {/* Avisos e botões */}
+            <div className="px-4 py-5 sm:px-6 space-y-3 border-t border-gray-200">
               {pendenciasContagem > 0 && (
-              <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 mb-2">
-                Existem <strong>{pendenciasContagem}</strong> campo{pendenciasContagem !== 1 ? 's' : ''} pendente{pendenciasContagem !== 1 ? 's' : ''}. Preencha tudo antes de confirmar.
+                <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700">
+                  ⚠️ <strong>{pendenciasContagem}</strong> campo{pendenciasContagem !== 1 ? 's' : ''} pendente{pendenciasContagem !== 1 ? 's' : ''}. Preencha antes de confirmar.
+                </div>
+              )}
+
+              <div className="grid grid-cols-[1fr_auto] gap-3">
+                <button
+                  onClick={resortear}
+                  className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
+                >
+                  <span>🔄</span> Re-sortear
+                </button>
+                <button
+                  onClick={compartilharTimesWhatsApp}
+                  className="w-12 h-12 flex items-center justify-center rounded-xl bg-green-500 text-white hover:bg-green-600 transition-all shadow-md"
+                  title="Compartilhar no WhatsApp"
+                >
+                  💬
+                </button>
               </div>
-            )}
-            <button
+
+              <button
                 onClick={confirmar}
                 disabled={pendenciasContagem > 0}
-                className={`w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl text-base font-semibold transition-all duration-200 ${
+                className={`w-full py-4 px-5 rounded-xl text-base font-bold transition-all duration-200 ${
                   pendenciasContagem > 0
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-200'
-                    : 'bg-green-600 text-white hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-lg'
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-lg active:scale-95'
                 }`}
               >
-                <span className="text-xl">✅</span>
-                <span>Confirmar Times</span>
+                🚀 Iniciar Pelada
               </button>
             </div>
           </div>
-        </div>
+        </section>
       )}
     </Layout>
   );

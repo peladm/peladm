@@ -4,5 +4,11 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["gru1"]
+  "regions": ["gru1"],
+  "crons": [
+    {
+      "path": "/api/admin/clientes/cleanup-scheduled",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }

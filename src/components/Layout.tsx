@@ -3,12 +3,17 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
-import { obterCredenciais, buscar_pelada_id } from '../lib/credenciais';
+import { createClient } from '@supabase/supabase-js';
+import { obterCredenciais, buscar_pelada_id, limparCredenciais } from '../lib/credenciais';
 import { obterUsuario, temAcessoCompleto, ehVisitante, ehAdmin, redirecionarSeNaoTemAcesso } from '../lib/verificarAcesso';
 import AdBanner from './AdBanner';
 import AdInterstitial from './AdInterstitial';
 import { useAdInterstitial } from '../lib/useAdInterstitial';
 import { CONTATO } from '../config/contato';
+import { obterRotaInicialPorAcesso } from '../lib/rotasAcesso';
+
+const BANCO_PRINCIPAL_URL = 'https://ewcswczqvelhlwpbraea.supabase.co';
+const BANCO_PRINCIPAL_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -34,11 +39,12 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const [userName, setUserName] = useState('');
-  const [userPlan, setUserPlan] = useState('Free');
+  const [userPlan, setUserPlan] = useState('Acesso padrão');
   const [clienteData, setClienteData] = useState<any>(null);
   const [tipoAcesso, setTipoAcesso] = useState<'completo' | 'visitante' | null>(null);
   const [isClient, setIsClient] = useState(false); // Evitar hydration mismatch
   const [isCheckingAuth, setIsCheckingAuth] = useState(true); // Estado de verificação de autenticação
+  const [avisosSistemaCount, setAvisosSistemaCount] = useState(0);
   const [torneioSteps, setTorneioSteps] = useState({
     regras: false,
     participantes: false,
@@ -69,25 +75,27 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
   };
 
   const mainPaddingBottom = (() => {
-    const base = userPlan === 'Free' ? 224 : 164;
+    const base = 164;
     const reduced = menuRapidoHabilitado && mobileFooterCollapsed ? 88 : 0;
     return `calc(${Math.max(base - reduced, 80)}px + var(--safe-area-bottom))`;
   })();
 
   const toggleButtonBottom = menuRapidoHabilitado
     ? (mobileFooterCollapsed
-      ? (userPlan === 'Free' ? 'calc(68px + var(--safe-area-bottom))' : 'calc(10px + var(--safe-area-bottom))')
-      : (userPlan === 'Free' ? 'calc(128px + var(--safe-area-bottom))' : 'calc(78px + var(--safe-area-bottom))'))
+      ? 'calc(10px + var(--safe-area-bottom))'
+      : 'calc(78px + var(--safe-area-bottom))')
     : 'calc(10px + var(--safe-area-bottom))';
 
-  // Função para normalizar o plano do banco (lowercase) para o formato de exibição (capitalizado)
-  const normalizarPlano = (plano: string): string => {
-    const planoLower = plano?.toLowerCase();
-    if (planoLower === 'premium') return 'Premium';
-    if (planoLower === 'gold') return 'Gold';
-    if (planoLower === 'free') return 'Free';
-    return 'Free'; // fallback
-  };
+  const renderHomeIconComBadge = () => (
+    <span className="relative inline-flex items-center justify-center text-2xl leading-none">
+      <span>🏠</span>
+      {avisosSistemaCount > 0 && (
+        <span className="absolute -top-1 -right-2 min-w-[1rem] h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold leading-4 text-center">
+          {avisosSistemaCount > 99 ? '99+' : avisosSistemaCount}
+        </span>
+      )}
+    </span>
+  );
 
   // Marcar quando estiver no cliente
   useEffect(() => {
@@ -97,30 +105,149 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
   // AuthGuard - Verificar autenticação e redirecionar se necessário
   useEffect(() => {
     if (!isClient) return; // Espera o cliente carregar
-    
-    const usuario = obterUsuario();
-    const isPublicRoute = pathname === '/login' || pathname === '/cadastro-free' || pathname === '/resgate';
-    
-    if (!usuario && !isPublicRoute) {
-      // Usuário não logado tentando acessar rota protegida - redirecionar para login
-      router.push('/login');
-      return;
-    }
-    
-    if (usuario && pathname === '/login') {
-      // Usuário já logado acessando /login - redirecionar para home
-      router.push('/');
+
+    const validarGuard = async () => {
+      const usuario = obterUsuario();
+      const isPublicRoute = pathname === '/login' || pathname === '/resgate';
+
+      if (!usuario && !isPublicRoute) {
+        // Usuário não logado tentando acessar rota protegida - redirecionar para login
+        router.push('/login');
+        return;
+      }
+
+      if (usuario && pathname === '/login') {
+        if (ehVisitante()) {
+          router.push('/estatisticas');
+          return;
+        }
+
+        try {
+          const credenciais = obterCredenciais();
+          const peladaId = credenciais?.pelada_id || usuario.id;
+
+          if (peladaId) {
+            const response = await fetch('/api/auth/status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pelada_id: peladaId }),
+            });
+
+            if (response.ok) {
+              const statusData = await response.json();
+              const rotaInicial = obterRotaInicialPorAcesso(
+                statusData.acesso_pelada_tradicional !== false,
+                statusData.acesso_modo_torneio === true,
+              );
+              router.push(rotaInicial);
+              return;
+            }
+          }
+        } catch {
+          // fallback padrão abaixo
+        }
+
+        router.push('/');
+        return;
+      }
+
+      const redirecionamento = redirecionarSeNaoTemAcesso(pathname);
+      if (redirecionamento && redirecionamento !== pathname) {
+        router.push(redirecionamento);
+        return;
+      }
+
+      // Revalidação de status do cliente em toda rota protegida
+      if (usuario && !isPublicRoute) {
+        try {
+          const credenciais = obterCredenciais();
+          const peladaId = credenciais?.pelada_id || usuario.id;
+
+          if (peladaId) {
+            const response = await fetch('/api/auth/status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pelada_id: peladaId }),
+            });
+
+            if (response.ok) {
+              const statusData = await response.json();
+              const status = String(statusData.status || '').toLowerCase();
+              const acessoPeladaTradicional = statusData.acesso_pelada_tradicional !== false;
+              const acessoModoTorneio = statusData.acesso_modo_torneio === true;
+
+              if (status === 'bloqueado' || status === 'inativo') {
+                limparCredenciais();
+                alert(status === 'bloqueado' ? '🚫 Seu acesso está bloqueado.' : '⏸️ Seu acesso está inativo.');
+                router.push('/login');
+                return;
+              }
+
+              const rotasPeladaTradicional = [
+                '/pelada-tradicional',
+                '/cadastro',
+                '/regras',
+                '/sorteio',
+                '/page-fila',
+                '/atividade',
+              ];
+
+              if (!acessoPeladaTradicional && rotasPeladaTradicional.some((rota) => pathname?.startsWith(rota))) {
+                alert('🚫 Seu cliente não possui acesso ao Modo Pelada Tradicional.');
+                router.push('/');
+                return;
+              }
+
+              if (pathname?.startsWith('/modo-torneio')) {
+                if (!acessoModoTorneio) {
+                  alert('🚫 Seu cliente não possui acesso ao Modo Torneio.');
+                  router.push('/');
+                  return;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('Falha ao validar status do cliente:', error);
+        }
+      }
+
+      setIsCheckingAuth(false);
+    };
+
+    validarGuard();
+  }, [isClient, pathname, router]);
+
+  useEffect(() => {
+    if (!isClient || !isLoggedIn || ehVisitante()) {
+      setAvisosSistemaCount(0);
       return;
     }
 
-    const redirecionamento = redirecionarSeNaoTemAcesso(pathname);
-    if (redirecionamento && redirecionamento !== pathname) {
-      router.push(redirecionamento);
-      return;
-    }
-    
-    setIsCheckingAuth(false);
-  }, [isClient, pathname, router]);
+    const carregarContagemAvisosSistema = async () => {
+      try {
+        const hoje = new Date().toISOString().split('T')[0];
+        const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
+        const { data, error } = await supabasePrincipal
+          .from('avisos_sistema')
+          .select('id')
+          .eq('ativo', true)
+          .lte('data_inicio', hoje)
+          .gte('data_fim', hoje);
+
+        if (error) {
+          setAvisosSistemaCount(0);
+          return;
+        }
+
+        setAvisosSistemaCount(Array.isArray(data) ? data.length : 0);
+      } catch {
+        setAvisosSistemaCount(0);
+      }
+    };
+
+    carregarContagemAvisosSistema();
+  }, [isClient, isLoggedIn, pathname]);
 
   // Verificar progresso do torneio para rodapé do modo torneio
   useEffect(() => {
@@ -188,13 +315,10 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
           const tipoAcessoCredenciais = credenciais.username === 'visitante' ? 'visitante' : 'completo';
           setTipoAcesso(tipoAcessoCredenciais);
           setUserName(credenciais.username);
-          setUserPlan(normalizarPlano(credenciais.plano || 'free'));
+          setUserPlan(tipoAcessoCredenciais === 'visitante' ? 'Visitante' : 'Acesso completo');
           setClienteData({
             pelada_id: credenciais.pelada_id,
             username: credenciais.username,
-            plano: credenciais.plano,
-            supabase_url: credenciais.supabase_url,
-            supabase_anon_key: credenciais.supabase_anon_key,
             is_master: credenciais.is_master === true
           });
           return;
@@ -208,7 +332,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
           if (ehVisitante()) {
             setUserName('Visitante');
             setUserEmail('');
-            setUserPlan(normalizarPlano(usuario.plano || 'Free'));
+            setUserPlan('Visitante');
             setClienteData(usuario);
             return;
           }
@@ -216,7 +340,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
           // Acesso completo - usar dados locais para evitar leitura sensível no cliente
           setUserEmail(usuario.email || '');
           setUserName(usuario.usuario_pelada || usuario.nome);
-          setUserPlan(normalizarPlano(usuario.plano || 'Free'));
+          setUserPlan('Acesso completo');
           setClienteData(usuario);
         }
       }
@@ -260,7 +384,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
     setIsLoggedIn(false);
     setUserEmail('');
     setUserName('');
-    setUserPlan('Free');
+    setUserPlan('Acesso padrão');
     setClienteData(null);
     setTipoAcesso(null);
     router.push('/login');
@@ -279,14 +403,14 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
   const handleEsqueciSenha = () => {
     const peladaId = clienteData?.pelada_id || 'não informado';
     const username = userName || clienteData?.username || 'não informado';
-    const plano = userPlan || 'não informado';
+    const acesso = userPlan || 'não informado';
 
     const mensagem =
       `Olá! Esqueci minha senha no PeladaPLAY e preciso de ajuda.\n\n` +
       `Dados para validação:\n` +
       `Pelada ID: ${peladaId}\n` +
       `Usuário: ${username}\n` +
-      `Plano: ${plano}\n\n` +
+      `Acesso: ${acesso}\n\n` +
       `Por favor, validar meu cadastro e enviar uma nova senha.`;
 
     const urlWhatsApp = `https://wa.me/${CONTATO.whatsapp}?text=${encodeURIComponent(mensagem)}`;
@@ -373,7 +497,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <img src="/logo.png?v=2" alt="PeladaPLAY Logo" width={56} height={56} style={{width:56,height:56,objectFit:'contain'}} />
+                <img src="/peladaplaylogo.png?v=1" alt="PeladaPLAY Logo" width={56} height={56} style={{width:56,height:56,objectFit:'contain'}} />
                 <div>
                   <h2 className="text-2xl font-bold">
                     <span className="text-green-600">Pelada</span>
@@ -403,7 +527,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
                     Usuário: <span className="font-bold text-gray-800">{clienteData?.username || 'N/A'}</span>
                   </div>
                   <div className="text-sm text-gray-600">
-                    Plano: <span className="font-bold text-green-600">{userPlan}</span>
+                    Acesso: <span className="font-bold text-green-600">{userPlan}</span>
                   </div>
                 </div>
                 
@@ -429,7 +553,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
                 onClick={() => { navigateTo(''); toggleSidebar(); }}
                 className="flex-1 flex flex-col items-center justify-center py-3 rounded-lg transition-colors text-gray-600 hover:bg-green-50 hover:text-green-700"
               >
-                <span className="text-2xl">🏠</span>
+                {renderHomeIconComBadge()}
                 <span className="text-xs font-medium mt-1">Home</span>
               </button>
               <button
@@ -562,7 +686,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
               
               {/* Logo no canto direito */}
               <div className="flex items-center">
-                <img src="/logo.png?v=2" alt="PeladaPLAY Logo" width={48} height={48} style={{width:48,height:48,objectFit:'contain'}} className="sm:w-14 sm:h-14" />
+                <img src="/peladaplaylogo.png?v=1" alt="PeladaPLAY Logo" width={48} height={48} style={{width:48,height:48,objectFit:'contain'}} className="sm:w-14 sm:h-14" />
               </div>
             </div>
           </div>
@@ -588,7 +712,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
         {/* Footer Mobile */}
         {!hideFooter && <footer
           className={`fixed left-0 right-0 bg-white border-t border-gray-200 md:hidden z-30 mobile-footer-shell transition-transform duration-300 ${menuRapidoHabilitado && mobileFooterCollapsed ? 'translate-y-full pointer-events-none' : 'translate-y-0'}`}
-          style={{ bottom: userPlan === 'Free' ? 'calc(60px + var(--safe-area-bottom))' : '0' }}
+          style={{ bottom: '0' }}
         >
           <nav className="flex py-2 px-4 mobile-footer-nav">
             {/* Rodapé varia baseado na página atual */}
@@ -711,7 +835,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
                   className="flex flex-col items-center justify-center py-2 rounded-lg transition-colors text-gray-500 hover:bg-gray-50"
                   style={{ flex: 1 }}
                 >
-                  <span className="text-2xl">🏠</span>
+                  {renderHomeIconComBadge()}
                   <span className="text-xs font-medium mt-1">Home</span>
                 </button>
                 {/* Home do torneio */}
@@ -832,7 +956,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
                   style={{ flex: 1 }}
                   disabled={ehVisitante()}
                 >
-                  <span className="text-2xl">🏠</span>
+                  {renderHomeIconComBadge()}
                   <span className="text-xs font-medium mt-1">Home</span>
                 </button>
                 <button
@@ -879,7 +1003,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
                   style={{ flex: 1 }}
                   disabled={ehVisitante()}
                 >
-                  <span className="text-2xl">🏠</span>
+                  {renderHomeIconComBadge()}
                   <span className="text-xs font-medium mt-1">Home</span>
                 </button>
                 <button
@@ -926,7 +1050,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
                   style={{ flex: 1 }}
                   disabled={ehVisitante()}
                 >
-                  <span className="text-2xl">🏠</span>
+                  {renderHomeIconComBadge()}
                   <span className="text-xs font-medium mt-1">Home</span>
                 </button>
                 <button
@@ -973,7 +1097,7 @@ export default function Layout({ children, title = 'PeladaPLAY', onAdminClick, h
                   style={{ flex: 1 }}
                   disabled={ehVisitante()}
                 >
-                  <span className="text-2xl">🏠</span>
+                  {renderHomeIconComBadge()}
                   <span className="text-xs font-medium mt-1">Home</span>
                 </button>
                 <button

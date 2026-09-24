@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '../../components/Layout';
+import StatsFilterPanel from '../../components/StatsFilterPanel';
 import { getClienteSupabase, fetchAllRows } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { buscar_pelada_id } from '../../lib/credenciais';
@@ -12,18 +13,24 @@ interface Jogador {
   nome: string;
   apelido?: string;
   foto_url?: string;
+  status?: string | null;
 }
 
 interface Gol {
+  id?: string;
   jogo_id: string;
   jogador_id: string;
+  gol_contra_jogador_id?: string | null;
+  assistencia?: string | null;
   time: 'A' | 'B';
 }
 
 interface Assistencia {
+  id?: string;
   jogo_id: string;
   jogador_id: string;
   time: 'A' | 'B';
+  gol_id?: string;
 }
 
 interface Jogo {
@@ -41,7 +48,7 @@ interface Jogo {
 export default function X1Page() {
   const STORAGE_KEY = 'peladm:x1:state:v1';
   const router = useRouter();
-  const { possuiPermissao, nomePlano, loading: loadingPermissoes } = usePermissions();
+  const { possuiPermissao, loading: loadingPermissoes } = usePermissions();
   const [loading, setLoading] = useState(true);
 
   const [jogos, setJogos] = useState<Jogo[]>([]);
@@ -54,7 +61,8 @@ export default function X1Page() {
   const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
   const [anosDisponiveis, setAnosDisponiveis] = useState<string[]>([]);
   const [periodoSelecionado, setPeriodoSelecionado] = useState('');
-  const [quantidadePeladas, setQuantidadePeladas] = useState('3');
+  const [quantidadePeladas, setQuantidadePeladas] = useState('5');
+  const [apenasAtivos, setApenasAtivos] = useState(false);
 
   const [buscaA, setBuscaA] = useState('');
   const [buscaB, setBuscaB] = useState('');
@@ -73,6 +81,7 @@ export default function X1Page() {
       if (typeof saved.dataSelecionada === 'string') setDataSelecionada(saved.dataSelecionada);
       if (typeof saved.periodoSelecionado === 'string') setPeriodoSelecionado(saved.periodoSelecionado);
       if (typeof saved.quantidadePeladas === 'string') setQuantidadePeladas(saved.quantidadePeladas);
+      if (typeof saved.apenasAtivos === 'boolean') setApenasAtivos(saved.apenasAtivos);
       if (typeof saved.buscaA === 'string') setBuscaA(saved.buscaA);
       if (typeof saved.buscaB === 'string') setBuscaB(saved.buscaB);
       if (typeof saved.jogadorA === 'string' || saved.jogadorA === null) setJogadorA(saved.jogadorA);
@@ -88,19 +97,20 @@ export default function X1Page() {
       dataSelecionada,
       periodoSelecionado,
       quantidadePeladas,
+      apenasAtivos,
       buscaA,
       buscaB,
       jogadorA,
       jogadorB,
     }));
-  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas, buscaA, buscaB, jogadorA, jogadorB]);
+  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas, apenasAtivos, buscaA, buscaB, jogadorA, jogadorB]);
 
   useEffect(() => {
     if (!loadingPermissoes && !possuiPermissao('verEstatisticas')) {
-      alert(`🚫 Estatísticas não disponível no plano ${nomePlano}. Faça upgrade para Gold ou Premium!`);
+      alert('🚫 Estatísticas indisponíveis para este cliente no momento.');
       router.push('/');
     }
-  }, [loadingPermissoes, possuiPermissao, nomePlano, router]);
+  }, [loadingPermissoes, possuiPermissao, router]);
 
   useEffect(() => { carregarDados(); }, []);
   useEffect(() => { aplicarFiltro(); }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas, jogos]);
@@ -121,6 +131,18 @@ export default function X1Page() {
     return idStr.substring(0, 8);
   };
 
+  const derivarAssistenciasDeGols = (gols: Gol[]): Assistencia[] => {
+    return gols
+      .filter((g) => g.id && g.assistencia)
+      .map((g) => ({
+        id: `gol-assistencia-${g.id}`,
+        jogo_id: g.jogo_id,
+        jogador_id: g.assistencia as string,
+        time: g.time,
+        gol_id: g.id,
+      }));
+  };
+
   const carregarDados = async () => {
     try {
       setLoading(true);
@@ -128,8 +150,15 @@ export default function X1Page() {
       if (!peladaId) { router.push('/login'); return; }
       const clienteDb = await getClienteSupabase(peladaId);
 
-      const { data: jogosData } = await clienteDb
-        .from('jogos').select('*').eq('status', 'finalizado').order('created_at', { ascending: false });
+      const jogosData = await fetchAllRows((from, to) =>
+        clienteDb
+          .from('jogos')
+          .select('*')
+          .eq('pelada_id', peladaId)
+          .eq('status', 'finalizado')
+          .order('created_at', { ascending: false })
+          .range(from, to)
+      );
 
       if (jogosData && jogosData.length > 0) {
         const datas = [...new Set(jogosData.map(j => new Date(j.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })))];
@@ -142,15 +171,24 @@ export default function X1Page() {
         // Paginação manual: o Supabase limita respostas a 1000 linhas por padrão,
         // e uma pelada com muito histórico facilmente ultrapassa isso.
         const ids = jogosData.map(j => j.id);
-        const [golsData, assistData] = await Promise.all([
-          fetchAllRows((from, to) => clienteDb.from('gols').select('*').in('jogo_id', ids).range(from, to)),
-          fetchAllRows((from, to) => clienteDb.from('assistencias').select('*').in('jogo_id', ids).range(from, to)),
-        ]);
-        setJogos(jogosData.map(j => ({
-          ...j,
-          gols: (golsData || []).filter(g => g.jogo_id === j.id),
-          assistencias: (assistData || []).filter(a => a.jogo_id === j.id),
-        })));
+        const golsData = await fetchAllRows((from, to) =>
+          clienteDb
+            .from('gols')
+            .select('*')
+            .eq('pelada_id', peladaId)
+            .in('jogo_id', ids)
+            .range(from, to)
+        );
+        setJogos(jogosData.map(j => {
+          const golsDoJogo = (golsData || []).filter(g => g.jogo_id === j.id) as Gol[];
+          const assistenciasDerivadas = derivarAssistenciasDeGols(golsDoJogo);
+
+          return {
+            ...j,
+            gols: golsDoJogo,
+            assistencias: assistenciasDerivadas,
+          };
+        }));
       } else {
         setJogos([]);
       }
@@ -189,8 +227,25 @@ export default function X1Page() {
     } else if (filtro === 'historia') {
       filtered = [...jogos];
     } else if (filtro === 'ano') {
-      if (periodoSelecionado) filtered = jogos.filter(j => new Date(j.created_at).getFullYear().toString() === periodoSelecionado);
-      else filtered = jogos.filter(j => new Date(j.created_at) >= new Date(Date.now() - 365 * 24 * 60 * 60 * 1000));
+      if (periodoSelecionado) {
+        filtered = jogos.filter(j => {
+          const [ano, parte] = periodoSelecionado.split('-');
+          const data = new Date(j.created_at);
+          const anoJogo = data.getFullYear().toString();
+          if (parte === undefined) return anoJogo === periodoSelecionado;
+          if (anoJogo !== ano) return false;
+          const mes = data.getMonth();
+          if (parte === 's1') return mes < 6;
+          if (parte === 's2') return mes >= 6;
+          if (parte === 'q1') return mes <= 2;
+          if (parte === 'q2') return mes >= 3 && mes <= 5;
+          if (parte === 'q3') return mes >= 6 && mes <= 8;
+          if (parte === 'q4') return mes >= 9 && mes <= 11;
+          return false;
+        });
+      } else {
+        filtered = jogos.filter(j => new Date(j.created_at) >= new Date(Date.now() - 365 * 24 * 60 * 60 * 1000));
+      }
     }
     setJogosFiltrados(filtered);
   };
@@ -207,12 +262,12 @@ export default function X1Page() {
 
   const nomesJogadores = [...new Set(
     Object.values(jogadores)
-      .filter(j => j.id && j.nome)
+      .filter(j => j.id && j.nome && (!apenasAtivos || j.status === undefined || j.status === null || j.status === 'ativo'))
       .map(j => j.apelido || j.nome)
   )].sort();
 
   const calcularStats = (nome: string) => {
-    let jogosJogados = 0, vitorias = 0, derrotas = 0, empates = 0, gols = 0, assistencias = 0, semSofrer = 0, hatTricks = 0, mvps = 0;
+    let jogosJogados = 0, vitorias = 0, derrotas = 0, empates = 0, gols = 0, golsContra = 0, assistencias = 0, semSofrer = 0, hatTricks = 0, mvps = 0;
     const detalhes: Array<{ resultado: 'vitoria' | 'empate' | 'derrota'; gols: number; assistencias: number; mvp: boolean; hatTrick: boolean; semSofrer: boolean; deiteiERolei: boolean }> = [];
 
     jogosFiltrados.forEach(jogo => {
@@ -231,13 +286,14 @@ export default function X1Page() {
       else derrotas++;
       const gj = (jogo.gols || []).filter(g => buscarJogador(g.jogador_id) === nome).length;
       const aj = (jogo.assistencias || []).filter(a => buscarJogador(a.jogador_id) === nome).length;
+      const gc = (jogo.gols || []).filter(g => g.jogador_id === 'gol_contra' && g.gol_contra_jogador_id && buscarJogador(g.gol_contra_jogador_id) === nome).length;
       const ht = gj >= 3 || aj >= 3;
       const ss = (noA && jogo.placar_b === 0) || (!noA && jogo.placar_a === 0);
       const mvp = ganhou && (gj > 0 || aj > 0);
       if (ht) hatTricks++;
       if (ss) semSofrer++;
       if (mvp) mvps++;
-      gols += gj; assistencias += aj;
+      gols += gj; golsContra += gc; assistencias += aj;
       detalhes.push({ resultado, gols: gj, assistencias: aj, mvp, hatTrick: ht, semSofrer: ss, deiteiERolei: ganhou && gj > 0 && aj > 0 });
     });
 
@@ -261,7 +317,8 @@ export default function X1Page() {
     const pts = vitorias * 3 + empates;
     const aproveitamento = jogosJogados > 0 ? ((pts / (jogosJogados * 3)) * 100).toFixed(1) : '0.0';
     const mediaGols = jogosJogados > 0 ? (gols / jogosJogados).toFixed(2) : '0.00';
-    return { nome, jogosJogados, vitorias, derrotas, empates, gols, assistencias, semSofrer, hatTricks, mvps, mediaGols, aproveitamento, detalhes, decisivo, invicto: maiorSequencia, carregouTime };
+    const participacoesGols = gols + assistencias;
+    return { nome, jogosJogados, vitorias, derrotas, empates, gols, golsContra, assistencias, participacoesGols, semSofrer, hatTricks, mvps, mediaGols, aproveitamento, detalhes, decisivo, invicto: maiorSequencia, carregouTime };
   };
 
 
@@ -299,6 +356,39 @@ export default function X1Page() {
   );
   const jogosContra = Math.max(0, comuns.length - confronto.juntos);
 
+  const metricasComparativo = statsA && statsB
+    ? [
+        { label: 'Vitórias', valA: statsA.vitorias, valB: statsB.vitorias, inv: false },
+        { label: 'Confronto Direto', valA: confronto.vitoriasA, valB: confronto.vitoriasB, inv: false, cond: comuns.length > 0 },
+        { label: 'Derrotas', valA: statsA.derrotas, valB: statsB.derrotas, inv: true },
+        { label: 'Gols', valA: statsA.gols, valB: statsB.gols, inv: false },
+        { label: 'Média de Gols', valA: parseFloat(statsA.mediaGols), valB: parseFloat(statsB.mediaGols), inv: false },
+        { label: 'Assistências', valA: statsA.assistencias, valB: statsB.assistencias, inv: false },
+        { label: 'Participações em Gols', valA: statsA.participacoesGols, valB: statsB.participacoesGols, inv: false },
+        { label: 'Decisivo', valA: statsA.decisivo, valB: statsB.decisivo, inv: false },
+        { label: 'MVP', valA: statsA.mvps, valB: statsB.mvps, inv: false },
+        { label: 'Gol Contra', valA: statsA.golsContra, valB: statsB.golsContra, inv: true },
+        { label: 'Invicto', valA: statsA.invicto, valB: statsB.invicto, inv: false },
+        { label: 'Sem Sofrer Gols', valA: statsA.semSofrer, valB: statsB.semSofrer, inv: false },
+      ].filter((m) => m.cond === undefined || m.cond)
+    : [];
+
+  const placarComparativo = metricasComparativo.reduce(
+    (acc, m) => {
+      if (m.inv) {
+        if (m.valA < m.valB) acc.venceuA++;
+        else if (m.valA === m.valB) acc.empatados++;
+        else acc.venceuB++;
+      } else {
+        if (m.valA > m.valB) acc.venceuA++;
+        else if (m.valA === m.valB) acc.empatados++;
+        else acc.venceuB++;
+      }
+      return acc;
+    },
+    { venceuA: 0, empatados: 0, venceuB: 0 }
+  );
+
   if (loadingPermissoes || loading) {
     return (
       <Layout title="X1">
@@ -318,10 +408,15 @@ export default function X1Page() {
     const melhorB = invertido ? valB < valA : valB > valA;
     return (
       <div className="mb-3">
-        <div className="flex justify-between text-xs text-gray-500 mb-1">
-          <span className={melhorA ? 'font-bold text-green-800 bg-green-100 px-1.5 rounded' : ''}>{valA}</span>
-          <span className="font-medium text-gray-600">{label}</span>
-          <span className={melhorB ? 'font-bold text-green-800 bg-green-100 px-1.5 rounded' : ''}>{valB}</span>
+        <div className="grid grid-cols-[minmax(44px,1fr)_auto_minmax(44px,1fr)] items-center text-xs text-gray-500 mb-1 gap-2">
+          <span className={`justify-self-start ${melhorA ? 'font-bold text-green-800 bg-green-100 px-1.5 rounded' : ''}`}>{valA}</span>
+          <span className="font-medium text-gray-600 text-center inline-flex items-center gap-1">
+            {label}
+            {invertido && (
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">menor vence</span>
+            )}
+          </span>
+          <span className={`justify-self-end ${melhorB ? 'font-bold text-green-800 bg-green-100 px-1.5 rounded' : ''}`}>{valB}</span>
         </div>
         <div className="flex h-2 rounded-full overflow-hidden">
           <div className="bg-blue-500 transition-all" style={{ width: `${pctA}%` }} />
@@ -334,52 +429,21 @@ export default function X1Page() {
   return (
     <Layout title="X1">
       <div className="max-w-4xl mx-auto px-4 py-3">
-        {/* Filtros */}
-        <section className="bg-white rounded-xl shadow-md p-4 mb-4 border border-gray-300">
-          <div className="mb-3">
-            <button
-              onClick={() => { setFiltro('atual'); setDataSelecionada(''); setPeriodoSelecionado(''); }}
-              className={`w-full py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${filtro === 'atual' ? 'bg-green-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'}`}
-            >
-              ⚡ Atual (Pelada mais recente)
-            </button>
-          </div>
-          <div className="mb-3 grid grid-cols-4 gap-2">
-            {(['mes', 'ultimas', 'ano', 'historia'] as const).map(f => (
-              <button key={f}
-                onClick={() => { setFiltro(f); setDataSelecionada(''); setPeriodoSelecionado(''); if (f === 'ultimas') setQuantidadePeladas('3'); }}
-                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${filtro === f ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'}`}
-              >
-                {f === 'mes' ? 'Mês' : f === 'ultimas' ? 'Últimas' : f === 'ano' ? 'Ano' : 'História'}
-              </button>
-            ))}
-          </div>
-          <div>
-            {filtro === 'atual' && (
-              <select value={dataSelecionada} onChange={e => setDataSelecionada(e.target.value)} className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm">
-                <option value="">🔍 Selecionar pelada específica</option>
-                {datasDisponiveis.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            )}
-            {filtro === 'mes' && (
-              <select value={periodoSelecionado} onChange={e => setPeriodoSelecionado(e.target.value)} className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm">
-                <option value="">📅 Selecionar mês específico</option>
-                {mesesDisponiveis.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            )}
-            {filtro === 'ultimas' && (
-              <select value={quantidadePeladas} onChange={e => setQuantidadePeladas(e.target.value)} className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm">
-                {['2', '3', '4', '5'].map(n => <option key={n} value={n}>📊 Últimas {n} peladas</option>)}
-              </select>
-            )}
-            {filtro === 'ano' && (
-              <select value={periodoSelecionado} onChange={e => setPeriodoSelecionado(e.target.value)} className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm">
-                <option value="">📅 Selecionar ano específico</option>
-                {anosDisponiveis.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            )}
-          </div>
-        </section>
+        <StatsFilterPanel
+          filtro={filtro}
+          setFiltro={setFiltro}
+          dataSelecionada={dataSelecionada}
+          setDataSelecionada={setDataSelecionada}
+          periodoSelecionado={periodoSelecionado}
+          setPeriodoSelecionado={setPeriodoSelecionado}
+          quantidadePeladas={quantidadePeladas}
+          setQuantidadePeladas={setQuantidadePeladas}
+          apenasAtivos={apenasAtivos}
+          setApenasAtivos={setApenasAtivos}
+          datasDisponiveis={datasDisponiveis}
+          mesesDisponiveis={mesesDisponiveis}
+          anosDisponiveis={anosDisponiveis}
+        />
 
         {/* Filtro ativo */}
         <div className="w-full bg-blue-600 rounded-lg px-4 py-1.5 flex items-center justify-center gap-2 shadow-sm mb-4">
@@ -467,76 +531,48 @@ export default function X1Page() {
         {/* Comparativo */}
         {statsA && statsB && (
           <>
-            {(() => {
-              // Contar vitórias em cada estatística
-              const stats_para_contar = [
-                { val: statsA.jogosJogados, valB: statsB.jogosJogados, inv: false },
-                { val: confronto.vitoriasA, valB: confronto.vitoriasB, inv: false }, // Confronto Direto
-                { val: statsA.vitorias, valB: statsB.vitorias, inv: false },
-                { val: statsA.empates, valB: statsB.empates, inv: false },
-                { val: statsA.derrotas, valB: statsB.derrotas, inv: true }, // INVERTIDO: menos é melhor
-                { val: statsA.gols, valB: statsB.gols, inv: false },
-                { val: parseFloat(statsA.mediaGols), valB: parseFloat(statsB.mediaGols), inv: false },
-                { val: statsA.decisivo, valB: statsB.decisivo, inv: false }, // Decisivo
-                { val: statsA.invicto, valB: statsB.invicto, inv: false }, // Invicto
-                { val: statsA.carregouTime, valB: statsB.carregouTime, inv: false }, // Carregou Time
-                { val: statsA.assistencias, valB: statsB.assistencias, inv: false },
-                { val: statsA.semSofrer, valB: statsB.semSofrer, inv: false },
-                { val: statsA.mvps, valB: statsB.mvps, inv: false },
-              ];
-              let venceuA = 0, empatados = 0, venceuB = 0;
-              stats_para_contar.forEach(s => {
-                if (s.inv) {
-                  // Invertido: menor é melhor
-                  if (s.val < s.valB) venceuA++;
-                  else if (s.val === s.valB) empatados++;
-                  else venceuB++;
-                } else {
-                  // Normal: maior é melhor
-                  if (s.val > s.valB) venceuA++;
-                  else if (s.val === s.valB) empatados++;
-                  else venceuB++;
-                }
-              });
-              return (
-                <div className="mb-4 mx-auto w-full max-w-[640px]">
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                      <div className="text-3xl font-black text-blue-600">{venceuA}</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                      <div className="text-3xl font-black text-gray-500">{empatados}</div>
-                    </div>
-                    <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
-                      <div className="text-3xl font-black text-orange-500">{venceuB}</div>
-                    </div>
-                  </div>
+            <section className="mb-4 mx-auto w-full max-w-[640px] rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+              <div className="text-center text-[11px] text-gray-500">
+                {`Empates: ${placarComparativo.empatados} • Partidas em comum: ${comuns.length} • Juntos: ${confronto.juntos} • Contra: ${jogosContra}`}
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                  <div className="text-[11px] font-semibold text-blue-700 mb-0.5">{jogadorA}</div>
+                  <div className="text-3xl font-black text-blue-600">{placarComparativo.venceuA}</div>
                 </div>
-              );
-            })()}
+                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <div className="text-[11px] font-semibold text-gray-500 mb-0.5">Empates</div>
+                  <div className="text-3xl font-black text-gray-500">{placarComparativo.empatados}</div>
+                </div>
+                <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
+                  <div className="text-[11px] font-semibold text-orange-700 mb-0.5">{jogadorB}</div>
+                  <div className="text-3xl font-black text-orange-500">{placarComparativo.venceuB}</div>
+                </div>
+              </div>
+            </section>
 
             {/* Comparativo de estatísticas */}
             <section className="bg-white rounded-xl shadow-md p-4 mb-4 border border-gray-300">
-              <div className="text-xs font-bold text-gray-500 text-center mb-4">ESTATÍSTICAS</div>
-              <StatBar valA={statsA.jogosJogados} valB={statsB.jogosJogados} label="Jogos" />
-              {comuns.length > 0 && <StatBar valA={confronto.vitoriasA} valB={confronto.vitoriasB} label="Confronto Direto" />}
               <StatBar valA={statsA.vitorias} valB={statsB.vitorias} label="Vitórias" />
+              {comuns.length > 0 && <StatBar valA={confronto.vitoriasA} valB={confronto.vitoriasB} label="Confronto Direto" />}
               <StatBar valA={statsA.derrotas} valB={statsB.derrotas} label="Derrotas" invertido={true} />
               <StatBar valA={statsA.gols} valB={statsB.gols} label="Gols" />
               <StatBar valA={parseFloat(statsA.mediaGols)} valB={parseFloat(statsB.mediaGols)} label="Média de Gols" />
-              <StatBar valA={statsA.decisivo} valB={statsB.decisivo} label="Decisivo" />
-              <StatBar valA={statsA.invicto} valB={statsB.invicto} label="Invicto" />
-              <StatBar valA={statsA.carregouTime} valB={statsB.carregouTime} label="Carregou o Time" />
               <StatBar valA={statsA.assistencias} valB={statsB.assistencias} label="Assistências" />
-              <StatBar valA={statsA.semSofrer} valB={statsB.semSofrer} label="Sem Sofrer Gols" />
+              <StatBar valA={statsA.participacoesGols} valB={statsB.participacoesGols} label="Participações em Gols" />
+              <StatBar valA={statsA.decisivo} valB={statsB.decisivo} label="Decisivo" />
               <StatBar valA={statsA.mvps} valB={statsB.mvps} label="MVP" />
+              <StatBar valA={statsA.golsContra} valB={statsB.golsContra} label="Gol Contra" invertido={true} />
+              <StatBar valA={statsA.invicto} valB={statsB.invicto} label="Invicto" />
+              <StatBar valA={statsA.semSofrer} valB={statsB.semSofrer} label="Sem Sofrer Gols" />
 
               {/* Aproveitamento */}
               <div className="mt-4 pt-3 border-t border-gray-100">
-                <div className="flex justify-between text-xs text-gray-500 mb-1">
-                  <span className={parseFloat(statsA.aproveitamento) > parseFloat(statsB.aproveitamento) ? 'font-bold text-green-800 bg-green-100 px-1.5 rounded' : ''}>{statsA.aproveitamento}%</span>
-                  <span className="font-medium text-gray-600">Aproveitamento</span>
-                  <span className={parseFloat(statsB.aproveitamento) > parseFloat(statsA.aproveitamento) ? 'font-bold text-green-800 bg-green-100 px-1.5 rounded' : ''}>{statsB.aproveitamento}%</span>
+                <div className="grid grid-cols-[minmax(44px,1fr)_auto_minmax(44px,1fr)] items-center text-xs text-gray-500 mb-1 gap-2">
+                  <span className={`justify-self-start ${parseFloat(statsA.aproveitamento) > parseFloat(statsB.aproveitamento) ? 'font-bold text-green-800 bg-green-100 px-1.5 rounded' : ''}`}>{statsA.aproveitamento}%</span>
+                  <span className="font-medium text-gray-600 text-center">Aproveitamento</span>
+                  <span className={`justify-self-end ${parseFloat(statsB.aproveitamento) > parseFloat(statsA.aproveitamento) ? 'font-bold text-green-800 bg-green-100 px-1.5 rounded' : ''}`}>{statsB.aproveitamento}%</span>
                 </div>
               </div>
             </section>

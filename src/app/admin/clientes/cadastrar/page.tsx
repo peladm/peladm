@@ -12,6 +12,21 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks'
 );
 
+const CORES_COLETES_DISPONIVEIS = [
+  { hex: '#000000', nome: 'Preto' },
+  { hex: '#10b981', nome: 'Verde' },
+  { hex: '#dc3545', nome: 'Vermelho' },
+  { hex: '#FFFFFF', nome: 'Branco' },
+  { hex: '#fbbf24', nome: 'Amarelo' },
+  { hex: '#3b82f6', nome: 'Azul' },
+  { hex: '#f97316', nome: 'Laranja' },
+  { hex: '#ec4899', nome: 'Rosa' },
+  { hex: '#8b5cf6', nome: 'Roxo' },
+  { hex: '#6b7280', nome: 'Cinza' },
+];
+
+const CORES_COLETES_PADRAO = ['#000000', '#10b981'];
+
 // Função para gerar pelada_id de 6 caracteres (2 letras dos primeiros nomes + 4 últimos dígitos do telefone)
 const gerarPeladaId = (nomeCompleto: string, telefone: string): string => {
   // Remover espaços extras e dividir o nome
@@ -72,6 +87,64 @@ const gerarPeladaIdUnico = async (nomeCompleto: string, telefone: string): Promi
   return peladaId;
 };
 
+const montarRegrasPadrao = (peladaId: string): Record<string, any> => ({
+  pelada_id: peladaId,
+  jogadores_por_time: 5,
+  modelo_sorteio: 'equilibrado',
+  duracao: 10,
+  fila_automatizada: true,
+  vitorias_consecutivas: 0,
+  prioridade_retorno: 'prioridade',
+  regra_empate: 'ambos_saem',
+  regra_apos_empate: 'desempate_decide',
+  empate_conta_vitoria: false,
+  tipo_fila: 'modo_partida',
+  modo_sincronizacao: 'tempo_real',
+  cores_coletes: CORES_COLETES_PADRAO
+});
+
+const extrairColunaAusente = (error: { details?: string | null; message?: string | null }): string | null => {
+  const detalhes = error.details || '';
+  const mensagem = error.message || '';
+
+  const matchDetails = detalhes.match(/column\s+'([^']+)'/i);
+  if (matchDetails?.[1]) return matchDetails[1];
+
+  const matchMessage = mensagem.match(/Could not find the '([^']+)' column/i);
+  if (matchMessage?.[1]) return matchMessage[1];
+
+  return null;
+};
+
+const upsertRegrasPadraoComFallback = async (peladaId: string): Promise<{ ok: boolean; ignoradas: string[]; error?: any }> => {
+  const payload = montarRegrasPadrao(peladaId);
+  const ignoradas: string[] = [];
+
+  for (let tentativa = 0; tentativa < 12; tentativa++) {
+    const { error } = await supabase
+      .from('regras')
+      .upsert(payload, { onConflict: 'pelada_id' });
+
+    if (!error) {
+      return { ok: true, ignoradas };
+    }
+
+    // Quando a tabela ainda não tem uma coluna do payload, removemos somente ela e tentamos de novo.
+    if (error.code === 'PGRST204') {
+      const colunaAusente = extrairColunaAusente({ details: error.details, message: error.message });
+      if (colunaAusente && Object.prototype.hasOwnProperty.call(payload, colunaAusente)) {
+        delete payload[colunaAusente];
+        ignoradas.push(colunaAusente);
+        continue;
+      }
+    }
+
+    return { ok: false, ignoradas, error };
+  }
+
+  return { ok: false, ignoradas, error: new Error('Falha ao salvar regras padrão após múltiplas tentativas.') };
+};
+
 export default function CadastrarCliente() {
   return (
     <Suspense fallback={<div style={{ padding: '50px', textAlign: 'center' }}>Carregando...</div>}>
@@ -90,9 +163,6 @@ function CadastrarClienteContent() {
   const [acessoValidado, setAcessoValidado] = useState(false);
   const [carregandoCliente, setCarregandoCliente] = useState(isEdicao);
   const [mostrarModalCredenciais, setMostrarModalCredenciais] = useState(false);
-  const [loadingUsage, setLoadingUsage] = useState(false);
-  const [usageData, setUsageData] = useState<any>(null);
-  const [loadingSetup, setLoadingSetup] = useState(false);
   const [credenciaisGeradas, setCredenciaisGeradas] = useState({
     peladaId: '',
     usuario: 'admin',
@@ -105,13 +175,11 @@ function CadastrarClienteContent() {
     peladaId: '',
     cidade: '',
     uf: '',
-    plano: 'Free',
     status: 'ativo',
+    acesso_pelada_tradicional: true,
+    acesso_modo_torneio: false,
+    cores_coletes: CORES_COLETES_PADRAO,
     bloqueado: false,
-    supabase_url: '',
-    supabase_anon_key: '',
-    email_supabase: '',
-    senha_supabase: '',
     valor_plano: null as number | null,
     data_vencimento: null as string | null
   });
@@ -165,13 +233,11 @@ function CadastrarClienteContent() {
           peladaId: data.pelada_id || '',
           cidade: data.cidade || '',
           uf: data.uf || '',
-          plano: data.plano || 'Free',
           status: data.status || 'ativo',
+          acesso_pelada_tradicional: data.acesso_pelada_tradicional ?? true,
+          acesso_modo_torneio: data.acesso_modo_torneio ?? false,
+          cores_coletes: CORES_COLETES_PADRAO,
           bloqueado: false,
-          supabase_url: data.supabase_url || '',
-          supabase_anon_key: data.supabase_anon_key || '',
-          email_supabase: data.email_supabase || '',
-          senha_supabase: data.senha_supabase || '',
           valor_plano: data.valor_plano || null,
           data_vencimento: data.data_vencimento || null
         });
@@ -185,271 +251,43 @@ function CadastrarClienteContent() {
     }
   };
 
-  const buscarUsoSupabase = async () => {
-    if (!formData.supabase_url || !formData.supabase_anon_key) {
-      alert('Configure as credenciais Supabase primeiro!');
-      return;
-    }
-
-    setLoadingUsage(true);
-    try {
-      console.log('🔑 Anon Key (primeiros 20 caracteres):', formData.supabase_anon_key?.substring(0, 20) + '...');
-      
-      const { createClient } = await import('@supabase/supabase-js');
-      const clienteSupabase = createClient(formData.supabase_url, formData.supabase_anon_key);
-
-      // Para clientes Premium com banco dedicado, buscar APENAS tabelas dedicadas
-      // (jogadores, sessoes, fila, jogos, gols, fila_snapshot)
-      const tables = formData.plano === 'Premium' 
-        ? ['jogadores', 'sessoes', 'fila', 'jogos', 'gols', 'fila_snapshot']
-        : ['jogadores', 'sessoes', 'fila', 'jogos', 'gols'];
-      
-      const usageInfo = [];
-
-      for (const tableName of tables) {
-        try {
-          const { count, error } = await clienteSupabase
-            .from(tableName)
-            .select('*', { count: 'exact', head: true });
-
-          if (error) {
-            console.error(`❌ Erro na tabela ${tableName}:`, error);
-          } else if (count !== null) {
-            // Estimativa: ~1KB por registro
-            const estimatedBytes = count * 1024;
-            const size = estimatedBytes > 1024 * 1024
-              ? `${(estimatedBytes / (1024 * 1024)).toFixed(2)} MB`
-              : estimatedBytes > 1024
-              ? `${(estimatedBytes / 1024).toFixed(2)} KB`
-              : `${estimatedBytes} bytes`;
-
-            usageInfo.push({
-              tablename: tableName,
-              size: `${count} registros (~${size})`,
-              size_bytes: estimatedBytes
-            });
-          }
-        } catch (err) {
-        }
-      }
-
-      if (usageInfo.length > 0) {
-        setUsageData(usageInfo);
-      } else {
-        alert('Nenhuma tabela encontrada. Verifique as permissões ou se o banco foi configurado.');
-      }
-    } catch (error: any) {
-      console.error('❌ Erro:', error);
-      alert(`Erro ao conectar: ${error.message}`);
-    } finally {
-      setLoadingUsage(false);
-    }
-  };
-
-  const configurarBancoDedicado = async () => {
-    if (!formData.supabase_url || !formData.supabase_anon_key) {
-      alert('❌ Preencha a URL e Anon Key do Supabase primeiro!');
-      return;
-    }
-
-    const confirmacao = confirm(
-      '🗄️ Configurar Banco Dedicado\n\n' +
-      'Esta ação irá criar AUTOMATICAMENTE todas as tabelas necessárias:\n\n' +
-      '✅ jogadores\n' +
-      '✅ sessoes\n' +
-      '✅ fila\n' +
-      '✅ jogos\n' +
-      '✅ gols\n\n' +
-      'Incluindo índices, constraints e políticas RLS.\n\n' +
-      'Deseja continuar?'
-    );
-
-    if (!confirmacao) return;
-
-    setLoadingSetup(true);
-    
-    try {
-
-      // SQL completo para executar
-      const sqlStatements = [
-        // Criar tabelas
-        `CREATE TABLE IF NOT EXISTS jogadores (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          nome TEXT NOT NULL,
-          nivel INTEGER DEFAULT 3 CHECK (nivel >= 1 AND nivel <= 5),
-          status TEXT CHECK (status IN ('ativo', 'inativo')) DEFAULT 'ativo',
-          pelada_id UUID NOT NULL,
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        )`,
-        `CREATE TABLE IF NOT EXISTS sessoes (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          pelada_id UUID NOT NULL,
-          status TEXT CHECK (status IN ('ativa', 'finalizada')) DEFAULT 'ativa',
-          data_inicio TIMESTAMPTZ DEFAULT NOW(),
-          data_fim TIMESTAMPTZ,
-          created_at TIMESTAMPTZ DEFAULT NOW()
-        )`,
-        `CREATE TABLE IF NOT EXISTS fila (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          pelada_id UUID NOT NULL,
-          sessao_id UUID REFERENCES sessoes(id) ON DELETE CASCADE,
-          jogador_id UUID REFERENCES jogadores(id) ON DELETE CASCADE,
-          status TEXT CHECK (status IN ('fila', 'reserva')) DEFAULT 'fila',
-          posicao_fila INTEGER DEFAULT 999,
-          vitorias_consecutivas INTEGER DEFAULT 0,
-          created_at TIMESTAMPTZ DEFAULT NOW()
-        )`,
-        `CREATE TABLE IF NOT EXISTS jogos (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          sessao_id UUID REFERENCES sessoes(id) ON DELETE CASCADE,
-          time_a_jogadores TEXT[] NOT NULL,
-          time_b_jogadores TEXT[] NOT NULL,
-          gols_time_a INTEGER DEFAULT 0,
-          gols_time_b INTEGER DEFAULT 0,
-          time_vencedor TEXT CHECK (time_vencedor IN ('A', 'B', 'empate')),
-          duracao INTEGER,
-          created_at TIMESTAMPTZ DEFAULT NOW()
-        )`,
-        `CREATE TABLE IF NOT EXISTS gols (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          jogo_id UUID REFERENCES jogos(id) ON DELETE CASCADE,
-          jogador_id UUID REFERENCES jogadores(id) ON DELETE CASCADE,
-          pelada_id UUID NOT NULL,
-          created_at TIMESTAMPTZ DEFAULT NOW()
-        )`,
-        // Criar índices
-        `CREATE INDEX IF NOT EXISTS idx_jogadores_pelada ON jogadores(pelada_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_sessoes_pelada ON sessoes(pelada_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_fila_sessao ON fila(sessao_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_jogos_sessao ON jogos(sessao_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_gols_jogador ON gols(jogador_id)`,
-        // Habilitar RLS
-        `ALTER TABLE jogadores ENABLE ROW LEVEL SECURITY`,
-        `ALTER TABLE sessoes ENABLE ROW LEVEL SECURITY`,
-        `ALTER TABLE fila ENABLE ROW LEVEL SECURITY`,
-        `ALTER TABLE jogos ENABLE ROW LEVEL SECURITY`,
-        `ALTER TABLE gols ENABLE ROW LEVEL SECURITY`,
-        // Criar policies
-        `DROP POLICY IF EXISTS "Acesso público jogadores" ON jogadores`,
-        `DROP POLICY IF EXISTS "Acesso público sessoes" ON sessoes`,
-        `DROP POLICY IF EXISTS "Acesso público fila" ON fila`,
-        `DROP POLICY IF EXISTS "Acesso público jogos" ON jogos`,
-        `DROP POLICY IF EXISTS "Acesso público gols" ON gols`,
-        `CREATE POLICY "Acesso público jogadores" ON jogadores FOR ALL USING (true)`,
-        `CREATE POLICY "Acesso público sessoes" ON sessoes FOR ALL USING (true)`,
-        `CREATE POLICY "Acesso público fila" ON fila FOR ALL USING (true)`,
-        `CREATE POLICY "Acesso público jogos" ON jogos FOR ALL USING (true)`,
-        `CREATE POLICY "Acesso público gols" ON gols FOR ALL USING (true)`
-      ];
-
-      // Executar SQL via HTTP POST direto na API do Supabase
-      const apiUrl = formData.supabase_url.replace('https://', '').split('.')[0];
-      const postgrestUrl = `https://${apiUrl}.supabase.co/rest/v1/rpc/exec_sql`;
-
-      let sucessos = 0;
-      let falhas = 0;
-      const erros: string[] = [];
-
-      // Tentar executar cada statement
-      for (const sql of sqlStatements) {
-        try {
-          const response = await fetch(postgrestUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'apikey': formData.supabase_anon_key,
-              'Authorization': `Bearer ${formData.supabase_anon_key}`
-            },
-            body: JSON.stringify({ query: sql })
-          });
-
-          if (response.ok) {
-            sucessos++;
-            console.log('✅ SQL executado:', sql.substring(0, 50) + '...');
-          } else {
-            falhas++;
-            const error = await response.text();
-            console.error('❌ Erro:', error);
-            erros.push(sql.substring(0, 30) + '...');
-          }
-        } catch (error: any) {
-          falhas++;
-          erros.push(sql.substring(0, 30) + '...');
-        }
-      }
-
-      if (falhas === 0) {
-        alert(
-          '✅ CONFIGURAÇÃO CONCLUÍDA!\n\n' +
-          `${sucessos} operações executadas com sucesso!\n\n` +
-          'Estrutura completa criada:\n' +
-          '✅ Tabelas: jogadores, sessoes, fila, jogos, gols\n' +
-          '✅ Índices otimizados\n' +
-          '✅ Políticas RLS configuradas\n\n' +
-          'Banco dedicado pronto para uso!'
-        );
-      } else {
-        alert(
-          '⚠️ CONFIGURAÇÃO COM ERROS\n\n' +
-          `Sucessos: ${sucessos}\n` +
-          `Falhas: ${falhas}\n\n` +
-          '❌ ATENÇÃO: A Anon Key não tem permissão para executar DDL.\n\n' +
-          '📋 SOLUÇÃO:\n' +
-          '1. Acesse o Dashboard do Supabase\n' +
-          '2. Vá em SQL Editor → New Query\n' +
-          '3. Copie e execute: setup-banco-dedicado-premium.sql\n\n' +
-          'OU use a Service Role Key com mais permissões.'
-        );
-      }
-    } catch (error: any) {
-      console.error('❌ Erro ao configurar banco:', error);
-      alert(
-        '❌ Erro ao Configurar Banco\n\n' +
-        `Erro: ${error.message}\n\n` +
-        '🔧 MOTIVO PROVÁVEL:\n' +
-        'A Anon Key não tem permissão para executar SQL DDL (CREATE TABLE).\n\n' +
-        '📋 SOLUÇÃO MANUAL:\n' +
-        '1. Acesse: ' + formData.supabase_url.replace('/rest/v1', '') + '\n' +
-        '2. Vá em SQL Editor\n' +
-        '3. Execute o arquivo: setup-banco-dedicado-premium.sql\n\n' +
-        'Isso criará todas as tabelas automaticamente!'
-      );
-    } finally {
-      setLoadingSetup(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
     try {
-      const dadosCliente = {
-        telefone: formData.telefone,
-        nome: formData.nome,
-        nome_pelada: formData.nomePelada,
-        cidade: formData.cidade,
-        uf: formData.uf,
-        plano: formData.plano,
-        is_master: false,
-        status: formData.status,
-        supabase_url: formData.supabase_url || null,
-        supabase_anon_key: formData.supabase_anon_key || null,
-        email_supabase: formData.email_supabase || null,
-        senha_supabase: formData.senha_supabase || null,
-        valor_plano: formData.valor_plano || null,
-        data_vencimento: formData.data_vencimento || null
-      };
+      const credenciais = JSON.parse(localStorage.getItem('credenciais') || '{}');
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        alert('❌ Credenciais inválidas. Faça login novamente.');
+        router.push('/login');
+        setLoading(false);
+        return;
+      }
 
-      let result;
       if (isEdicao) {
-        // Update
-        result = await supabase
-          .from('clientes')
-          .update(dadosCliente)
-          .eq('pelada_id', clienteId)
-          .select();
+        const response = await fetch('/api/admin/clientes/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pelada_id: credenciais.pelada_id,
+            username: credenciais.username,
+            senha_hash: credenciais.senha,
+            modo: 'update',
+            clienteId,
+            formData,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          console.error('Erro ao atualizar cliente:', data);
+          alert(`Erro ao atualizar cliente: ${data.error || 'erro desconhecido'}`);
+          setLoading(false);
+          return;
+        }
+
+        alert('Cliente atualizado com sucesso!');
+        router.push('/admin/clientes');
       } else {
         // Validar nome completo (mínimo 2 nomes)
         const nomes = formData.nome.trim().split(/\s+/);
@@ -474,61 +312,48 @@ function CadastrarClienteContent() {
           }
         }
 
-        const username = gerarUsername(formData.nome);
-        const senhaAdmin = gerarSenhaAdmin();
-        
-        result = await supabase
-          .from('clientes')
-          .insert([{
-            pelada_id: peladaId,  // Usar pelada_id customizado ou gerado
-            username: username,    // Incluir username direto (primeiro nome)
-            senha: senhaAdmin,     // Incluir senha direto
-            ...dadosCliente
-          }])
-          .select();
+        if (!Array.isArray(formData.cores_coletes) || formData.cores_coletes.length < 2) {
+          alert('❌ Selecione ao menos 2 cores de colete para criar o cliente.');
+          setLoading(false);
+          return;
+        }
 
-        // Se cliente criado com sucesso, salvar credenciais
-        if (!result.error && result.data && result.data.length > 0) {
-          const { error: regrasError } = await supabase
-            .from('regras')
-            .upsert({
-              pelada_id: peladaId,
-              jogadores_por_time: 5,
-              modelo_sorteio: 'equilibrado',
-              duracao: 10,
-              vitorias_consecutivas: 0,
-              prioridade_retorno: 'prioridade',
-              regra_empate: 'ambos_saem',
-              regra_apos_empate: 'desempate_decide',
-              empate_conta_vitoria: false,
-              tipo_fila: 'modo_prancheta',
-              modo_sincronizacao: 'tempo_real',
-              cores_coletes: ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981']
-            }, { onConflict: 'pelada_id' });
+        const response = await fetch('/api/admin/clientes/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pelada_id: credenciais.pelada_id,
+            username: credenciais.username,
+            senha_hash: credenciais.senha,
+            modo: 'create',
+            formData: {
+              ...formData,
+              cores_coletes: formData.cores_coletes,
+              peladaId,
+              status: 'ativo',
+            },
+          }),
+        });
 
-          if (regrasError) {
-            console.error('⚠️ Falha ao atualizar regras:', regrasError);
-          }
+        const data = await response.json();
+        if (!response.ok) {
+          console.error('Erro ao cadastrar cliente:', data);
+          alert(`Erro ao cadastrar cliente: ${data.error || 'erro desconhecido'}`);
+          setLoading(false);
+          return;
+        }
 
-          // Salvar credenciais para exibir no modal
-          setCredenciaisGeradas({
-            peladaId: peladaId,
-            usuario: username,
-            senha: senhaAdmin
-          });
+        if (data.regras?.ok === false) {
+          console.error('⚠️ Falha ao atualizar regras:', data.regras?.error);
+          alert('⚠️ Cliente cadastrado, mas houve falha ao criar regras padrão. Revise a tabela regras no Supabase.');
+        } else if (Array.isArray(data.regras?.ignoradas) && data.regras.ignoradas.length > 0) {
+          console.warn('⚠️ Regras padrão criadas com colunas ignoradas:', data.regras.ignoradas);
+        }
+
+        if (data.credenciaisGeradas) {
+          setCredenciaisGeradas(data.credenciaisGeradas);
           setMostrarModalCredenciais(true);
         }
-      }
-
-      if (result.error) {
-        console.error(`Erro ao ${isEdicao ? 'atualizar' : 'inserir'} cliente:`, result.error);
-        alert(`Erro ao ${isEdicao ? 'atualizar' : 'cadastrar'} cliente!`);
-      } else {
-        if (isEdicao) {
-          alert('Cliente atualizado com sucesso!');
-          router.push('/admin/clientes');
-        }
-        // Para novo cliente, o modal será exibido automaticamente
       }
     } catch (error) {
       console.error('Erro:', error);
@@ -537,6 +362,10 @@ function CadastrarClienteContent() {
       setLoading(false);
     }
   };
+
+  const sectionClass = 'pb-6 border-b border-gray-200';
+  const labelClass = 'block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-2';
+  const fieldClass = 'w-full px-4 py-3 border border-gray-300 rounded-xl bg-white text-gray-800 focus:ring-2 focus:ring-green-500 focus:border-transparent';
 
   return (
     <div className="min-h-screen bg-white">
@@ -564,303 +393,288 @@ function CadastrarClienteContent() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="px-6 py-6">
         {carregandoCliente ? (
           <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-200 text-center">
             <div className="text-4xl mb-4">⏳</div>
             <p className="text-gray-500">Carregando dados do cliente...</p>
           </div>
         ) : (
-        <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-200">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Nome Responsável */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nome Responsável *
-                </label>
-                <input
-                  type="text"
-                  value={formData.nome}
-                  onChange={(e) => setFormData({...formData, nome: e.target.value})}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  required
-                  disabled={loading}
-                />
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <section className={sectionClass}>
+              <div className="mb-4">
+                <h3 className="text-base font-bold text-gray-800">Dados principais</h3>
+                <p className="text-sm text-gray-500">Informações básicas do responsável e da pelada.</p>
               </div>
-
-              {/* Telefone */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Telefone *
-                </label>
-                <input
-                  type="tel"
-                  value={formData.telefone}
-                  onChange={(e) => setFormData({...formData, telefone: e.target.value})}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="(22) 98127-8226"
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              {/* Nome da Pelada */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nome da Pelada *
-                </label>
-                <input
-                  type="text"
-                  value={formData.nomePelada}
-                  onChange={(e) => setFormData({...formData, nomePelada: e.target.value})}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Ex: Pelada do Parque"
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              {/* Código da Pelada */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Código da Pelada (ID) *
-                </label>
-                <div className="flex gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className={labelClass}>Nome responsável *</label>
                   <input
                     type="text"
-                    value={formData.peladaId}
-                    onChange={(e) => setFormData({...formData, peladaId: e.target.value.toUpperCase()})}
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase"
-                    placeholder="Ex: GD3974"
-                    maxLength={6}
+                    value={formData.nome}
+                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                    className={fieldClass}
                     required
-                    disabled={loading || isEdicao}
+                    disabled={loading}
                   />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const gerado = gerarPeladaId(formData.nome, formData.telefone);
-                      setFormData({...formData, peladaId: gerado});
-                    }}
-                    disabled={loading || !formData.nome || !formData.telefone}
-                    className="px-4 py-3 bg-blue-100 hover:bg-blue-200 disabled:bg-gray-100 text-blue-700 rounded-xl font-medium transition-colors"
-                    title="Gerar código automaticamente"
-                  >
-                    🔄
-                  </button>
+                </div>
+
+                <div>
+                  <label className={labelClass}>Telefone *</label>
+                  <input
+                    type="tel"
+                    value={formData.telefone}
+                    onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                    className={fieldClass}
+                    placeholder="(22) 98127-8226"
+                    required
+                    disabled={loading}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Nome da pelada *</label>
+                  <input
+                    type="text"
+                    value={formData.nomePelada}
+                    onChange={(e) => setFormData({ ...formData, nomePelada: e.target.value })}
+                    className={fieldClass}
+                    placeholder="Ex: Pelada do Parque"
+                    required
+                    disabled={loading}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Código da pelada (ID) *</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={formData.peladaId}
+                      onChange={(e) => setFormData({ ...formData, peladaId: e.target.value.toUpperCase() })}
+                      className={`${fieldClass} flex-1 uppercase`}
+                      placeholder="Ex: GD3974"
+                      maxLength={6}
+                      required
+                      disabled={loading || isEdicao}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const gerado = gerarPeladaId(formData.nome, formData.telefone);
+                        setFormData({ ...formData, peladaId: gerado });
+                      }}
+                      disabled={loading || !formData.nome || !formData.telefone || isEdicao}
+                      className="px-4 py-3 rounded-xl border border-blue-300 bg-blue-50 text-blue-700 font-semibold hover:bg-blue-100 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 transition-colors"
+                      title="Gerar código automaticamente"
+                    >
+                      🔄
+                    </button>
+                  </div>
                 </div>
               </div>
+            </section>
 
-              {/* Cidade */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Cidade *
-                </label>
-                <input
-                  type="text"
-                  value={formData.cidade}
-                  onChange={(e) => setFormData({...formData, cidade: e.target.value})}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Ex: Rio de Janeiro"
-                  required
-                  disabled={loading}
-                />
+            <section className={sectionClass}>
+              <div className="mb-4">
+                <h3 className="text-base font-bold text-gray-800">Localização</h3>
+                <p className="text-sm text-gray-500">Cidade e estado vinculados ao cliente.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className={labelClass}>Cidade *</label>
+                  <input
+                    type="text"
+                    value={formData.cidade}
+                    onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
+                    className={fieldClass}
+                    placeholder="Ex: Rio de Janeiro"
+                    required
+                    disabled={loading}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>UF (estado) *</label>
+                  <select
+                    value={formData.uf}
+                    onChange={(e) => setFormData({ ...formData, uf: e.target.value })}
+                    className={fieldClass}
+                    required
+                    disabled={loading}
+                  >
+                    <option value="">Selecione o estado</option>
+                    <option value="AC">Acre (AC)</option>
+                    <option value="AL">Alagoas (AL)</option>
+                    <option value="AP">Amapá (AP)</option>
+                    <option value="AM">Amazonas (AM)</option>
+                    <option value="BA">Bahia (BA)</option>
+                    <option value="CE">Ceará (CE)</option>
+                    <option value="DF">Distrito Federal (DF)</option>
+                    <option value="ES">Espírito Santo (ES)</option>
+                    <option value="GO">Goiás (GO)</option>
+                    <option value="MA">Maranhão (MA)</option>
+                    <option value="MT">Mato Grosso (MT)</option>
+                    <option value="MS">Mato Grosso do Sul (MS)</option>
+                    <option value="MG">Minas Gerais (MG)</option>
+                    <option value="PA">Pará (PA)</option>
+                    <option value="PB">Paraíba (PB)</option>
+                    <option value="PR">Paraná (PR)</option>
+                    <option value="PE">Pernambuco (PE)</option>
+                    <option value="PI">Piauí (PI)</option>
+                    <option value="RJ">Rio de Janeiro (RJ)</option>
+                    <option value="RN">Rio Grande do Norte (RN)</option>
+                    <option value="RS">Rio Grande do Sul (RS)</option>
+                    <option value="RO">Rondônia (RO)</option>
+                    <option value="RR">Roraima (RR)</option>
+                    <option value="SC">Santa Catarina (SC)</option>
+                    <option value="SP">São Paulo (SP)</option>
+                    <option value="SE">Sergipe (SE)</option>
+                    <option value="TO">Tocantins (TO)</option>
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <section className={sectionClass}>
+              <div className="mb-4">
+                <h3 className="text-base font-bold text-gray-800">Acesso por modo</h3>
+                <p className="text-sm text-gray-500">Defina quais modos ficarão habilitados para este cliente.</p>
               </div>
 
-              {/* UF */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  UF (Estado) *
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="flex items-start gap-3 bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:border-green-300 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formData.acesso_pelada_tradicional}
+                    onChange={(e) => setFormData({ ...formData, acesso_pelada_tradicional: e.target.checked })}
+                    className="w-4 h-4 mt-1"
+                    disabled={loading}
+                  />
+                  <div>
+                    <p className="text-sm font-bold text-gray-800">Pelada Tradicional</p>
+                    <p className="text-xs text-gray-500 mt-1">Libera acesso às telas operacionais da pelada.</p>
+                  </div>
                 </label>
-                <select
-                  value={formData.uf}
-                  onChange={(e) => setFormData({...formData, uf: e.target.value})}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  required
-                  disabled={loading}
-                >
-                  <option value="">Selecione o estado</option>
-                  <option value="AC">Acre (AC)</option>
-                  <option value="AL">Alagoas (AL)</option>
-                  <option value="AP">Amapá (AP)</option>
-                  <option value="AM">Amazonas (AM)</option>
-                  <option value="BA">Bahia (BA)</option>
-                  <option value="CE">Ceará (CE)</option>
-                  <option value="DF">Distrito Federal (DF)</option>
-                  <option value="ES">Espírito Santo (ES)</option>
-                  <option value="GO">Goiás (GO)</option>
-                  <option value="MA">Maranhão (MA)</option>
-                  <option value="MT">Mato Grosso (MT)</option>
-                  <option value="MS">Mato Grosso do Sul (MS)</option>
-                  <option value="MG">Minas Gerais (MG)</option>
-                  <option value="PA">Pará (PA)</option>
-                  <option value="PB">Paraíba (PB)</option>
-                  <option value="PR">Paraná (PR)</option>
-                  <option value="PE">Pernambuco (PE)</option>
-                  <option value="PI">Piauí (PI)</option>
-                  <option value="RJ">Rio de Janeiro (RJ)</option>
-                  <option value="RN">Rio Grande do Norte (RN)</option>
-                  <option value="RS">Rio Grande do Sul (RS)</option>
-                  <option value="RO">Rondônia (RO)</option>
-                  <option value="RR">Roraima (RR)</option>
-                  <option value="SC">Santa Catarina (SC)</option>
-                  <option value="SP">São Paulo (SP)</option>
-                  <option value="SE">Sergipe (SE)</option>
-                  <option value="TO">Tocantins (TO)</option>
-                </select>
+
+                <label className="flex items-start gap-3 bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:border-amber-300 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formData.acesso_modo_torneio}
+                    onChange={(e) => setFormData({ ...formData, acesso_modo_torneio: e.target.checked })}
+                    className="w-4 h-4 mt-1"
+                    disabled={loading}
+                  />
+                  <div>
+                    <p className="text-sm font-bold text-gray-800">Modo Torneio</p>
+                    <p className="text-xs text-gray-500 mt-1">Permissão registrada; recurso permanece bloqueado durante desenvolvimento.</p>
+                  </div>
+                </label>
               </div>
 
-              {/* Plano */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Plano *
-                </label>
-                <select
-                  value={formData.plano}
-                  onChange={(e) => {
-                    const novoPlano = e.target.value;
-                    const updates: any = { plano: novoPlano };
-                    
-                    // Se Gold, auto-preencher credenciais do banco principal
-                    if (novoPlano === 'Gold') {
-                      updates.supabase_url = 'https://ewcswczqvelhlwpbraea.supabase.co';
-                      updates.supabase_anon_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks';
-                    }
-                    
-                    setFormData({...formData, ...updates});
-                  }}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  disabled={loading}
-                  required
-                >
-                  <option value="Free">Free</option>
-                  <option value="Gold">Gold</option>
-                  <option value="Premium">Premium</option>
-                </select>
-              </div>
+              {isEdicao && (
+                <div className="mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
+                  Status atual: <span className="font-semibold uppercase">{formData.status}</span>
+                </div>
+              )}
 
-              {/* Campo Bloqueado apenas para compatibilidade (pode ser removido futuramente) */}
               <div className="hidden">
                 <input
                   type="checkbox"
                   checked={formData.bloqueado}
-                  onChange={(e) => setFormData({...formData, bloqueado: e.target.checked})}
+                  onChange={(e) => setFormData({ ...formData, bloqueado: e.target.checked })}
                 />
               </div>
-            </div>
+            </section>
 
-            {/* Campos Valor e Vencimento para Gold/Premium */}
-            {(formData.plano === 'Gold' || formData.plano === 'Premium') && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-blue-50 rounded-xl">
+            {!isEdicao && (
+              <section className={sectionClass}>
+                <div className="mb-4">
+                  <h3 className="text-base font-bold text-gray-800">Cores padrão dos times</h3>
+                  <p className="text-sm text-gray-500">Essas cores já serão gravadas nas regras iniciais do cliente.</p>
+                </div>
+
+                <div className="grid grid-cols-5 gap-2">
+                  {CORES_COLETES_DISPONIVEIS.map(({ hex, nome }) => {
+                    const selecionado = formData.cores_coletes.includes(hex);
+
+                    return (
+                      <button
+                        key={hex}
+                        type="button"
+                        title={nome}
+                        onClick={() => {
+                          const novasCores = selecionado
+                            ? formData.cores_coletes.filter((cor) => cor !== hex)
+                            : [...formData.cores_coletes, hex];
+
+                          if (novasCores.length === 0) return;
+                          setFormData({ ...formData, cores_coletes: novasCores });
+                        }}
+                        className={`relative w-full aspect-square rounded-lg border-2 transition-all ${
+                          selecionado ? 'border-green-500 scale-105 shadow-md' : 'border-gray-300'
+                        }`}
+                        style={{ backgroundColor: hex }}
+                        disabled={loading}
+                      >
+                        {selecionado && (
+                          <span
+                            className="absolute inset-0 flex items-center justify-center text-lg font-bold"
+                            style={{ color: hex === '#FFFFFF' || hex === '#fbbf24' ? '#374151' : 'white', textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
+                          >
+                            ✓
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {formData.cores_coletes.length < 2 && (
+                  <p className="text-xs text-amber-600 mt-2 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                    ⚠️ Selecione ao menos 2 cores para montar os times.
+                  </p>
+                )}
+              </section>
+            )}
+
+            <section className="pb-2">
+              <div className="mb-4">
+                <h3 className="text-base font-bold text-gray-800">Acesso e cobrança</h3>
+                <p className="text-sm text-gray-500">Defina o valor da mensalidade de acesso.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Valor do Plano (R$)
-                  </label>
+                  <label className={labelClass}>Valor do acesso (R$)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={formData.valor_plano || ''}
-                    onChange={(e) => setFormData({...formData, valor_plano: e.target.value ? parseFloat(e.target.value) : null})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onChange={(e) => setFormData({ ...formData, valor_plano: e.target.value ? parseFloat(e.target.value) : null })}
+                    className={fieldClass}
                     placeholder="19.90"
                     disabled={loading}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Data de Vencimento
-                  </label>
+                  <label className={labelClass}>Data de vencimento</label>
                   <input
                     type="date"
                     value={formData.data_vencimento || ''}
-                    onChange={(e) => setFormData({...formData, data_vencimento: e.target.value || null})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onChange={(e) => setFormData({ ...formData, data_vencimento: e.target.value || null })}
+                    className={fieldClass}
                     disabled={loading}
                   />
                 </div>
               </div>
-            )}
+            </section>
 
-            {/* Configurações Supabase para Premium */}
-            {formData.plano === 'Premium' && (
-              <div className="space-y-4 p-6 bg-purple-50 rounded-xl">
-                <h3 className="font-semibold text-gray-800 mb-1">🔐 Credenciais de Acesso Supabase</h3>
-                <p className="text-xs text-gray-600 mb-4">Email e senha para criar a conta no Supabase (você pedirá o código de confirmação ao cliente)</p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email Supabase *
-                    </label>
-                    <input
-                      type="email"
-                      value={formData.email_supabase}
-                      onChange={(e) => setFormData({...formData, email_supabase: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      placeholder="email@exemplo.com"
-                      disabled={loading}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Senha Supabase *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.senha_supabase}
-                      onChange={(e) => setFormData({...formData, senha_supabase: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      placeholder="Senha para criar a conta"
-                      disabled={loading}
-                    />
-                  </div>
-                </div>
-
-                <hr className="my-4 border-purple-200" />
-                
-                <h3 className="font-semibold text-gray-800 mb-1">🗄️ Configurações do Banco Dedicado</h3>
-                <p className="text-xs text-gray-600 mb-4">Após criar o projeto Supabase, cole as credenciais abaixo</p>
-
-                <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Supabase URL
-                    </label>
-                    <input
-                      type="url"
-                      value={formData.supabase_url}
-                      onChange={(e) => setFormData({...formData, supabase_url: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      placeholder="https://xxx.supabase.co"
-                      disabled={loading}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Supabase Anon Key
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.supabase_anon_key}
-                      onChange={(e) => setFormData({...formData, supabase_anon_key: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      disabled={loading}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Botões */}
-            <div className="flex space-x-4 pt-6">
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 type="submit"
                 disabled={loading}
-                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-8 py-3 rounded-xl font-semibold transition-colors flex items-center space-x-2"
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-8 py-3 rounded-xl font-semibold transition-colors flex items-center justify-center space-x-2"
               >
                 {loading && <span className="animate-spin">⏳</span>}
                 <span>{loading ? (isEdicao ? 'Salvando...' : 'Salvando...') : (isEdicao ? 'Salvar Alterações' : 'Salvar Cliente')}</span>
@@ -876,7 +690,6 @@ function CadastrarClienteContent() {
               </button>
             </div>
           </form>
-        </div>
         )}
       </div>
 

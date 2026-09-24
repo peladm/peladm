@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CONTATO } from '../../config/contato';
 import { salvarCredenciais } from '../../lib/credenciais';
+import { obterRotaInicialPorAcesso } from '../../lib/rotasAcesso';
 
 export default function Login() {
   const [peladaId, setPeladaId] = useState('');
@@ -58,14 +59,15 @@ export default function Login() {
         pelada_id: data.pelada_id,
         username: data.username,
         senha: data.senha,
-        plano: data.plano,
-        supabase_url: data.supabase_url,
-        supabase_anon_key: data.supabase_anon_key,
         is_master: data.is_master === true
       });
+
+      const acessoPeladaTradicional = data.acesso_pelada_tradicional !== false;
+      const acessoModoTorneio = data.acesso_modo_torneio === true;
+      const rotaInicial = obterRotaInicialPorAcesso(acessoPeladaTradicional, acessoModoTorneio);
       
       setLoading(false);
-      window.location.href = '/';
+      window.location.href = rotaInicial;
       
     } catch (err) {
       console.error('💥 Erro no catch:', err);
@@ -95,12 +97,6 @@ export default function Login() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.error === 'somente_premium') {
-          setError('❌ Apenas plano Premium tem acesso às estatísticas');
-          setLoading(false);
-          setTimeout(() => router.push('/login'), 3000);
-          return;
-        }
         if (data.error === 'bloqueado') {
           setShowBlockedModal(true);
           setLoading(false);
@@ -121,7 +117,6 @@ export default function Login() {
       localStorage.setItem('user', JSON.stringify({
         id: data.pelada_id,
         nome: data.nome,
-        plano: data.plano,
         tipo_acesso: 'visitante',
         status: true,
         is_master: false
@@ -130,14 +125,11 @@ export default function Login() {
         pelada_id: data.pelada_id,
         username: 'visitante',
         senha: '',
-        plano: data.plano,
-        supabase_url: data.supabase_url || null,
-        supabase_anon_key: data.supabase_anon_key || null,
         is_master: false
       }));
       
       setLoading(false);
-      router.push('/resultados');
+      router.push('/estatisticas');
       
     } catch (err) {
       console.error('Erro no login visitante:', err);
@@ -302,21 +294,6 @@ export default function Login() {
             </div>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <p className="text-center text-sm text-gray-600 mb-3">Ainda não tem uma conta?</p>
-            
-            <button
-              type="button"
-              onClick={() => router.push('/cadastro-free')}
-              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white py-3 px-4 rounded-xl font-bold transition-all transform hover:scale-[1.02] flex items-center justify-center space-x-2 shadow-md"
-            >
-              <span>🎉</span>
-              <span>Criar Conta GRÁTIS</span>
-            </button>
-            <p className="text-xs text-center text-gray-500 mt-2">
-              25 jogadores • 10 partidas • Com Anúncios
-            </p>
-          </div>
         </div>
       </div>
     </div>

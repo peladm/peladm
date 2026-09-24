@@ -2,13 +2,19 @@
 
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
-import { supabase, validarSenhaPelada, getClienteSupabase } from '../../lib/supabase';
+import { supabase, validarSenhaPelada } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { buscar_pelada_id } from '../../lib/credenciais';
-import { createClient } from '@supabase/supabase-js';
-
-const BANCO_PRINCIPAL_URL = 'https://ewcswczqvelhlwpbraea.supabase.co';
-const BANCO_PRINCIPAL_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks';
+import {
+  PontuacaoEstatisticas,
+  PONTUACAO_PADRAO,
+  OPCOES_PONTUACAO,
+  carregarPontuacaoEstatisticasLocal,
+  salvarPontuacaoEstatisticasLocal,
+  montarCamposPontuacaoParaRegras,
+  extrairPontuacaoDeRegras,
+  normalizarPontuacaoEstatisticas,
+} from '../../lib/pontuacaoEstatisticas';
 
 const REGRAS_PADRAO: Regras = {
   jogadores_por_time: 5,
@@ -20,8 +26,8 @@ const REGRAS_PADRAO: Regras = {
   regra_empate: 'ambos_saem',
   regra_apos_empate: 'desempate_decide',
   empate_conta_vitoria: false,
-  tipo_fila: 'modo_prancheta',
-  cores_coletes: ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981']
+  tipo_fila: 'modo_partida',
+  cores_coletes: ['#000000', '#10b981']
 };
 
 interface Regras {
@@ -42,17 +48,26 @@ export default function RegrasPage() {
   const { possuiPermissao } = usePermissions();
   
   const [regras, setRegras] = useState<Regras>(REGRAS_PADRAO);
+  const mostrarAbaEstatisticas = regras.tipo_fila === 'modo_partida';
+  const [abaAtiva, setAbaAtiva] = useState<'jogo' | 'regras' | 'estatisticas'>('jogo');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showSenhaModal, setShowSenhaModal] = useState(false);
   const [senhaDigitada, setSenhaDigitada] = useState('');
   const [sessaoAtiva, setSessaoAtiva] = useState(false);
+  const [pontuacaoEstatisticas, setPontuacaoEstatisticas] = useState<PontuacaoEstatisticas>(PONTUACAO_PADRAO);
 
   useEffect(() => {
     carregarRegras();
     verificarSessaoAtiva();
   }, []);
+
+  useEffect(() => {
+    if (abaAtiva === 'estatisticas' && !mostrarAbaEstatisticas) {
+      setAbaAtiva('jogo');
+    }
+  }, [abaAtiva, mostrarAbaEstatisticas]);
 
   const carregarRegras = async () => {
     try {
@@ -63,8 +78,11 @@ export default function RegrasPage() {
         return;
       }
       
-      console.log('🔍 Carregando regras (cache local → cliente → master)...');
+      console.log('🔍 Carregando regras (cache local → master)...');
       console.log('🆔 Pelada ID:', peladaId);
+
+      // Pré-carregar rapidamente do cache local
+      setPontuacaoEstatisticas(carregarPontuacaoEstatisticasLocal(peladaId));
 
       // 1) Cache local primeiro para renderização rápida
       const regrasLocal = localStorage.getItem(`regras_${peladaId}`);
@@ -84,43 +102,11 @@ export default function RegrasPage() {
         console.log('✅ Regras carregadas do CACHE LOCAL (renderização rápida)');
       }
 
-      // 2) Sincronizar com Supabase DO CLIENTE (dedicado)
-      console.log('☁️ Sincronizando com Supabase DO CLIENTE...');
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { data: regrasCliente, error: erroCliente } = await clienteDb
-        .from('regras')
-        .select('jogadores_por_time, modelo_sorteio, duracao, fila_automatizada, vitorias_consecutivas, prioridade_retorno, regra_empate, regra_apos_empate, empate_conta_vitoria, tipo_fila, modo_sincronizacao, cores_coletes')
-        .eq('pelada_id', peladaId)
-        .maybeSingle();
-
-      if (erroCliente) {
-        console.warn('⚠️ Erro ao sincronizar do cliente, tentando master:', erroCliente.message);
-      } else if (regrasCliente) {
-        const regrasSincronizadas: Regras = {
-          jogadores_por_time: regrasCliente.jogadores_por_time || REGRAS_PADRAO.jogadores_por_time,
-          modelo_sorteio: regrasCliente.modelo_sorteio || REGRAS_PADRAO.modelo_sorteio,
-          duracao: regrasCliente.duracao || REGRAS_PADRAO.duracao,
-          fila_automatizada: regrasCliente.fila_automatizada !== undefined ? regrasCliente.fila_automatizada : REGRAS_PADRAO.fila_automatizada,
-          vitorias_consecutivas: regrasCliente.vitorias_consecutivas || REGRAS_PADRAO.vitorias_consecutivas,
-          prioridade_retorno: regrasCliente.prioridade_retorno || REGRAS_PADRAO.prioridade_retorno,
-          regra_empate: regrasCliente.regra_empate || REGRAS_PADRAO.regra_empate,
-          regra_apos_empate: regrasCliente.regra_apos_empate || REGRAS_PADRAO.regra_apos_empate,
-          empate_conta_vitoria: regrasCliente.empate_conta_vitoria || REGRAS_PADRAO.empate_conta_vitoria,
-          tipo_fila: regrasCliente.tipo_fila || REGRAS_PADRAO.tipo_fila,
-          cores_coletes: regrasCliente.cores_coletes || REGRAS_PADRAO.cores_coletes
-        };
-        setRegras(regrasSincronizadas);
-        localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regrasSincronizadas));
-        console.log('✅ Regras sincronizadas do CLIENTE e cache atualizado');
-        return;
-      }
-
-      // 3) Se cliente falhar, sincronizar com master e atualizar cache local
+      // 2) Sincronizar com Supabase MASTER e atualizar cache local
       console.log('☁️ Sincronizando com Supabase MASTER...');
-      const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
-      const { data: regrasMaster, error } = await supabasePrincipal
+      const { data: regrasMaster, error } = await supabase
         .from('regras')
-        .select('jogadores_por_time, modelo_sorteio, duracao, fila_automatizada, vitorias_consecutivas, prioridade_retorno, regra_empate, regra_apos_empate, empate_conta_vitoria, tipo_fila, modo_sincronizacao, cores_coletes')
+        .select('*')
         .eq('pelada_id', peladaId)
         .maybeSingle();
 
@@ -146,6 +132,8 @@ export default function RegrasPage() {
 
         setRegras(regrasSincronizadas);
         localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regrasSincronizadas));
+        setPontuacaoEstatisticas(extrairPontuacaoDeRegras(regrasMaster as Record<string, unknown>));
+        salvarPontuacaoEstatisticasLocal(peladaId, extrairPontuacaoDeRegras(regrasMaster as Record<string, unknown>));
         console.log('✅ Regras sincronizadas do MASTER e cache atualizado');
       }
       
@@ -225,11 +213,10 @@ export default function RegrasPage() {
         throw new Error('Usuário não encontrado');
       }
 
-      console.log('☁️ Salvando regras nos 3 locais...');
-      const supabasePrincipal = createClient(BANCO_PRINCIPAL_URL, BANCO_PRINCIPAL_KEY);
+      console.log('☁️ Salvando regras no MASTER + cache local...');
       
       // ⚠️ Se modo MANUAL (fila_automatizada: false), zerar colunas de automação
-      const dadosRegras = {
+      const dadosRegrasBase = {
         pelada_id: peladaId,
         jogadores_por_time: regras.jogadores_por_time,
         modelo_sorteio: regras.modelo_sorteio,
@@ -244,6 +231,10 @@ export default function RegrasPage() {
         empate_conta_vitoria: false,
         cores_coletes: regras.cores_coletes
       };
+      const dadosRegras = {
+        ...dadosRegrasBase,
+        ...montarCamposPontuacaoParaRegras(pontuacaoEstatisticas),
+      };
       
       // Log de info se zerou valores por modo manual
       if (!regras.fila_automatizada) {
@@ -254,35 +245,31 @@ export default function RegrasPage() {
       
       // 1. Salvar no Supabase MASTER
       console.log('☁️ 1️⃣ Salvando no SUPABASE MASTER...');
-      const { error: masterError } = await supabasePrincipal
+      let { error: masterError } = await supabase
         .from('regras')
         .upsert(dadosRegras, { onConflict: 'pelada_id' });
+
+      // Compatibilidade: se as novas colunas ainda nao existirem no banco, salva sem elas.
+      if (masterError && /column .* does not exist/i.test(masterError.message)) {
+        const fallback = await supabase
+          .from('regras')
+          .upsert(dadosRegrasBase, { onConflict: 'pelada_id' });
+        masterError = fallback.error;
+      }
       
       if (masterError) {
         throw new Error(`Master: ${masterError.message}`);
       }
       console.log('✅ Salvo no MASTER');
-      
-      // 2. Salvar no Supabase DO CLIENTE (dedicado)
-      console.log('☁️ 2️⃣ Salvando no SUPABASE DO CLIENTE...');
-      const clienteDb = await getClienteSupabase(peladaId);
-      const { error: clienteError } = await clienteDb
-        .from('regras')
-        .upsert(dadosRegras, { onConflict: 'pelada_id' });
-      
-      if (clienteError) {
-        console.warn('⚠️ Erro ao salvar no cliente (continuando):', clienteError.message);
-      } else {
-        console.log('✅ Salvo no CLIENTE');
-      }
-      
-      // 3. Salvar no localStorage (cache local)
-      console.log('💾 3️⃣ Salvando no localStorage...');
+
+      // 2. Salvar no localStorage (cache local)
+      console.log('💾 2️⃣ Salvando no localStorage...');
       localStorage.setItem(`regras_${peladaId}`, JSON.stringify(regras));
+      salvarPontuacaoEstatisticasLocal(peladaId, normalizarPontuacaoEstatisticas(pontuacaoEstatisticas));
       console.log('✅ Salvo no localStorage');
-      
-      console.log('✅ Regras salvas em todos os 3 locais (Master + Cliente + Cache)');
-      setMessage('✅ Regras salvas nos 3 locais (Master + Cliente + Cache)!');
+
+      console.log('✅ Regras salvas no MASTER + cache local');
+      setMessage('✅ Regras salvas no Master e cache local!');
       setTimeout(() => setMessage(''), 3000);
       
     } catch (error: any) {
@@ -311,12 +298,48 @@ export default function RegrasPage() {
       regra_empate: 'ambos_saem',
       regra_apos_empate: 'desempate_decide',
       empate_conta_vitoria: false,
-      tipo_fila: 'modo_prancheta',
-      cores_coletes: ['#dc3545', '#000000', '#FFFFFF', '#fbbf24', '#3b82f6', '#10b981']
+      tipo_fila: 'modo_partida',
+      cores_coletes: ['#000000', '#10b981']
     });
+    setPontuacaoEstatisticas(PONTUACAO_PADRAO);
     setMessage('🔄 Configurações restauradas para o padrão');
     setTimeout(() => setMessage(''), 3000);
   };
+
+  const selecionarPontuacao = (campo: keyof PontuacaoEstatisticas, valor: number) => {
+    setPontuacaoEstatisticas((prev) => ({ ...prev, [campo]: valor }));
+  };
+
+  const formatarOpcaoPontuacao = (valor: number): string => {
+    const valorStr = Number.isInteger(valor) ? `${valor}` : valor.toString();
+    return valorStr.replace('.', ',');
+  };
+
+  const renderLinhaOpcoesPontuacao = (
+    titulo: string,
+    campo: keyof PontuacaoEstatisticas,
+    opcoes: number[]
+  ) => (
+    <div>
+      <label className="block text-xs font-semibold text-gray-700 mb-2">{titulo}</label>
+      <div className="grid grid-cols-5 gap-2">
+        {opcoes.map((valor) => (
+          <button
+            key={`${campo}-${valor}`}
+            type="button"
+            onClick={() => selecionarPontuacao(campo, valor)}
+            className={`w-full py-2 rounded-lg text-xs font-semibold border transition-all ${
+              pontuacaoEstatisticas[campo] === valor
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-emerald-400'
+            }`}
+          >
+            {formatarOpcaoPontuacao(valor)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 
   const handleEmpateVitoria = (valor: boolean) => {
     if (regras.fila_automatizada && regras.regra_empate === 'desempate' && regras.vitorias_consecutivas > 0) {
@@ -334,11 +357,52 @@ export default function RegrasPage() {
 
   return (
     <Layout title="Regras">
-      <div className="max-w-2xl mx-auto space-y-6">
+      <div className="space-y-4">
         {/* Formulário de Configurações */}
         <section>
-          <div className="bg-gradient-to-b from-white to-gray-50 rounded-2xl p-6 border-2 border-gray-200 shadow-sm">
-            <form onSubmit={handleSubmit} className="space-y-8">
+          <form onSubmit={handleSubmit} className="space-y-8">
+            <div className="sticky top-16 z-30 bg-white/95 backdrop-blur-sm py-2">
+              <div className={`grid gap-2 ${mostrarAbaEstatisticas ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                <button
+                  type="button"
+                  onClick={() => setAbaAtiva('jogo')}
+                  className={`py-2.5 rounded-lg text-xs font-bold border transition-all ${
+                    abaAtiva === 'jogo'
+                      ? 'bg-blue-600 text-white border-blue-700 shadow'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  JOGO
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAbaAtiva('regras')}
+                  className={`py-2.5 rounded-lg text-xs font-bold border transition-all ${
+                    abaAtiva === 'regras'
+                      ? 'bg-blue-600 text-white border-blue-700 shadow'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  REGRAS
+                </button>
+                {mostrarAbaEstatisticas && (
+                  <button
+                    type="button"
+                    onClick={() => setAbaAtiva('estatisticas')}
+                    className={`py-2.5 rounded-lg text-xs font-bold border transition-all ${
+                      abaAtiva === 'estatisticas'
+                        ? 'bg-blue-600 text-white border-blue-700 shadow'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    ESTATISTICAS
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {abaAtiva === 'jogo' && (
+              <>
               
               {/* Jogadores por Time */}
               <div className="bg-gray-50 p-4 rounded-lg border">
@@ -357,6 +421,30 @@ export default function RegrasPage() {
                     }}
                     className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   />
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const atual = typeof regras.jogadores_por_time === 'number' ? regras.jogadores_por_time : REGRAS_PADRAO.jogadores_por_time;
+                        setRegras({ ...regras, jogadores_por_time: Math.min(11, atual + 1) });
+                      }}
+                      className="h-6 w-7 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 text-xs font-bold"
+                      aria-label="Aumentar jogadores por time"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const atual = typeof regras.jogadores_por_time === 'number' ? regras.jogadores_por_time : REGRAS_PADRAO.jogadores_por_time;
+                        setRegras({ ...regras, jogadores_por_time: Math.max(3, atual - 1) });
+                      }}
+                      className="h-6 w-7 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 text-xs font-bold"
+                      aria-label="Diminuir jogadores por time"
+                    >
+                      ▼
+                    </button>
+                  </div>
                   <span className="text-gray-600 text-sm font-medium">jogadores</span>
                 </div>
                 {typeof regras.jogadores_por_time === 'number' && (regras.jogadores_por_time < 3 || regras.jogadores_por_time > 11) && (
@@ -378,6 +466,30 @@ export default function RegrasPage() {
                     onChange={(e) => setRegras({ ...regras, duracao: parseInt(e.target.value) })}
                     className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   />
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const atual = Number.isFinite(regras.duracao) ? regras.duracao : REGRAS_PADRAO.duracao;
+                        setRegras({ ...regras, duracao: Math.min(90, atual + 1) });
+                      }}
+                      className="h-6 w-7 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 text-xs font-bold"
+                      aria-label="Aumentar duração"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const atual = Number.isFinite(regras.duracao) ? regras.duracao : REGRAS_PADRAO.duracao;
+                        setRegras({ ...regras, duracao: Math.max(5, atual - 1) });
+                      }}
+                      className="h-6 w-7 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 text-xs font-bold"
+                      aria-label="Diminuir duração"
+                    >
+                      ▼
+                    </button>
+                  </div>
                   <span className="text-gray-600 text-sm font-medium">minutos</span>
                 </div>
               </div>
@@ -388,7 +500,7 @@ export default function RegrasPage() {
                 {!possuiPermissao('sorteioEquilibrado') && (
                   <div className="absolute top-2 right-2 bg-gradient-to-r from-yellow-400 to-yellow-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
                     <span>⭐</span>
-                    <span>Gold</span>
+                    <span>Acesso</span>
                   </div>
                 )}
 
@@ -397,7 +509,7 @@ export default function RegrasPage() {
                 </label>
                 {!possuiPermissao('sorteioEquilibrado') && (
                   <div className="mb-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                    🔒 <strong>Sorteio equilibrado disponível no plano Gold e Premium</strong>. Faça upgrade para desbloquear.
+                    🔒 <strong>Sorteio equilibrado indisponível para este acesso no momento.</strong>
                   </div>
                 )}
                 <div className="space-y-2">
@@ -420,7 +532,7 @@ export default function RegrasPage() {
                     {!possuiPermissao('sorteioEquilibrado') && (
                       <span className="absolute top-2 right-2">🔒</span>
                     )}
-                    Padrões Equilibrados
+                    Equilibrado, Considera Nível Jogador
                   </button>
                   <button
                     type="button"
@@ -442,26 +554,26 @@ export default function RegrasPage() {
                 {!possuiPermissao('usarPaginaPartida') && (
                   <div className="absolute top-2 right-2 bg-gradient-to-r from-amber-400 to-yellow-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
                     <span>👑</span>
-                    <span>Premium</span>
+                    <span>Acesso</span>
                   </div>
                 )}
 
                 <label className="block text-sm font-bold text-gray-800 mb-2">
-                  ⚽ Modo de Partida
+                  ⚽ Contabilizar estatísticas? (gols, assistências etc)
                 </label>
                 {!possuiPermissao('usarModoPartida') && (
                   <div className="mb-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-center gap-1">
-                    👑 <strong>Modo Partida exclusivo do plano Premium</strong>. Faça upgrade para desbloquear.
+                    👑 <strong>Modo Partida indisponível para este acesso no momento.</strong>
                   </div>
                 )}
-                <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => {
                       if (possuiPermissao('usarModoPartida')) {
                         setRegras({ ...regras, tipo_fila: 'modo_partida' });
                       } else {
-                        alert('👑 Modo Partida é exclusivo do plano Premium!\n\nFaça upgrade para ter acesso a estatísticas completas durante a partida.');
+                        alert('👑 Modo Partida indisponível para este acesso no momento.');
                       }
                     }}
                     className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all relative ${
@@ -475,7 +587,7 @@ export default function RegrasPage() {
                     {!possuiPermissao('usarModoPartida') && (
                       <span className="absolute top-2 right-2 text-base">👑</span>
                     )}
-                    Modo Partida (com estatísticas)
+                    Sim
                   </button>
                   <button
                     type="button"
@@ -486,7 +598,7 @@ export default function RegrasPage() {
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    Modo Prancheta (simplificado)
+                    Não
                   </button>
                 </div>
               </div>
@@ -547,14 +659,27 @@ export default function RegrasPage() {
                 )}
               </div>
 
+              </>
+            )}
+
+              {abaAtiva === 'regras' && (
+                <>
               {/* NOVA SEÇÃO: Deseja automatizar o andamento da fila? */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border-2 border-blue-300 shadow-sm">
                 <label className="block text-sm font-bold text-gray-800 mb-2">
                   DESEJA AUTOMATIZAR O ANDAMENTO DA FILA?
                 </label>
-                <p className="text-xs text-gray-600 mb-4">
-                  Se <strong>NÃO</strong>, todo andamento da fila será manual (você confirma a cada partida). Se <strong>SIM</strong>, as regras abaixo definem como a fila se comporta automaticamente.
-                </p>
+                <div className="text-xs text-gray-600 mb-4 space-y-2">
+                  <p>
+                    Defina se a gestão da fila/prancheta será <strong>Automatizada</strong> ou <strong>Manual</strong> ao fim de cada partida.
+                  </p>
+                  <p>
+                    <strong>Automatizado:</strong> aplica as regras configuradas abaixo automaticamente.
+                  </p>
+                  <p>
+                    <strong>Manual:</strong> você confirma e ajusta cada andamento. Recomendado quando sua pelada não se encaixa bem nas regras predefinidas.
+                  </p>
+                </div>
                 <div className="space-y-2">
                   <button
                     type="button"
@@ -626,6 +751,42 @@ export default function RegrasPage() {
                         !regras.fila_automatizada ? 'bg-gray-200 cursor-not-allowed' : ''
                       }`}
                     />
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        disabled={!regras.fila_automatizada}
+                        onClick={() => {
+                          if (!regras.fila_automatizada) return;
+                          const atual = regras.vitorias_consecutivas === 0 ? 1 : regras.vitorias_consecutivas;
+                          setRegras({ ...regras, vitorias_consecutivas: Math.min(10, atual + 1) });
+                        }}
+                        className={`h-6 w-7 rounded border border-gray-300 text-xs font-bold ${
+                          !regras.fila_automatizada
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                        }`}
+                        aria-label="Aumentar vitórias consecutivas"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!regras.fila_automatizada}
+                        onClick={() => {
+                          if (!regras.fila_automatizada) return;
+                          const atual = regras.vitorias_consecutivas === 0 ? 1 : regras.vitorias_consecutivas;
+                          setRegras({ ...regras, vitorias_consecutivas: Math.max(1, atual - 1) });
+                        }}
+                        className={`h-6 w-7 rounded border border-gray-300 text-xs font-bold ${
+                          !regras.fila_automatizada
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                        }`}
+                        aria-label="Diminuir vitórias consecutivas"
+                      >
+                        ▼
+                      </button>
+                    </div>
                     <span className="text-gray-600 text-sm font-medium">vitórias</span>
                   </div>
                 </div>
@@ -805,6 +966,35 @@ export default function RegrasPage() {
               </div>
               )}
 
+                </>
+              )}
+
+              {/* Pontuação para Estatísticas (apenas Modo Partida) */}
+              {abaAtiva === 'estatisticas' && mostrarAbaEstatisticas && (
+                <div className="bg-gradient-to-r from-emerald-50 to-green-50 p-4 rounded-lg border-2 border-emerald-300 shadow-sm">
+                  <label className="block text-sm font-bold text-gray-800 mb-1">
+                    📊 Pontuação para Estatísticas
+                  </label>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Esta seção afeta somente os rankings e estatísticas (Classificação, Rei da Pelada e Bola Murcha).
+                  </p>
+
+                  <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                    💡 Os valores abaixo já vêm com sugestões pensadas para uma contabilização mais justa e equilibrada entre todos os jogadores.
+                  </div>
+
+                  <div className="space-y-3">
+                    {renderLinhaOpcoesPontuacao('Vitória', 'vitoria', OPCOES_PONTUACAO.vitoria)}
+                    {renderLinhaOpcoesPontuacao('Empate', 'empate', OPCOES_PONTUACAO.empate)}
+                    {renderLinhaOpcoesPontuacao('Derrota', 'derrota', OPCOES_PONTUACAO.derrota)}
+                    {renderLinhaOpcoesPontuacao('Gol Contra', 'golContra', OPCOES_PONTUACAO.golContra)}
+                    {renderLinhaOpcoesPontuacao('Sem Sofrer Gol', 'cleanSheet', OPCOES_PONTUACAO.geral)}
+                    {renderLinhaOpcoesPontuacao('Gol', 'gol', OPCOES_PONTUACAO.geral)}
+                    {renderLinhaOpcoesPontuacao('Assistência', 'assistencia', OPCOES_PONTUACAO.geral)}
+                  </div>
+                </div>
+              )}
+
               {/* Botões de Ação */}
               <div className="flex gap-3 pt-4">
                 <button
@@ -824,14 +1014,14 @@ export default function RegrasPage() {
                   <span>{isLoading ? 'Salvando...' : 'Salvar Regras'}</span>
                 </button>
               </div>
-            </form>
+
+          </form>
 
             {message && (
               <div className={`mt-4 p-3 rounded-lg ${message.includes('💾') || message.includes('🔄') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                 {message}
               </div>
             )}
-          </div>
         </section>
 
       </div>

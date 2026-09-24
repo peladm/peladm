@@ -394,13 +394,18 @@ async function syncInserirAssistencias(item: SyncQueueItem): Promise<void> {
   const { jogo_id, pelada_id, dados } = item;
   
   if (!pelada_id) throw new Error('pelada_id é obrigatório para sync de assistência');
-  
-  // O jogo_id pode ser local, então precisamos buscar o jogo real
-  // Por enquanto, vamos inserir direto
+
+  if (!dados?.gol_id) {
+    logger.log('⚠️ Sync assistência ignorado: gol_id ausente');
+    return;
+  }
+
   const clienteDb = await getClienteSupabase(pelada_id);
   const { error } = await clienteDb
-    .from('assistencias')
-    .insert([{ ...dados, jogo_id }]);
+    .from('gols')
+    .update({ assistencia: dados.jogador_id })
+    .eq('id', dados.gol_id)
+    .eq('jogo_id', jogo_id);
   
   if (error) throw error;
 }
@@ -549,16 +554,21 @@ export async function baixarTodasTabelasParaOffline(peladaId: string): Promise<{
         localStorage.setItem(`gols_${sessaoAtiva.id}`, JSON.stringify(gols || []));
         tabelas.gols = gols?.length || 0;
         logger.log(`    ✅ ${tabelas.gols} gols baixados`);
-        
-        // 5.5. Baixar assistências (da sessão ativa)
-        const { data: assistencias, error: assistenciasError } = await clienteDb
-          .from('assistencias')
-          .select('*')
-          .in('jogo_id', jogoIds);
-        
-        if (assistenciasError) throw new Error(`Erro ao baixar assistências: ${assistenciasError.message}`);
-        localStorage.setItem(`assistencias_${sessaoAtiva.id}`, JSON.stringify(assistencias || []));
-        tabelas.assistencias = assistencias?.length || 0;
+
+        // 5.5. Derivar assistências de gols.assistencia
+        const assistenciasDerivadas = (gols || [])
+          .filter((g: any) => g.assistencia)
+          .map((g: any) => ({
+            id: `gol-assistencia-${g.id}`,
+            jogo_id: g.jogo_id,
+            jogador_id: g.assistencia,
+            gol_id: g.id,
+            time: g.time,
+            created_at: g.created_at,
+          }));
+
+        localStorage.setItem(`assistencias_${sessaoAtiva.id}`, JSON.stringify(assistenciasDerivadas));
+        tabelas.assistencias = assistenciasDerivadas.length;
         logger.log(`    ✅ ${tabelas.assistencias} assistências baixadas`);
       }
     } else {

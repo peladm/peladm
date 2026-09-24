@@ -1,52 +1,43 @@
 -- ========================================
 -- CRIAR FUNÇÕES RPC PARA MONITORAMENTO DE BANCO
 -- ========================================
--- Execute este SQL no Supabase SQL Editor de cada cliente
+-- Execute este SQL no Supabase SQL Editor
 
--- Função para obter tamanho total do banco
+-- Limpeza de funções antigas (evita erro 42P13 ao mudar tipo de retorno)
+DROP FUNCTION IF EXISTS public.get_tables_size();
+DROP FUNCTION IF EXISTS public.get_database_total_size();
+
+-- 1) Tamanho total do banco atual
 CREATE OR REPLACE FUNCTION get_database_total_size()
-RETURNS TABLE(total_size_bytes bigint, total_size_formatted text) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    pg_database_size(current_database())::bigint,
-    pg_size_pretty(pg_database_size(current_database()))::text;
-END;
-$$ LANGUAGE plpgsql;
+RETURNS TABLE(total_size_bytes bigint, total_size_formatted text)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    pg_database_size(current_database())::bigint AS total_size_bytes,
+    pg_size_pretty(pg_database_size(current_database()))::text AS total_size_formatted;
+$$;
 
--- Função para obter tamanho de cada tabela com contagem de linhas
+-- 2) Tamanho por tabela (considera tabelas de usuário do schema public)
 CREATE OR REPLACE FUNCTION get_tables_size()
-RETURNS TABLE(tablename text, total_size bigint, row_count bigint) AS $$
-DECLARE
-  v_table record;
-BEGIN
-  FOR v_table IN
-    SELECT schemaname, tablename 
-    FROM pg_tables 
-    WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-    ORDER BY tablename
-  LOOP
-    RETURN QUERY
-    SELECT 
-      v_table.schemaname || '.' || v_table.tablename,
-      pg_total_relation_size(v_table.schemaname || '.' || v_table.tablename),
-      (SELECT COUNT(*) FROM (SELECT 1 FROM (v_table.schemaname || '.' || v_table.tablename)::regclass) AS t)
-    ;
-  END LOOP;
-END;
-$$ LANGUAGE plpgsql;
+RETURNS TABLE(tablename text, total_size bigint, row_count bigint)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    n.nspname || '.' || c.relname AS tablename,
+    pg_total_relation_size(c.oid)::bigint AS total_size,
+    COALESCE(s.n_live_tup, 0)::bigint AS row_count
+  FROM pg_class c
+  INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+  LEFT JOIN pg_stat_all_tables s ON s.relid = c.oid
+  WHERE n.nspname = 'public'
+    AND c.relkind IN ('r', 'p')
+  ORDER BY pg_total_relation_size(c.oid) DESC;
+$$;
 
--- Versão simplificada e mais confiável da função get_tables_size
-CREATE OR REPLACE FUNCTION get_tables_size()
-RETURNS TABLE(tablename text, total_size bigint, row_count bigint) AS $$
-SELECT 
-  schemaname || '.' || tablename AS tablename,
-  pg_total_relation_size(schemaname || '.' || tablename) AS total_size,
-  n_live_tup AS row_count
-FROM pg_stat_user_tables
-ORDER BY pg_total_relation_size(schemaname || '.' || tablename) DESC;
-$$ LANGUAGE sql;
-
--- Conceder permissão de execução para o role anon (cliente anônimo)
-GRANT EXECUTE ON FUNCTION get_database_total_size() TO anon;
-GRANT EXECUTE ON FUNCTION get_tables_size() TO anon;
+-- 3) Permissões
+GRANT EXECUTE ON FUNCTION get_database_total_size() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_tables_size() TO anon, authenticated;

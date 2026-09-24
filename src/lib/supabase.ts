@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from './logger';
-import { buscar_pelada_id, buscar_senha, buscar_username, buscar_plano, buscar_supabase_url, buscar_supabase_anon_key, hashSenha } from './credenciais';
+import { buscar_pelada_id, buscar_senha, buscar_username, hashSenha } from './credenciais';
 
 // Configurações do Supabase PRINCIPAL (para autenticação e clientes)
 const supabaseUrl = 'https://ewcswczqvelhlwpbraea.supabase.co';
@@ -24,46 +24,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Cache de conexões com bancos dedicados dos clientes
-const clienteSupabaseCache: Record<string, SupabaseClient> = {};
-
 /**
  * Obtém o cliente Supabase apropriado para operações de dados
- * - Se o cliente for Premium e tiver banco dedicado, retorna conexão dedicada
- * - Caso contrário, retorna banco principal
+ * Em arquitetura de banco único, sempre retorna o banco principal (master).
+ * O isolamento de dados acontece via filtro por pelada_id nas queries.
  */
 export const getClienteSupabase = async (peladaId?: string): Promise<SupabaseClient> => {
-  // Se não tiver pelada_id, usa banco principal
-  if (!peladaId) {
-    return supabase;
-  }
-
-  // Verifica se já tem conexão em cache
-  if (clienteSupabaseCache[peladaId]) {
-    logger.log('🔄 Usando conexão em cache para:', peladaId);
-    return clienteSupabaseCache[peladaId];
-  }
-
-  // PRIMEIRO: Tenta buscar credenciais do localStorage (mais rápido)
-  logger.log('🔍 Buscando credenciais do localStorage...');
-  const url = buscar_supabase_url();
-  const key = buscar_supabase_anon_key();
-  
-  if (url && key) {
-    logger.log('✅ Credenciais encontradas no localStorage!');
-    logger.log('🔗 URL:', url);
-    logger.log('🔑 Key:', key.substring(0, 20) + '...');
-    
-    const clienteSupabase = createClient(url, key, {
-      auth: { persistSession: false },
-      db: { schema: 'public' },
-    });
-    clienteSupabaseCache[peladaId] = clienteSupabase;
-    return clienteSupabase;
-  }
-  
-  // Cliente Free ou sem banco dedicado: usa banco principal
-  logger.log('ℹ️ Usando banco principal para:', peladaId);
+  logger.log('ℹ️ Banco unico ativo. Usando banco principal para:', peladaId || 'sem pelada_id');
   return supabase;
 };
 
@@ -120,15 +87,6 @@ const getPeladaId = (): string | null => {
   return null;
 };
 
-// Função para verificar se o plano é Free
-const isPlanoFree = (): boolean => {
-  if (typeof window !== 'undefined') {
-    const plano = buscar_plano();
-    return plano === 'free';
-  }
-  return false;
-};
-
 // Função centralizada para validar senha da pelada
 export const validarSenhaPelada = async (senhaDigitada: string): Promise<boolean> => {
   if (typeof window === 'undefined') return false;
@@ -160,9 +118,6 @@ export const validarSenhaPelada = async (senhaDigitada: string): Promise<boolean
         pelada_id: data.pelada_id,
         username: data.username,
         senha: data.senha,
-        plano: data.plano,
-        supabase_url: data.supabase_url,
-        supabase_anon_key: data.supabase_anon_key,
         is_master: data.is_master,
       });
       return true;
@@ -173,7 +128,7 @@ export const validarSenhaPelada = async (senhaDigitada: string): Promise<boolean
   }
 };
 
-// Funções de interação com a tabela jogadores (usa localStorage se Free, Supabase se Gold/Premium)
+// Funções de interação com a tabela jogadores
 export const jogadoresService = {
   // Buscar todos os jogadores
   async buscarTodos() {
@@ -182,18 +137,6 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    // Se for Free, buscar do localStorage
-    if (isPlanoFree()) {
-      const jogadoresStr = localStorage.getItem(`jogadores_${peladaId}`);
-      if (!jogadoresStr) return [];
-      try {
-        return JSON.parse(jogadoresStr);
-      } catch {
-        return [];
-      }
-    }
-    
-    // Gold/Premium: buscar do Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { data, error } = await clienteDb
@@ -217,35 +160,6 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    // Se for Free, salvar no localStorage
-    if (isPlanoFree()) {
-      // Gerar UUID válido
-      const gerarUUID = () => {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          const r = Math.random() * 16 | 0;
-          const v = c === 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
-        });
-      };
-      
-      const jogadores = await this.buscarTodos();
-      const novoJogador: Jogador = {
-        id: gerarUUID(),
-        nome: nome.trim(),
-        nivel,
-        status: 'ativo',
-        posicao: posicao ?? 'linha',
-        pelada_id: peladaId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        foto_url: fotoUrl ?? undefined
-      };
-      jogadores.push(novoJogador);
-      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
-      return novoJogador;
-    }
-    
-    // Gold/Premium: salvar no Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { data, error } = await clienteDb
@@ -278,35 +192,6 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    // Se for Free, atualizar no localStorage
-    if (isPlanoFree()) {
-      const jogadores = await this.buscarTodos();
-      const index = jogadores.findIndex((j: Jogador) => j.id === id);
-      if (index === -1) throw new Error('Jogador não encontrado');
-      
-      const nomeAntigo = jogadores[index].nome;
-      const nomeNovo = nome.trim();
-      
-      // Atualizar jogador
-      jogadores[index] = {
-        ...jogadores[index],
-        nome: nomeNovo,
-        nivel,
-        posicao: posicao ?? jogadores[index].posicao ?? 'linha',
-        updated_at: new Date().toISOString(),
-        foto_url: fotoUrl !== undefined ? (fotoUrl ?? undefined) : jogadores[index].foto_url
-      };
-      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
-      
-      // ⭐ NOVO: Atualizar referências em jogos localStorage
-      if (nomeAntigo !== nomeNovo) {
-        this.atualizarReferencesNomeJogadorFree(peladaId, id, nomeAntigo, nomeNovo);
-      }
-      
-      return jogadores[index];
-    }
-    
-    // Gold/Premium: atualizar no Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     // Primeiro, buscar o nome antigo para comparação
@@ -338,7 +223,7 @@ export const jogadoresService = {
       throw error;
     }
     
-    // ⭐ NOVO: Se o nome mudou, atualizar referências em cascata
+    // Se o nome mudou, atualizar referências em cascata
     if (nomeAntigo && nomeAntigo !== nome.trim()) {
       await this.atualizarReferencesNomeJogadorGoldPremium(peladaId, nomeAntigo, nome.trim());
     }
@@ -346,68 +231,7 @@ export const jogadoresService = {
     return data;
   },
 
-  // ⭐ NOVO: Atualizar referências de nome em localStorage (Free)
-  atualizarReferencesNomeJogadorFree(peladaId: string, jogadorId: string, nomeAntigo: string, nomeNovo: string) {
-    try {
-      // Buscar todas as sessões armazenadas
-      const sessoes = localStorage.getItem(`sessoes_${peladaId}`);
-      if (!sessoes) return;
-      
-      const sessoesArray = JSON.parse(sessoes);
-      let sessaoModificada = false;
-      
-      sessoesArray.forEach((sessao: any) => {
-        if (sessao.jogos && Array.isArray(sessao.jogos)) {
-          sessao.jogos.forEach((jogo: any) => {
-            // Atualizar time_a (array de strings)
-            if (Array.isArray(jogo.time_a)) {
-              jogo.time_a = jogo.time_a.map((nome: string) => {
-                if (nome === nomeAntigo) {
-                  sessaoModificada = true;
-                  return nomeNovo;
-                }
-                return nome;
-              });
-            }
-            
-            // Atualizar time_b (array de strings)
-            if (Array.isArray(jogo.time_b)) {
-              jogo.time_b = jogo.time_b.map((nome: string) => {
-                if (nome === nomeAntigo) {
-                  sessaoModificada = true;
-                  return nomeNovo;
-                }
-                return nome;
-              });
-            }
-            
-            // Atualizar substituicoes (se existir)
-            if (Array.isArray(jogo.substituicoes)) {
-              jogo.substituicoes.forEach((sub: any) => {
-                if (sub.jogador_saiu === nomeAntigo) {
-                  sub.jogador_saiu = nomeNovo;
-                  sessaoModificada = true;
-                }
-                if (sub.jogador_entrou === nomeAntigo) {
-                  sub.jogador_entrou = nomeNovo;
-                  sessaoModificada = true;
-                }
-              });
-            }
-          });
-        }
-      });
-      
-      if (sessaoModificada) {
-        localStorage.setItem(`sessoes_${peladaId}`, JSON.stringify(sessoesArray));
-        logger.log('✅ Referências de nome atualizadas em localStorage');
-      }
-    } catch (error) {
-      logger.warn('⚠️ Erro ao atualizar referências em localStorage:', error);
-    }
-  },
-
-  // ⭐ NOVO: Atualizar referências de nome para Gold/Premium
+  // Atualizar referências de nome em jogos persistidos
   async atualizarReferencesNomeJogadorGoldPremium(peladaId: string, nomeAntigo: string, nomeNovo: string) {
     try {
       const clienteDb = await getClienteSupabase(peladaId);
@@ -516,21 +340,6 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    // Se for Free, atualizar no localStorage
-    if (isPlanoFree()) {
-      const jogadores = await this.buscarTodos();
-      const index = jogadores.findIndex((j: Jogador) => j.id === id);
-      if (index === -1) throw new Error('Jogador não encontrado');
-      
-      jogadores[index] = {
-        ...jogadores[index],
-        status
-      };
-      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadores));
-      return jogadores[index];
-    }
-    
-    // Gold/Premium: atualizar no Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { data, error } = await clienteDb
@@ -556,15 +365,6 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    // Se for Free, excluir do localStorage
-    if (isPlanoFree()) {
-      const jogadores = await this.buscarTodos();
-      const jogadoresFiltrados = jogadores.filter((j: Jogador) => j.id !== id);
-      localStorage.setItem(`jogadores_${peladaId}`, JSON.stringify(jogadoresFiltrados));
-      return true;
-    }
-    
-    // Gold/Premium: excluir do Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { error } = await clienteDb
@@ -588,13 +388,6 @@ export const jogadoresService = {
       throw new Error('Usuário não está logado ou pelada_id não encontrado');
     }
     
-    // Se for Free, filtrar do localStorage
-    if (isPlanoFree()) {
-      const jogadores = await this.buscarTodos();
-      return jogadores.filter((j: Jogador) => j.status === 'ativo');
-    }
-    
-    // Gold/Premium: buscar do Supabase
     const clienteDb = await getClienteSupabase(peladaId);
     
     const { data, error } = await clienteDb

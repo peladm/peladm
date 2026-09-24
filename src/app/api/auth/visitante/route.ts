@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from('clientes')
-      .select('pelada_id, nome, plano, status, supabase_url, supabase_anon_key')
+      .select('pelada_id, nome, status, data_vencimento, is_master')
       .eq('pelada_id', pelada_id.toUpperCase())
       .maybeSingle();
 
@@ -30,12 +30,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Código inválido' }, { status: 404 });
     }
 
-    const plano = String(data.plano || '').trim().toLowerCase();
-    if (plano !== 'premium') {
-      return NextResponse.json({ error: 'somente_premium' }, { status: 403 });
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const dataVencimento = data.data_vencimento ? new Date(`${data.data_vencimento}T00:00:00`) : null;
+    if (dataVencimento) dataVencimento.setHours(0, 0, 0, 0);
+    const vencido = !!dataVencimento && dataVencimento < hoje;
+
+    if (vencido && data.is_master !== true && data.status !== 'bloqueado') {
+      await supabaseAdmin
+        .from('clientes')
+        .update({ status: 'bloqueado' })
+        .eq('pelada_id', pelada_id.toUpperCase());
+
+      return NextResponse.json({ error: 'bloqueado' }, { status: 403 });
     }
 
-    if (data.status === 'bloqueado') {
+    if (data.status === 'bloqueado' || data.status === 'excluido') {
       return NextResponse.json({ error: 'bloqueado' }, { status: 403 });
     }
 
@@ -52,9 +62,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       pelada_id: data.pelada_id,
       nome: data.nome,
-      plano,
-      supabase_url: data.supabase_url,
-      supabase_anon_key: data.supabase_anon_key,
     });
 
   } catch {

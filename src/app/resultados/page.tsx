@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '../../components/Layout';
+import StatsFilterPanel from '../../components/StatsFilterPanel';
 import { getClienteSupabase, validarSenhaPelada, fetchAllRows } from '../../lib/supabase';
 import { usePermissions } from '../../lib/usePermissions';
 import { buscar_pelada_id } from '../../lib/credenciais';
@@ -11,6 +12,7 @@ interface Jogador {
   id: string;
   nome: string;
   apelido?: string;
+  status?: string | null;
 }
 
 interface Substituicao {
@@ -24,6 +26,8 @@ interface Gol {
   id?: string;
   jogo_id: string;
   jogador_id: string;
+  gol_contra_jogador_id?: string | null;
+  assistencia?: string | null;
   time: 'A' | 'B';
 }
 
@@ -49,6 +53,7 @@ interface GolDB {
   id?: string;
   jogo_id: string;
   jogador_id: string;
+  assistencia?: string | null;
   time: 'A' | 'B';
 }
 
@@ -81,7 +86,7 @@ export default function ResultadosPage() {
   const DEBUG = false;
   const STORAGE_KEY = 'peladm:resultados:state:v1';
   const router = useRouter();
-  const { possuiPermissao, nomePlano, loading: loadingPermissoes } = usePermissions();
+  const { possuiPermissao, loading: loadingPermissoes } = usePermissions();
   const [jogos, setJogos] = useState<Jogo[]>([]);
   const [jogosFiltrados, setJogosFiltrados] = useState<Jogo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,11 +96,15 @@ export default function ResultadosPage() {
   const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
   const [anosDisponiveis, setAnosDisponiveis] = useState<string[]>([]);
   const [periodoSelecionado, setPeriodoSelecionado] = useState('');
-  const [quantidadePeladas, setQuantidadePeladas] = useState('');
+  const [quantidadePeladas, setQuantidadePeladas] = useState('5');
+  const [apenasAtivos, setApenasAtivos] = useState(false);
   const [totalPartidas, setTotalPartidas] = useState(0);
   const [totalGols, setTotalGols] = useState(0);
   const [totalJogadores, setTotalJogadores] = useState(0);
   const [totalAssistencias, setTotalAssistencias] = useState(0);
+  const [totalMinutos, setTotalMinutos] = useState(0);
+  const [mediaGolsPorJogo, setMediaGolsPorJogo] = useState(0);
+  const [mediaMinutosPorJogo, setMediaMinutosPorJogo] = useState(0);
   const [jogadores, setJogadores] = useState<{ [id: string]: Jogador }>({});
   const [mostrarModalPartidas, setMostrarModalPartidas] = useState(false);
   const [mostrarModalGols, setMostrarModalGols] = useState(false);
@@ -127,6 +136,19 @@ export default function ResultadosPage() {
   const [senhaEventos, setSenhaEventos] = useState('');
   const [erroSenhaEventos, setErroSenhaEventos] = useState('');
   const [jogoSenhaEventosPendente, setJogoSenhaEventosPendente] = useState<Jogo | null>(null);
+  
+  const ehJogadorAtivo = (jogadorId: any) => {
+    if (!apenasAtivos) return true;
+    if (typeof jogadorId === 'object' && jogadorId?.id) {
+      const jogador = jogadores[String(jogadorId.id)];
+      if (!jogador) return false;
+      return jogador.status === undefined || jogador.status === null || jogador.status === 'ativo';
+    }
+    const idStr = String(jogadorId);
+    const jogador = jogadores[idStr];
+    if (!jogador) return false;
+    return jogador.status === undefined || jogador.status === null || jogador.status === 'ativo';
+  };
   
   // Estados para alterações pendentes (antes de salvar)
   const [alteracoesPendentes, setAlteracoesPendentes] = useState<{
@@ -163,6 +185,35 @@ export default function ResultadosPage() {
   const getNomeTime = (cor?: string | null, fallback?: string): string => {
     const nomeCor = normalizarNomeCor(cor);
     return nomeCor ? `Time ${nomeCor}` : (fallback || 'Time');
+  };
+
+  const montarAssistenciasDeGols = (gols: GolDB[]): Assistencia[] => {
+    return gols
+      .filter((g) => g.id && g.assistencia)
+      .map((g) => ({
+        id: `gol-assistencia-${g.id}`,
+        jogo_id: g.jogo_id,
+        jogador_id: g.assistencia as string,
+        time: g.time,
+        gol_id: g.id,
+      }));
+  };
+
+  const calcularDuracaoJogoSegundos = (jogo: Jogo) => {
+    if (jogo.data_inicio && jogo.data_fim) {
+      const inicio = new Date(jogo.data_inicio);
+      const fim = new Date(jogo.data_fim);
+      const duracaoMs = fim.getTime() - inicio.getTime();
+      if (duracaoMs > 0) return Math.floor(duracaoMs / 1000);
+    }
+
+    if (typeof jogo.tempo_decorrido === 'number') {
+      const tempoInicial = 600;
+      const duracaoReal = tempoInicial - jogo.tempo_decorrido;
+      return Math.max(0, Math.abs(duracaoReal));
+    }
+
+    return 600;
   };
 
   const getEstiloTime = (
@@ -273,6 +324,7 @@ export default function ResultadosPage() {
       if (typeof saved.dataSelecionada === 'string') setDataSelecionada(saved.dataSelecionada);
       if (typeof saved.periodoSelecionado === 'string') setPeriodoSelecionado(saved.periodoSelecionado);
       if (typeof saved.quantidadePeladas === 'string') setQuantidadePeladas(saved.quantidadePeladas);
+      if (typeof saved.apenasAtivos === 'boolean') setApenasAtivos(saved.apenasAtivos);
     } catch {
       // ignore invalid persisted state
     }
@@ -284,16 +336,17 @@ export default function ResultadosPage() {
       dataSelecionada,
       periodoSelecionado,
       quantidadePeladas,
+      apenasAtivos,
     }));
-  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas]);
+  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas, apenasAtivos]);
 
-  // Bloquear acesso para plano FREE
+  // Bloquear acesso quando o cliente não tiver permissão
   useEffect(() => {
     if (!loadingPermissoes && !possuiPermissao('verResultados')) {
-      alert(`🚫 Resultados não disponíveis no plano ${nomePlano}. Faça upgrade para Premium!`);
+      alert('🚫 Resultados indisponíveis para este cliente no momento.');
       router.push('/');
     }
-  }, [loadingPermissoes, possuiPermissao, nomePlano, router]);
+  }, [loadingPermissoes, possuiPermissao, router]);
 
   useEffect(() => {
     carregarDados();
@@ -317,7 +370,7 @@ export default function ResultadosPage() {
 
   useEffect(() => {
     aplicarFiltro();
-  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas, jogos]);
+  }, [filtro, dataSelecionada, periodoSelecionado, quantidadePeladas, jogos, apenasAtivos]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -428,11 +481,6 @@ export default function ResultadosPage() {
         .from('gols')
         .delete()
         .eq('jogo_id', jogoId);
-      
-      await supabase
-        .from('assistencias')
-        .delete()
-        .eq('jogo_id', jogoId);
 
       // Excluir a partida
       const { error } = await supabase
@@ -463,11 +511,6 @@ export default function ResultadosPage() {
       // Excluir todos os gols e assistências das partidas filtradas
       await supabase
         .from('gols')
-        .delete()
-        .in('jogo_id', jogosIds);
-      
-      await supabase
-        .from('assistencias')
         .delete()
         .in('jogo_id', jogosIds);
 
@@ -534,6 +577,7 @@ export default function ResultadosPage() {
       // Adicionar gols
       for (const { jogadorId, time } of alteracoesPendentes.golsAdicionar) {
         await supabase.from('gols').insert({
+          pelada_id: peladaId,
           jogo_id: jogoParaEditar.id,
           jogador_id: jogadorId,
           time: time,
@@ -572,32 +616,52 @@ export default function ResultadosPage() {
 
       // Adicionar assistências
       for (const { jogadorId, time } of alteracoesPendentes.assistsAdicionar) {
-        await supabase.from('assistencias').insert({
-          jogo_id: jogoParaEditar.id,
-          jogador_id: jogadorId,
-          time: time,
-        });
+        const { data: golsSemAssistencia } = await supabase
+          .from('gols')
+          .select('id')
+          .eq('jogo_id', jogoParaEditar.id)
+          .eq('time', time)
+          .is('assistencia', null)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        const golParaAtualizar = golsSemAssistencia?.[0];
+        if (!golParaAtualizar?.id) {
+          console.warn('⚠️ Nenhum gol sem assistência encontrado para adicionar assistência');
+          continue;
+        }
+
+        await supabase
+          .from('gols')
+          .update({ assistencia: jogadorId })
+          .eq('id', golParaAtualizar.id);
       }
 
       // Remover assistências
       for (const { jogadorId, time } of alteracoesPendentes.assistsRemover) {
         const nomeJogador = buscarJogador(jogadorId);
-        
-        // Buscar assists pelo ID OU pelo nome
-        const { data: assistsExistentes } = await supabase
-          .from('assistencias')
-          .select('id, jogador_id')
-          .eq('jogo_id', jogoParaEditar.id)
-          .eq('time', time);
 
-        // Filtrar assists que correspondem ao jogador (por ID ou nome)
-        const assistParaRemover = assistsExistentes?.find(a => {
-          const nomeAssist = buscarJogador(a.jogador_id);
-          return a.jogador_id === jogadorId || nomeAssist === nomeJogador;
+        // Buscar gols com assistência para remover por jogador (ID ou nome)
+        const { data: golsComAssistencia } = await supabase
+          .from('gols')
+          .select('id, assistencia')
+          .eq('jogo_id', jogoParaEditar.id)
+          .eq('time', time)
+          .not('assistencia', 'is', null)
+          .order('created_at', { ascending: false });
+
+        const golParaRemoverAssist = golsComAssistencia?.find(g => {
+          const assistId = g.assistencia as string | null;
+          if (!assistId) return false;
+          const nomeAssist = buscarJogador(assistId);
+          return assistId === jogadorId || nomeAssist === nomeJogador;
         });
 
-        if (assistParaRemover) {
-          await supabase.from('assistencias').delete().eq('id', assistParaRemover.id);
+        if (golParaRemoverAssist?.id) {
+          await supabase
+            .from('gols')
+            .update({ assistencia: null })
+            .eq('id', golParaRemoverAssist.id);
         }
       }
 
@@ -694,11 +758,6 @@ export default function ResultadosPage() {
       for (const golIdExcluir of eventosExcluidos) {
         const golOriginal = golsOriginais.find(g => g.id === golIdExcluir);
         if (golOriginal) {
-          // Deletar assist vinculada
-          const assistVinculada = assistsOriginais.find(a => a.gol_id === golIdExcluir);
-          if (assistVinculada?.id) {
-            await supabase.from('assistencias').delete().eq('id', assistVinculada.id);
-          }
           await supabase.from('gols').delete().eq('id', golIdExcluir);
           if (golOriginal.time === 'A' && placarA > 0) placarA--;
           else if (golOriginal.time === 'B' && placarB > 0) placarB--;
@@ -709,20 +768,14 @@ export default function ResultadosPage() {
       // Inserir novos eventos
       for (const evento of eventosEditaveis.filter(e => e.isNew)) {
         const { data: golInserido } = await supabase.from('gols').insert({
+          pelada_id: peladaId,
           jogo_id: jogoEditarEventos.id,
           jogador_id: evento.jogadorGolId,
+          assistencia: evento.jogadorAssistId || null,
           time: evento.timeGol,
         }).select('id').single();
         if (evento.timeGol === 'A') placarA++; else placarB++;
         placarChanged = true;
-        if (evento.jogadorAssistId && golInserido?.id) {
-          await supabase.from('assistencias').insert({
-            jogo_id: jogoEditarEventos.id,
-            jogador_id: evento.jogadorAssistId,
-            time: evento.timeAssist ?? evento.timeGol,
-            gol_id: golInserido.id,
-          });
-        }
       }
 
       // Atualizar eventos existentes (não novos)
@@ -730,34 +783,24 @@ export default function ResultadosPage() {
         const golOriginal = golsOriginais.find(g => g.id === evento.golId);
         if (!golOriginal) continue;
 
-        if (golOriginal.jogador_id !== evento.jogadorGolId || golOriginal.time !== evento.timeGol) {
+        const assistenciaAtual = golOriginal.assistencia || null;
+        const novaAssistencia = evento.jogadorAssistId || null;
+
+        if (
+          golOriginal.jogador_id !== evento.jogadorGolId ||
+          golOriginal.time !== evento.timeGol ||
+          assistenciaAtual !== novaAssistencia
+        ) {
           await supabase.from('gols').update({
             jogador_id: evento.jogadorGolId,
             time: evento.timeGol,
+            assistencia: novaAssistencia,
           }).eq('id', evento.golId);
           if (golOriginal.time !== evento.timeGol) {
             if (golOriginal.time === 'A') { placarA--; placarB++; }
             else { placarB--; placarA++; }
             placarChanged = true;
           }
-        }
-
-        const assistOriginal = assistsOriginais.find(a => a.id === evento.assistId);
-        if (evento.jogadorAssistId && !assistOriginal) {
-          await supabase.from('assistencias').insert({
-            jogo_id: jogoEditarEventos.id,
-            jogador_id: evento.jogadorAssistId,
-            time: evento.timeAssist ?? evento.timeGol,
-            gol_id: evento.golId,
-          });
-        } else if (!evento.jogadorAssistId && assistOriginal?.id) {
-          await supabase.from('assistencias').delete().eq('id', assistOriginal.id);
-        } else if (evento.jogadorAssistId && assistOriginal?.id &&
-          (assistOriginal.jogador_id !== evento.jogadorAssistId || assistOriginal.time !== evento.timeAssist)) {
-          await supabase.from('assistencias').update({
-            jogador_id: evento.jogadorAssistId,
-            time: evento.timeAssist ?? evento.timeGol,
-          }).eq('id', assistOriginal.id);
         }
       }
 
@@ -963,37 +1006,88 @@ export default function ResultadosPage() {
       }
 
       // Buscar todos os jogos finalizados (banco dedicado premium)
-      const { data: jogosData, error } = await clienteDb
-        .from('jogos')
-        .select('*')
-        .eq('status', 'finalizado')
-        .order('created_at', { ascending: false });
-
-      if (error) {
+      // Paginação manual: evita truncamento no limite padrão de 1000 linhas do Supabase.
+      let jogosData: any[] = [];
+      try {
+        jogosData = await fetchAllRows((from, to) =>
+          clienteDb
+            .from('jogos')
+            .select('*')
+            .eq('pelada_id', peladaId)
+            .eq('status', 'finalizado')
+            .order('created_at', { ascending: false })
+            .range(from, to)
+        );
+      } catch (error) {
         console.error('Erro ao carregar jogos:', error);
         return;
       }
 
       // Buscar gols e assistências de todos os jogos
       if (jogosData && jogosData.length > 0) {
+        const jogosIds = jogosData.map(j => j.id);
         // Paginação manual: o Supabase limita respostas a 1000 linhas por padrão,
         // e uma pelada com muito histórico facilmente ultrapassa isso.
-        const jogosIds = jogosData.map(j => j.id);
         const golsData = await fetchAllRows((from, to) =>
           clienteDb
             .from('gols')
             .select('*')
+            .eq('pelada_id', peladaId)
             .in('jogo_id', jogosIds)
             .range(from, to)
         );
 
-        const assistenciasData = await fetchAllRows((from, to) =>
-          clienteDb
-            .from('assistencias')
-            .select('*')
-            .in('jogo_id', jogosIds)
-            .range(from, to)
-        );
+        // Fallback: alguns eventos ainda podem estar apenas no localStorage
+        // (sessão em andamento ou sync parcial). Mesclamos com o banco.
+        const golsLocaisPorJogo: Record<string, GolDB[]> = {};
+        const assistenciasLocaisPorJogo: Record<string, Assistencia[]> = {};
+        const sessoesIds = [...new Set(jogosData.map((j) => j.sessao_id))];
+
+        sessoesIds.forEach((sessaoId) => {
+          const golsKey = `gols_${sessaoId}`;
+          const assistsKey = `assistencias_${sessaoId}`;
+
+          const golsRaw = localStorage.getItem(golsKey);
+          const assistsRaw = localStorage.getItem(assistsKey);
+
+          if (golsRaw) {
+            try {
+              const golsLocais = JSON.parse(golsRaw) as any[];
+              golsLocais.forEach((g) => {
+                if (!g?.jogo_id) return;
+                if (!golsLocaisPorJogo[g.jogo_id]) golsLocaisPorJogo[g.jogo_id] = [];
+                golsLocaisPorJogo[g.jogo_id].push({
+                  id: g.id,
+                  jogo_id: g.jogo_id,
+                  jogador_id: g.jogador_id,
+                  assistencia: g.assistencia ?? null,
+                  time: g.time,
+                });
+              });
+            } catch (error) {
+              console.warn('⚠️ Não foi possível parsear gols locais:', golsKey, error);
+            }
+          }
+
+          if (assistsRaw) {
+            try {
+              const assistsLocais = JSON.parse(assistsRaw) as any[];
+              assistsLocais.forEach((a) => {
+                if (!a?.jogo_id) return;
+                if (!assistenciasLocaisPorJogo[a.jogo_id]) assistenciasLocaisPorJogo[a.jogo_id] = [];
+                assistenciasLocaisPorJogo[a.jogo_id].push({
+                  id: a.id,
+                  jogo_id: a.jogo_id,
+                  jogador_id: a.jogador_id,
+                  time: a.time,
+                  gol_id: a.gol_id,
+                });
+              });
+            } catch (error) {
+              console.warn('⚠️ Não foi possível parsear assistências locais:', assistsKey, error);
+            }
+          }
+        });
 
         // Associar gols, assistências e substituições aos jogos
         const jogosCompletos = jogosData.map(jogo => {
@@ -1018,11 +1112,36 @@ export default function ResultadosPage() {
             substituicoesParsed: subs,
             quantidade: subs.length
           });
+
+          const golsBanco = (golsData || []).filter(g => g.jogo_id === jogo.id) as GolDB[];
+          const golsLocais = golsLocaisPorJogo[jogo.id] || [];
+          const mapaGols = new Map<string, GolDB>();
+
+          [...golsBanco, ...golsLocais].forEach((g) => {
+            const chave = g.id || `${g.jogo_id}-${g.jogador_id}-${g.time}`;
+            if (!mapaGols.has(chave)) {
+              mapaGols.set(chave, g);
+            }
+          });
+
+          const golsDoJogo = Array.from(mapaGols.values());
+          const assistenciasDerivadas = montarAssistenciasDeGols(golsDoJogo);
+          const assistenciasLocais = assistenciasLocaisPorJogo[jogo.id] || [];
+          const mapaAssistencias = new Map<string, Assistencia>();
+
+          [...assistenciasDerivadas, ...assistenciasLocais].forEach((a) => {
+            const chave = a.id || `${a.gol_id || 'sem-gol'}-${a.jogador_id}-${a.time}`;
+            if (!mapaAssistencias.has(chave)) {
+              mapaAssistencias.set(chave, a);
+            }
+          });
+
+          const assistenciasDoJogo = Array.from(mapaAssistencias.values());
           
           return {
             ...jogo,
-            gols: (golsData || []).filter(g => g.jogo_id === jogo.id),
-            assistencias: (assistenciasData || []).filter(a => a.jogo_id === jogo.id),
+            gols: golsDoJogo,
+            assistencias: assistenciasDoJogo,
             substituicoes: subs
           };
         });
@@ -1130,13 +1249,22 @@ export default function ResultadosPage() {
       filtered = [...jogos];
     } else if (filtro === 'ano') {
       if (periodoSelecionado) {
-        // Filtrar por ano específico
         filtered = jogos.filter(jogo => {
+          const [ano, parte] = periodoSelecionado.split('-');
           const data = new Date(jogo.created_at);
-          return data.getFullYear().toString() === periodoSelecionado;
+          const anoJogo = data.getFullYear().toString();
+          if (parte === undefined) return anoJogo === periodoSelecionado;
+          if (anoJogo !== ano) return false;
+          const mes = data.getMonth();
+          if (parte === 's1') return mes < 6;
+          if (parte === 's2') return mes >= 6;
+          if (parte === 'q1') return mes <= 2;
+          if (parte === 'q2') return mes >= 3 && mes <= 5;
+          if (parte === 'q3') return mes >= 6 && mes <= 8;
+          if (parte === 'q4') return mes >= 9 && mes <= 11;
+          return false;
         });
       } else {
-        // Último ano (365 dias)
         const hoje = new Date();
         const anoAtras = new Date(hoje.getTime() - 365 * 24 * 60 * 60 * 1000);
         filtered = jogos.filter(jogo => new Date(jogo.created_at) >= anoAtras);
@@ -1154,20 +1282,41 @@ export default function ResultadosPage() {
 
     // Calcular estatísticas
     const partidas = filtered.length;
-    const gols = filtered.reduce((sum, jogo) => sum + jogo.placar_a + jogo.placar_b, 0);
-    const assistencias = filtered.reduce((sum, jogo) => sum + (jogo.assistencias?.length || 0), 0);
+    const gols = filtered.reduce((sum, jogo) => {
+      const golsAtivos = (jogo.gols || []).reduce((acc, gol) => {
+        if (gol.jogador_id === 'gol_contra') {
+          return acc + (ehJogadorAtivo(gol.gol_contra_jogador_id) ? 1 : 0);
+        }
+        return acc + (ehJogadorAtivo(gol.jogador_id) ? 1 : 0);
+      }, 0);
+      return sum + golsAtivos;
+    }, 0);
+    const assistencias = filtered.reduce((sum, jogo) => {
+      return sum + ((jogo.assistencias || []).filter(a => ehJogadorAtivo(a.jogador_id)).length);
+    }, 0);
+    const totalSegundos = filtered.reduce((sum, jogo) => sum + calcularDuracaoJogoSegundos(jogo), 0);
+    const minutos = Math.floor(totalSegundos / 60);
+    const mediaGols = partidas > 0 ? gols / partidas : 0;
+    const mediaMinutos = partidas > 0 ? minutos / partidas : 0;
     
     // Contar jogadores únicos
     const jogadoresUnicos = new Set<string>();
     filtered.forEach(jogo => {
-      jogo.time_a.forEach(j => jogadoresUnicos.add(j));
-      jogo.time_b.forEach(j => jogadoresUnicos.add(j));
+      jogo.time_a.forEach(j => {
+        if (!apenasAtivos || ehJogadorAtivo(j)) jogadoresUnicos.add(j);
+      });
+      jogo.time_b.forEach(j => {
+        if (!apenasAtivos || ehJogadorAtivo(j)) jogadoresUnicos.add(j);
+      });
     });
 
     setTotalPartidas(partidas);
     setTotalGols(gols);
     setTotalAssistencias(assistencias);
     setTotalJogadores(jogadoresUnicos.size);
+    setTotalMinutos(minutos);
+    setMediaGolsPorJogo(mediaGols);
+    setMediaMinutosPorJogo(mediaMinutos);
   };
 
   const formatarDuracao = (segundos?: number) => {
@@ -1177,205 +1326,58 @@ export default function ResultadosPage() {
     return `${minutos}:${segs.toString().padStart(2, '0')}`;
   };
 
+  const montarSufixoEventos = (gols: number, assistencias: number) => {
+    const partes: string[] = [];
+    if (gols > 0) partes.push(gols <= 3 ? '⚽'.repeat(gols) : `⚽x${gols}`);
+    if (assistencias > 0) partes.push(assistencias <= 3 ? '👟'.repeat(assistencias) : `👟x${assistencias}`);
+    return partes.join(' ');
+  };
+
+  const formatarNomeComEventos = (nome: string, gols: number, assistencias: number) => {
+    const sufixo = montarSufixoEventos(gols, assistencias);
+    return sufixo ? `${nome} ${sufixo}` : nome;
+  };
+
   return (
     <Layout title="Resultados" onAdminClick={abrirModalSenha}>
       <div className="max-w-2xl mx-auto px-2 py-3">
-        {/* Header com filtros */}
-        <section className="bg-white rounded-xl shadow-md p-4 mb-4 border border-gray-300">
-          {/* Bloco 1: Pelada Atual */}
-          <div className="mb-3">
-            <button
-              onClick={() => {
-                setFiltro('atual');
-                setDataSelecionada('');
-                setPeriodoSelecionado('');
-              }}
-              className={`w-full py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${
-                filtro === 'atual'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-              }`}
-            >
-              ⚡ Atual (Pelada mais recente)
-            </button>
-          </div>
-
-          {/* Bloco 2: Períodos */}
-          <div className="mb-3">
-            <div className="grid grid-cols-4 gap-2">
-              <button
-                onClick={() => {
-                  setFiltro('mes');
-                  setDataSelecionada('');
-                  setPeriodoSelecionado('');
-                }}
-                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'mes'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                }`}
-              >
-                Mês
-              </button>
-              <button
-                onClick={() => {
-                  setFiltro('ultimas');
-                  setDataSelecionada('');
-                  setPeriodoSelecionado('');
-                  setQuantidadePeladas('3');
-                }}
-                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'ultimas'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                }`}
-              >
-                Últimas
-              </button>
-              <button
-                onClick={() => {
-                  setFiltro('ano');
-                  setDataSelecionada('');
-                  setPeriodoSelecionado('');
-                }}
-                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'ano'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                }`}
-              >
-                Ano
-              </button>
-              <button
-                onClick={() => {
-                  setFiltro('historia');
-                  setDataSelecionada('');
-                  setPeriodoSelecionado('');
-                }}
-                className={`py-2 px-2 rounded-lg text-xs font-semibold transition-colors ${
-                  filtro === 'historia'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                }`}
-              >
-                História
-              </button>
-            </div>
-          </div>
-
-          {/* Bloco 3: Select dinâmico baseado no filtro */}
-          <div>
-            {filtro === 'atual' && (
-              <select
-                value={dataSelecionada}
-                onChange={(e) => setDataSelecionada(e.target.value)}
-                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-              >
-                <option value="">🔍 Selecionar pelada específica</option>
-                {datasDisponiveis.map(data => (
-                  <option key={data} value={data}>{data}</option>
-                ))}
-              </select>
-            )}
-            
-            {filtro === 'mes' && (
-              <select
-                value={periodoSelecionado}
-                onChange={(e) => setPeriodoSelecionado(e.target.value)}
-                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">📅 Selecionar mês específico</option>
-                {mesesDisponiveis.map(mes => (
-                  <option key={mes} value={mes}>{mes}</option>
-                ))}
-              </select>
-            )}
-            
-            {filtro === 'ultimas' && (
-              <select
-                value={quantidadePeladas}
-                onChange={(e) => setQuantidadePeladas(e.target.value)}
-                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="2">📊 Últimas 2 peladas</option>
-                <option value="3">📊 Últimas 3 peladas</option>
-                <option value="4">📊 Últimas 4 peladas</option>
-                <option value="5">📊 Últimas 5 peladas</option>
-              </select>
-            )}
-            
-            {filtro === 'ano' && (
-              <select
-                value={periodoSelecionado}
-                onChange={(e) => setPeriodoSelecionado(e.target.value)}
-                className="w-full py-2 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">📅 Selecionar ano específico</option>
-                {anosDisponiveis.map(ano => (
-                  <option key={ano} value={ano}>{ano}</option>
-                ))}
-              </select>
-            )}
-          </div>
-        </section>
+        <StatsFilterPanel
+          filtro={filtro}
+          setFiltro={setFiltro}
+          dataSelecionada={dataSelecionada}
+          setDataSelecionada={setDataSelecionada}
+          periodoSelecionado={periodoSelecionado}
+          setPeriodoSelecionado={setPeriodoSelecionado}
+          quantidadePeladas={quantidadePeladas}
+          setQuantidadePeladas={setQuantidadePeladas}
+          apenasAtivos={apenasAtivos}
+          setApenasAtivos={setApenasAtivos}
+          datasDisponiveis={datasDisponiveis}
+          mesesDisponiveis={mesesDisponiveis}
+          anosDisponiveis={anosDisponiveis}
+        />
 
         {/* Cards de resumo */}
         <section className="grid grid-cols-2 gap-2 mb-4">
-          {/* Partidas - Clicável */}
-          <button
-            onClick={() => setMostrarModalPartidas(true)}
-            className="bg-white rounded-lg shadow-sm border border-gray-200 flex hover:shadow-md hover:scale-105 transition-all active:scale-95"
-          >
-            <div className="w-1/2 flex items-center justify-center border-r border-gray-200">
-              <div className="text-4xl">🥅</div>
-            </div>
-            <div className="w-1/2 flex flex-col items-center justify-center p-3">
-              <div className="text-xl font-bold text-gray-800">{totalPartidas}</div>
-              <div className="text-xs text-gray-600 text-center">PARTIDAS</div>
-            </div>
-          </button>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+            <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wide">Jogos no período</div>
+            <div className="text-2xl font-black text-gray-800 mt-1">{totalPartidas}</div>
+          </div>
 
-          {/* Gols - Clicável */}
-          <button
-            onClick={() => setMostrarModalGols(true)}
-            className="bg-white rounded-lg shadow-sm border border-gray-200 flex hover:shadow-md hover:scale-105 transition-all active:scale-95"
-          >
-            <div className="w-1/2 flex items-center justify-center border-r border-gray-200">
-              <div className="text-4xl">⚽</div>
-            </div>
-            <div className="w-1/2 flex flex-col items-center justify-center p-3">
-              <div className="text-xl font-bold text-gray-800">{totalGols}</div>
-              <div className="text-xs text-gray-600 text-center">GOLS</div>
-            </div>
-          </button>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+            <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wide">Média de gols/jogo</div>
+            <div className="text-2xl font-black text-emerald-700 mt-1">{mediaGolsPorJogo.toFixed(2)}</div>
+          </div>
 
-          {/* Jogadores - Clicável */}
-          <button
-            onClick={() => setMostrarModalJogadores(true)}
-            className="bg-white rounded-lg shadow-sm border border-gray-200 flex hover:shadow-md hover:scale-105 transition-all active:scale-95"
-          >
-            <div className="w-1/2 flex items-center justify-center border-r border-gray-200">
-              <div className="text-4xl">👥</div>
-            </div>
-            <div className="w-1/2 flex flex-col items-center justify-center p-3">
-              <div className="text-xl font-bold text-gray-800">{totalJogadores}</div>
-              <div className="text-xs text-gray-600 text-center">JOGADORES</div>
-            </div>
-          </button>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+            <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wide">Minutos totais</div>
+            <div className="text-2xl font-black text-blue-700 mt-1">{totalMinutos}</div>
+          </div>
 
-          {/* Assistências - Clicável */}
-          <button
-            onClick={() => setMostrarModalAssistencias(true)}
-            className="bg-white rounded-lg shadow-sm border border-gray-200 flex hover:shadow-md hover:scale-105 transition-all active:scale-95"
-          >
-            <div className="w-1/2 flex items-center justify-center border-r border-gray-200">
-              <div className="text-4xl">👟</div>
-            </div>
-            <div className="w-1/2 flex flex-col items-center justify-center p-3">
-              <div className="text-xl font-bold text-gray-800">{totalAssistencias}</div>
-              <div className="text-[0.65rem] text-gray-600 text-center">ASSISTÊNCIAS</div>
-            </div>
-          </button>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+            <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wide">Média de minutos/jogo</div>
+            <div className="text-2xl font-black text-amber-700 mt-1">{mediaMinutosPorJogo.toFixed(1)}</div>
+          </div>
         </section>
 
         {/* Loading */}
@@ -1508,22 +1510,14 @@ export default function ResultadosPage() {
                         return (
                           <div key={i} className="text-gray-700 text-sm">
                             {/* Jogador que saiu */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px', alignItems: 'center', padding: '1px 0' }}>
                               <div className="text-red-600">↓</div>
-                              <div className="text-left">{nomeSaiu}</div>
-                              <div className="text-right">{assistsSaiu > 0 && golsSaiu > 0 ? `${assistsSaiu}👟` : ''}</div>
-                              <div className="text-right" style={{ minWidth: '30px' }}>
-                                {golsSaiu > 0 ? `${golsSaiu}⚽` : (assistsSaiu > 0 ? `${assistsSaiu}👟` : '')}
-                              </div>
+                              <div className="text-left">{formatarNomeComEventos(nomeSaiu, golsSaiu, assistsSaiu)}</div>
                             </div>
                             {/* Jogador que entrou */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px', alignItems: 'center', padding: '1px 0' }}>
                               <div className="text-green-600">↑</div>
-                              <div className="text-left">{nomeJogador}</div>
-                              <div className="text-right">{assistenciasJogador > 0 && golsJogador > 0 ? `${assistenciasJogador}👟` : ''}</div>
-                              <div className="text-right" style={{ minWidth: '30px' }}>
-                                {golsJogador > 0 ? `${golsJogador}⚽` : (assistenciasJogador > 0 ? `${assistenciasJogador}👟` : '')}
-                              </div>
+                              <div className="text-left">{formatarNomeComEventos(nomeJogador, golsJogador, assistenciasJogador)}</div>
                             </div>
                           </div>
                         );
@@ -1531,13 +1525,9 @@ export default function ResultadosPage() {
                       
                       // Jogador normal (sem substituição)
                       return (
-                        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }} className="text-gray-700 text-sm">
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px', alignItems: 'center', padding: '1px 0' }} className="text-gray-700 text-sm">
                           <div></div>
-                          <div className="text-left">{nomeJogador}</div>
-                          <div className="text-right">{assistenciasJogador > 0 && golsJogador > 0 ? `${assistenciasJogador}👟` : ''}</div>
-                          <div className="text-right" style={{ minWidth: '30px' }}>
-                            {golsJogador > 0 ? `${golsJogador}⚽` : (assistenciasJogador > 0 ? `${assistenciasJogador}👟` : '')}
-                          </div>
+                          <div className="text-left">{formatarNomeComEventos(nomeJogador, golsJogador, assistenciasJogador)}</div>
                         </div>
                       );
                     })}
@@ -1596,22 +1586,14 @@ export default function ResultadosPage() {
                         return (
                           <div key={i} className="text-gray-700 text-sm">
                             {/* Jogador que saiu */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px', alignItems: 'center', padding: '1px 0' }}>
                               <div className="text-red-600">↓</div>
-                              <div className="text-left">{nomeSaiu}</div>
-                              <div className="text-right">{assistsSaiu > 0 && golsSaiu > 0 ? `${assistsSaiu}👟` : ''}</div>
-                              <div className="text-right" style={{ minWidth: '30px' }}>
-                                {golsSaiu > 0 ? `${golsSaiu}⚽` : (assistsSaiu > 0 ? `${assistsSaiu}👟` : '')}
-                              </div>
+                              <div className="text-left">{formatarNomeComEventos(nomeSaiu, golsSaiu, assistsSaiu)}</div>
                             </div>
                             {/* Jogador que entrou */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px', alignItems: 'center', padding: '1px 0' }}>
                               <div className="text-green-600">↑</div>
-                              <div className="text-left">{nomeJogador}</div>
-                              <div className="text-right">{assistenciasJogador > 0 && golsJogador > 0 ? `${assistenciasJogador}👟` : ''}</div>
-                              <div className="text-right" style={{ minWidth: '30px' }}>
-                                {golsJogador > 0 ? `${golsJogador}⚽` : (assistenciasJogador > 0 ? `${assistenciasJogador}👟` : '')}
-                              </div>
+                              <div className="text-left">{formatarNomeComEventos(nomeJogador, golsJogador, assistenciasJogador)}</div>
                             </div>
                           </div>
                         );
@@ -1619,13 +1601,9 @@ export default function ResultadosPage() {
                       
                       // Jogador normal (sem substituição)
                       return (
-                        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: '1px', alignItems: 'center', padding: '1px 0' }} className="text-gray-700 text-sm">
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px', alignItems: 'center', padding: '1px 0' }} className="text-gray-700 text-sm">
                           <div></div>
-                          <div className="text-left">{nomeJogador}</div>
-                          <div className="text-right">{assistenciasJogador > 0 && golsJogador > 0 ? `${assistenciasJogador}👟` : ''}</div>
-                          <div className="text-right" style={{ minWidth: '30px' }}>
-                            {golsJogador > 0 ? `${golsJogador}⚽` : (assistenciasJogador > 0 ? `${assistenciasJogador}👟` : '')}
-                          </div>
+                          <div className="text-left">{formatarNomeComEventos(nomeJogador, golsJogador, assistenciasJogador)}</div>
                         </div>
                       );
                     })}
@@ -1633,12 +1611,13 @@ export default function ResultadosPage() {
                 </div>
 
                 {/* Eventos da partida */}
-                {(jogo.gols || []).length > 0 && (() => {
+                {(() => {
                   const assistsMap = new Map(
                     (jogo.assistencias || []).filter(a => a.gol_id).map(a => [a.gol_id!, a])
                   );
                   const aberto = eventosAbertos.has(jogo.id);
                   const numeroPartida = (jogo as any).numero_jogo || index + 1;
+                  const totalEventos = (jogo.gols || []).length + (jogo.assistencias || []).length;
                   return (
                     <div className="mt-3 pt-3 border-t border-gray-200">
                       <button
@@ -1657,6 +1636,9 @@ export default function ResultadosPage() {
                       {aberto && (
                         <>
                           <div className="mt-2">
+                            {totalEventos === 0 && (
+                              <div className="text-xs text-gray-500 py-1">Nenhum evento registrado nesta partida.</div>
+                            )}
                             {(jogo.gols || []).map((gol, i) => {
                               const assist = assistsMap.get(gol.id ?? '');
                               const estiloGol = gol.time === 'A' ? estiloTimeA : estiloTimeB;

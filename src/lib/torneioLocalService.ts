@@ -94,6 +94,8 @@ export interface RegrasCompeticaoLocal {
   modalidade: ModalidadeCompeticao;
   formato: FormatoCompeticao;
   jogadores_por_time: number;
+  min_jogadores_participantes_por_time?: number;
+  max_jogadores_participantes_por_time?: number;
   quantidade_times: number;
   temporada_competicao?: string;
   vinculado_torneio_nome?: string;
@@ -111,6 +113,8 @@ export interface RegrasCompeticaoLocal {
   ida_e_volta: boolean;
   classificam_por_grupo: number;
   classificam_liga?: number;
+  repescagem_liga?: boolean;
+  repescagem_liga_posicoes?: number[];
   jogos_mata_mata_unicos: boolean;
   final_jogo_unico?: boolean;
   disputa_terceiro_lugar?: 'nao' | 'jogo_unico' | 'ida_e_volta';

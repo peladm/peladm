@@ -29,7 +29,7 @@ export default function Login() {
       // Buscar cliente na tabela clientes
       const { data, error } = await supabase
         .from('clientes')
-        .select('pelada_id, username, senha, plano, supabase_url, supabase_anon_key, status, is_master')
+        .select('pelada_id, username, senha, status, is_master')
         .eq('username', usuario)
         .eq('senha', senha)
         .single();
@@ -45,9 +45,6 @@ export default function Login() {
         pelada_id: data.pelada_id,
         username: data.username,
         senha: data.senha,
-        plano: (data.plano || 'free').toLowerCase(),
-        supabase_url: data.supabase_url,
-        supabase_anon_key: data.supabase_anon_key,
         is_master: data.is_master === true
       });
       

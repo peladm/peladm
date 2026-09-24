@@ -247,7 +247,7 @@ export const fila_remover = (
   const filaLocal = localStorage.getItem('fila_ativa');
   const fila = filaLocal ? JSON.parse(filaLocal) : [];
   
-  // No plano FREE, os dados estão direto na fila com { id, nome, posicao_fila, status }
+  // Os dados locais ficam direto na fila com { id, nome, posicao_fila, status }
   const jogadorItem = fila.find((item: any) => item.id === jogador.id || item.nome === jogador.nome);
   const posicaoRemovida = jogadorItem?.posicao_fila;
   
@@ -879,18 +879,53 @@ export const fila_snapshot_salvar_partida = (peladaId: string): boolean => {
     
     const filaAtiva = JSON.parse(filaAtivaStr);
     
+    // Capturar contexto da sessão/jogo para permitir desfazer estatísticas junto da fila
+    const sessaoAtivaStr = localStorage.getItem('sessao_ativa');
+    const sessaoAtiva = sessaoAtivaStr ? JSON.parse(sessaoAtivaStr) : null;
+    const partidaEmAndamentoStr = localStorage.getItem('partida_em_andamento');
+    const partidaEmAndamento = partidaEmAndamentoStr ? JSON.parse(partidaEmAndamentoStr) : null;
+
+    const sessaoId = partidaEmAndamento?.sessaoId || sessaoAtiva?.id || null;
+    const partidaJogoId = partidaEmAndamento?.jogoId || null;
+
+    let jogosCount = 0;
+    let golsCount = 0;
+    let assistenciasCount = 0;
+
+    if (sessaoId) {
+      const jogosStr = localStorage.getItem(`jogos_${sessaoId}`);
+      const golsStr = localStorage.getItem(`gols_${sessaoId}`);
+      const assistenciasStr = localStorage.getItem(`assistencias_${sessaoId}`);
+
+      jogosCount = jogosStr ? JSON.parse(jogosStr).length : 0;
+      golsCount = golsStr ? JSON.parse(golsStr).length : 0;
+      assistenciasCount = assistenciasStr ? JSON.parse(assistenciasStr).length : 0;
+    }
+
     // Criar snapshot
     const snapshot = {
       tipo: 'partida',
       timestamp: new Date().toISOString(),
-      fila: filaAtiva
+      fila: filaAtiva,
+      sessao_id: sessaoId,
+      partida_jogo_id: partidaJogoId,
+      jogos_count: jogosCount,
+      gols_count: golsCount,
+      assistencias_count: assistenciasCount
     };
     
     // Salvar (sobrescreve snapshot anterior de partida)
     const key = `fila_snapshot_partida_${peladaId}`;
     localStorage.setItem(key, JSON.stringify(snapshot));
     
-    console.log('✅ Snapshot de partida salvo:', snapshot.timestamp);
+    console.log('✅ Snapshot de partida salvo:', {
+      timestamp: snapshot.timestamp,
+      sessao_id: snapshot.sessao_id,
+      partida_jogo_id: snapshot.partida_jogo_id,
+      jogos_count: snapshot.jogos_count,
+      gols_count: snapshot.gols_count,
+      assistencias_count: snapshot.assistencias_count,
+    });
     return true;
     
   } catch (error) {
@@ -944,6 +979,73 @@ export const fila_snapshot_restaurar = (peladaId: string, tipo: 'edicao' | 'part
     // Restaurar fila
     localStorage.setItem('fila_ativa', JSON.stringify(snapshot.fila));
     console.log('✅ [RESTAURAR] fila_ativa atualizada');
+
+    // Ao restaurar snapshot de PARTIDA, também desfaz jogo/gols/assistências da última partida
+    if (tipo === 'partida') {
+      try {
+        const sessaoAtivaStr = localStorage.getItem('sessao_ativa');
+        const sessaoAtiva = sessaoAtivaStr ? JSON.parse(sessaoAtivaStr) : null;
+        const sessaoId = snapshot.sessao_id || sessaoAtiva?.id;
+
+        if (sessaoId) {
+          const jogosKey = `jogos_${sessaoId}`;
+          const golsKey = `gols_${sessaoId}`;
+          const assistenciasKey = `assistencias_${sessaoId}`;
+
+          const jogosStr = localStorage.getItem(jogosKey);
+          const golsStr = localStorage.getItem(golsKey);
+          const assistenciasStr = localStorage.getItem(assistenciasKey);
+
+          let jogos = jogosStr ? JSON.parse(jogosStr) : [];
+          let gols = golsStr ? JSON.parse(golsStr) : [];
+          let assistencias = assistenciasStr ? JSON.parse(assistenciasStr) : [];
+
+          const jogoId = snapshot.partida_jogo_id;
+          let removeuJogoPorId = false;
+
+          if (jogoId) {
+            const totalJogosAntes = jogos.length;
+            jogos = jogos.filter((j: any) => j.id !== jogoId);
+            removeuJogoPorId = jogos.length < totalJogosAntes;
+
+            if (removeuJogoPorId) {
+              const totalGolsAntes = gols.length;
+              const totalAssistAntes = assistencias.length;
+
+              gols = gols.filter((g: any) => g.jogo_id !== jogoId);
+              assistencias = assistencias.filter((a: any) => a.jogo_id !== jogoId);
+
+              console.log('🗑️ [RESTAURAR] Estatísticas removidas por jogo_id:', {
+                jogo_id: jogoId,
+                jogos_removidos: totalJogosAntes - jogos.length,
+                gols_removidos: totalGolsAntes - gols.length,
+                assistencias_removidas: totalAssistAntes - assistencias.length,
+              });
+            }
+          }
+
+          // Fallback para snapshots antigos ou casos sem jogo_id: restaura contagem mínima conhecida
+          if (!removeuJogoPorId) {
+            if (typeof snapshot.jogos_count === 'number' && jogos.length > snapshot.jogos_count) {
+              jogos = jogos.slice(0, snapshot.jogos_count);
+            }
+            if (typeof snapshot.gols_count === 'number' && gols.length > snapshot.gols_count) {
+              gols = gols.slice(0, snapshot.gols_count);
+            }
+            if (typeof snapshot.assistencias_count === 'number' && assistencias.length > snapshot.assistencias_count) {
+              assistencias = assistencias.slice(0, snapshot.assistencias_count);
+            }
+            console.log('🧹 [RESTAURAR] Fallback de contagem aplicado para snapshot de partida');
+          }
+
+          localStorage.setItem(jogosKey, JSON.stringify(jogos));
+          localStorage.setItem(golsKey, JSON.stringify(gols));
+          localStorage.setItem(assistenciasKey, JSON.stringify(assistencias));
+        }
+      } catch (statsError) {
+        console.error('❌ [RESTAURAR] Erro ao desfazer estatísticas da partida:', statsError);
+      }
+    }
     
     // SEMPRE apagar snapshot após restaurar (tanto edição quanto partida)
     // Isso libera o próximo snapshot na fila de desfazer

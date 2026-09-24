@@ -6,9 +6,6 @@ export interface Credenciais {
   pelada_id: string;
   username: string;
   senha: string; // armazenado como hash SHA-256, nunca em plaintext
-  plano: string;
-  supabase_url: string | null;
-  supabase_anon_key: string | null;
   is_master?: boolean;
 }
 
@@ -76,31 +73,6 @@ export const estaLogado = (): boolean => {
 };
 
 /**
- * Verificar se tem acesso a banco dedicado
- */
-export const temBancoDedicado = (): boolean => {
-  const credenciais = obterCredenciais();
-  return credenciais?.supabase_url !== null && credenciais?.supabase_anon_key !== null;
-};
-
-/**
- * Obter plano do usuário
- */
-export const obterPlano = (): string | null => {
-  const credenciais = obterCredenciais();
-  return credenciais?.plano || null;
-};
-
-/**
- * Função mestre: Buscar plano das credenciais locais
- * Retorna o plano em lowercase: 'free', 'gold', 'premium'
- */
-export const buscar_plano = (): string => {
-  const credenciais = obterCredenciais();
-  return credenciais?.plano?.toLowerCase() || 'free';
-};
-
-/**
  * Função mestre: Buscar pelada_id das credenciais locais
  */
 export const buscar_pelada_id = (): string | null => {
@@ -140,42 +112,4 @@ export const buscar_senha = (): string | null => {
   return credenciais?.senha || null;
 };
 
-/**
- * Função mestre: Buscar supabase_url das credenciais locais
- */
-export const buscar_supabase_url = (): string | null => {
-  const credenciais = obterCredenciais();
-  return credenciais?.supabase_url || null;
-};
-
-/**
- * Função mestre: Buscar supabase_anon_key das credenciais locais
- */
-export const buscar_supabase_anon_key = (): string | null => {
-  const credenciais = obterCredenciais();
-  return credenciais?.supabase_anon_key || null;
-};
-
-/**
- * Verificar se o plano é Premium
- */
-export const ehPremium = (): boolean => {
-  const plano = buscar_plano();
-  return plano === 'premium';
-};
-
-/**
- * Verificar se o plano é Gold ou superior
- */
-export const ehGoldOuSuperior = (): boolean => {
-  const plano = buscar_plano();
-  return plano === 'gold' || plano === 'premium';
-};
-
-/**
- * Verificar se o plano é Free
- */
-export const ehFree = (): boolean => {
-  const plano = buscar_plano();
-  return plano === 'free';
-};
+// Controle funcional por acesso de cliente e modo de sincronização.

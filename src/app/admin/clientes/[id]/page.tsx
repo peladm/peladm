@@ -2,14 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
 import { validarAcessoMaster } from '../../../../lib/adminAuth';
-import { obterCredenciais } from '../../../../lib/credenciais';
-
-const supabase = createClient(
-  'https://ewcswczqvelhlwpbraea.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks'
-);
+import { hashSenha, obterCredenciais } from '../../../../lib/credenciais';
 
 export default function DashboardCliente() {
   const router = useRouter();
@@ -17,14 +11,13 @@ export default function DashboardCliente() {
   const clienteId = params.id as string;
 
   const [loading, setLoading] = useState(true);
-  const [loadingUsage, setLoadingUsage] = useState(false);
-  const [showTableDetails, setShowTableDetails] = useState(false);
   const [editandoFinanceiro, setEditandoFinanceiro] = useState(false);
   const [valorPlano, setValorPlano] = useState('');
   const [dataVencimento, setDataVencimento] = useState('');
+  const [acessoPeladaTradicional, setAcessoPeladaTradicional] = useState(true);
+  const [acessoModoTorneio, setAcessoModoTorneio] = useState(false);
+  const [salvandoAcessos, setSalvandoAcessos] = useState(false);
   const [cliente, setCliente] = useState<any>(null);
-  const [usageData, setUsageData] = useState<any>(null);
-  const [totalDatabaseSize, setTotalDatabaseSize] = useState<string>('');
   
   // Estados dos modais individuais
   const [modalVencimento, setModalVencimento] = useState(false);
@@ -39,6 +32,13 @@ export default function DashboardCliente() {
   const [dadosBoasVindas, setDadosBoasVindas] = useState({ mensagemAdicional: '' });
   const [dadosPagamento, setDadosPagamento] = useState({ novaDataVencimento: '', observacao: '' });
   const [dadosAtraso, setDadosAtraso] = useState({ diasAtraso: '', consequencia: '' });
+  const [showModalConfirmarPagamento, setShowModalConfirmarPagamento] = useState(false);
+  const [mesesPagamento, setMesesPagamento] = useState<number>(1);
+  const [showModalExclusao, setShowModalExclusao] = useState(false);
+  const [tipoExclusao, setTipoExclusao] = useState<'imediata' | 'agendada'>('imediata');
+  const [dataRemocaoProgramada, setDataRemocaoProgramada] = useState('');
+  const [senhaConfirmacao, setSenhaConfirmacao] = useState('');
+  const [processandoExclusao, setProcessandoExclusao] = useState(false);
 
   useEffect(() => {
     const validarECarregar = async () => {
@@ -86,12 +86,11 @@ export default function DashboardCliente() {
       console.log('📦 Dados retornados:', data.cliente);
 
       setCliente(data.cliente);
+      setAcessoPeladaTradicional(data.cliente?.acesso_pelada_tradicional ?? true);
+      setAcessoModoTorneio(data.cliente?.acesso_modo_torneio ?? false);
       console.log('✅ Cliente salvo no state:', data.cliente);
 
       // Não buscar automaticamente ao carregar - usuário clica no refresh
-      // if (data.plano === 'Gold' || data.plano === 'Premium') {
-      //   buscarUsoSupabase(data);
-      // }
     } catch (error) {
       console.error('💥 Erro ao carregar:', error);
       alert('Erro ao carregar cliente!');
@@ -100,122 +99,6 @@ export default function DashboardCliente() {
       setLoading(false);
     }
   };
-
-  const buscarUsoSupabase = async (clienteData?: any) => {
-    const dadosCliente = clienteData || cliente;
-    
-    console.log('🔍 =================================');
-    console.log('🔍 BUSCANDO USO DO BANCO DE DADOS');
-    console.log('🔍 =================================');
-    console.log('📦 clienteData passado:', clienteData);
-    console.log('📦 cliente do state:', cliente);
-    console.log('📦 dadosCliente final:', dadosCliente);
-    
-    if (!dadosCliente) {
-      console.error('❌ dadosCliente está undefined!');
-      alert('Erro: dados do cliente não carregados. Recarregue a página.');
-      return;
-    }
-
-    setLoadingUsage(true);
-    try {
-      console.log('📋 Cliente:', dadosCliente?.nome);
-      console.log('📋 Plano:', dadosCliente?.plano);
-      console.log('🔑 supabase_url presente?', !!dadosCliente?.supabase_url);
-      console.log('🔑 supabase_anon_key presente?', !!dadosCliente?.supabase_anon_key);
-      
-      const { createClient } = await import('@supabase/supabase-js');
-      
-      // Se tiver banco dedicado, usa ele. Senão usa o principal
-      const usaBancoDedicado = !!(dadosCliente?.supabase_url && dadosCliente?.supabase_anon_key);
-      const clienteSupabase = usaBancoDedicado
-        ? createClient(dadosCliente.supabase_url, dadosCliente.supabase_anon_key)
-        : supabase; // Banco principal
-
-      console.log('🗄️ Usa banco dedicado?', usaBancoDedicado);
-      if (usaBancoDedicado) {
-        console.log('🌐 URL do banco dedicado:', dadosCliente?.supabase_url);
-        console.log('🔑 Anon Key (primeiros 20):', dadosCliente?.supabase_anon_key?.substring(0, 20) + '...');
-      } else {
-        console.log('🌐 Usando banco PRINCIPAL (padrão)');
-      }
-      console.log('🔍 =================================');
-
-      console.log('🔍 Buscando dados do banco...');
-
-      // Buscar tamanho TOTAL do banco
-      console.log('📊 Tentando chamar get_database_total_size()...');
-      const { data: totalSizeData, error: totalSizeError } = await clienteSupabase
-        .rpc('get_database_total_size');
-
-      if (totalSizeError) {
-        console.error('❌ Erro ao buscar tamanho total:', totalSizeError);
-        // Se a função não existe, não lançar erro, apenas não mostrar
-        if (totalSizeError.message.includes('does not exist')) {
-          console.warn('⚠️ Função get_database_total_size() não existe. Execute o SQL de setup.');
-          setTotalDatabaseSize('Funções não configuradas');
-        } else {
-          throw new Error(`Função get_database_total_size() falhou: ${totalSizeError.message}`);
-        }
-      } else if (totalSizeData && totalSizeData.length > 0) {
-        setTotalDatabaseSize(totalSizeData[0].total_size_formatted);
-        console.log('✅ Tamanho total do banco:', totalSizeData[0].total_size_formatted);
-      }
-
-      // Buscar detalhamento por tabela
-      console.log('📊 Tentando chamar get_tables_size()...');
-      const { data: tableSizeData, error: rpcError } = await clienteSupabase
-        .rpc('get_tables_size');
-
-      if (rpcError) {
-        console.error('❌ Erro ao buscar tamanho das tabelas:', rpcError);
-        
-        // Se a função não existe, sugerir ao usuário que execute o SQL
-        if (rpcError.message.includes('does not exist')) {
-          console.warn('⚠️ Função get_tables_size() não existe. Execute o SQL de setup.');
-          alert(
-            '⚠️ As funções de monitoramento de banco não foram configuradas.\n\n' +
-            'Para habilitar, execute o SQL em: SETUP-FUNCOES-RPC.sql\n\n' +
-            'No Supabase SQL Editor de cada cliente, copie e cole o conteúdo do arquivo.'
-          );
-          setUsageData(null);
-        } else {
-          throw new Error(`Função get_tables_size() falhou: ${rpcError.message}`);
-        }
-      } else if (tableSizeData && tableSizeData.length > 0) {
-        const usageInfo = tableSizeData.map((table: any) => {
-          const totalSize = parseInt(table.total_size) || 0;
-          const rowCount = parseInt(table.row_count) || 0;
-          const tableName = table.tablename.replace('public.', '');
-
-          const size = totalSize > 1024 * 1024
-            ? `${(totalSize / (1024 * 1024)).toFixed(2)} MB`
-            : totalSize > 1024
-            ? `${(totalSize / 1024).toFixed(2)} KB`
-            : `${totalSize} bytes`;
-
-          return {
-            tablename: tableName,
-            size: `${rowCount} reg (${size})`,
-            size_bytes: totalSize,
-            row_count: rowCount
-          };
-        });
-
-        setUsageData(usageInfo);
-        console.log('✅ Tamanho por tabela obtido com sucesso');
-      } else {
-        setUsageData(null);
-      }
-    } catch (error: any) {
-      console.error('Erro:', error);
-      alert(`Erro: ${error.message}`);
-    } finally {
-      setLoadingUsage(false);
-    }
-  };
-
-
 
   const formatarDataUsuario = (dataISO: string) => {
     if (!dataISO) return 'N/A';
@@ -250,6 +133,8 @@ export default function DashboardCliente() {
     return `${dia}/${mes}/${ano}`;
   };
 
+  const dataHojeInput = () => new Date().toISOString().split('T')[0];
+
   const formatarUltimoAcesso = () => {
     if (!cliente?.last_access) return 'Nunca';
     
@@ -267,15 +152,6 @@ export default function DashboardCliente() {
     return `A ${diffDias} dia${diffDias > 1 ? 's' : ''}`;
   };
 
-  const getPlanColor = (plano: string) => {
-    switch (plano?.toLowerCase()) {
-      case 'free': return 'bg-gray-100 text-gray-800 border-gray-300';
-      case 'gold': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'premium': return 'bg-purple-100 text-purple-800 border-purple-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
-    }
-  };
-
   const abrirWhatsApp = (mensagem: string) => {
     if (!cliente?.telefone) {
       alert('Cliente não tem telefone cadastrado!');
@@ -288,22 +164,228 @@ export default function DashboardCliente() {
 
   const salvarDadosFinanceiros = async () => {
     try {
-      const { error } = await supabase
-        .from('clientes')
-        .update({
-          valor_plano: parseFloat(valorPlano) || 0,
-          data_vencimento: dataVencimento || null
-        })
-        .eq('pelada_id', clienteId);
+      const credenciais = obterCredenciais();
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        alert('Credenciais inválidas. Faça login novamente.');
+        router.push('/login');
+        return;
+      }
 
-      if (error) throw error;
+      const response = await fetch('/api/admin/clientes/financeiro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          clienteId,
+          acao: 'atualizar',
+          valor_plano: parseFloat(valorPlano) || 0,
+          data_vencimento: dataVencimento || null,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Falha ao salvar dados financeiros');
+      }
       
       alert('Dados financeiros atualizados com sucesso!');
       setEditandoFinanceiro(false);
       await carregarCliente();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      alert('Erro ao salvar dados financeiros!');
+      alert(`Erro ao salvar dados financeiros: ${error.message || error}`);
+    }
+  };
+
+  const salvarAcessosCliente = async () => {
+    try {
+      const credenciais = obterCredenciais();
+
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        alert('Credenciais inválidas. Faça login novamente.');
+        router.push('/login');
+        return;
+      }
+
+      setSalvandoAcessos(true);
+
+      const response = await fetch('/api/admin/clientes/acesso', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          clienteId,
+          acesso_pelada_tradicional: acessoPeladaTradicional,
+          acesso_modo_torneio: acessoModoTorneio,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao salvar acessos');
+      }
+
+      setCliente((prev: any) => ({
+        ...prev,
+        acesso_pelada_tradicional: data.cliente?.acesso_pelada_tradicional ?? acessoPeladaTradicional,
+        acesso_modo_torneio: data.cliente?.acesso_modo_torneio ?? acessoModoTorneio,
+      }));
+
+      alert('Acessos atualizados com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao salvar acessos:', error);
+      alert(`Erro ao salvar acessos: ${error.message || 'falha desconhecida'}`);
+    } finally {
+      setSalvandoAcessos(false);
+    }
+  };
+
+  const atualizarStatusCliente = async (novoStatus: 'ativo' | 'bloqueado') => {
+    try {
+      const credenciais = obterCredenciais();
+
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        alert('Credenciais inválidas. Faça login novamente.');
+        router.push('/login');
+        return false;
+      }
+
+      const response = await fetch('/api/admin/clientes/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          clienteId,
+          novoStatus,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao atualizar status');
+      }
+
+      await carregarCliente();
+      return true;
+    } catch (error: any) {
+      console.error('Erro ao atualizar status do cliente:', error);
+      alert(`Erro ao atualizar status: ${error.message || 'falha desconhecida'}`);
+      return false;
+    }
+  };
+
+  const abrirModalExclusao = () => {
+    setTipoExclusao(cliente?.status === 'excluido' ? 'agendada' : 'imediata');
+    setDataRemocaoProgramada(cliente?.data_remocao_programada || dataHojeInput());
+    setSenhaConfirmacao('');
+    setShowModalExclusao(true);
+  };
+
+  const statusAtualCliente = String(cliente?.status || 'ativo').toLowerCase();
+  const acaoStatusPrimaria = statusAtualCliente === 'bloqueado' ? 'ativar' : 'bloquear';
+
+  const executarExclusaoPerfil = async () => {
+    if (tipoExclusao === 'agendada' && !dataRemocaoProgramada) {
+      alert('Informe a data de remoção.');
+      return;
+    }
+
+    if (!senhaConfirmacao.trim()) {
+      alert('Digite a senha de confirmação.');
+      return;
+    }
+
+    try {
+      const credenciais = obterCredenciais();
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        alert('Credenciais inválidas. Faça login novamente.');
+        router.push('/login');
+        return;
+      }
+
+      const senhaConfirmacaoHash = await hashSenha(senhaConfirmacao);
+
+      setProcessandoExclusao(true);
+
+      const response = await fetch('/api/admin/clientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          senha_confirmacao_hash: senhaConfirmacaoHash,
+          clienteId,
+          acao: tipoExclusao === 'imediata' ? 'remover_imediatamente' : 'programar_exclusao',
+          dataRemocao: tipoExclusao === 'agendada' ? dataRemocaoProgramada : null,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Falha ao processar exclusão');
+      }
+
+      setShowModalExclusao(false);
+
+      if (tipoExclusao === 'imediata') {
+        alert('Perfil e dados vinculados removidos com sucesso.');
+        router.push('/admin/clientes');
+        return;
+      }
+
+      alert('Exclusão programada com sucesso.');
+      setSenhaConfirmacao('');
+      await carregarCliente();
+    } catch (error: any) {
+      console.error('Erro ao excluir perfil:', error);
+      alert(`Erro ao excluir perfil: ${error.message || error}`);
+    } finally {
+      setProcessandoExclusao(false);
+    }
+  };
+
+  const cancelarExclusaoProgramada = async () => {
+    try {
+      const credenciais = obterCredenciais();
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        alert('Credenciais inválidas. Faça login novamente.');
+        router.push('/login');
+        return;
+      }
+
+      setProcessandoExclusao(true);
+
+      const response = await fetch('/api/admin/clientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          clienteId,
+          acao: 'cancelar_exclusao',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Falha ao cancelar exclusão');
+      }
+
+      alert('Exclusão programada cancelada.');
+      await carregarCliente();
+    } catch (error: any) {
+      console.error('Erro ao cancelar exclusão:', error);
+      alert(`Erro ao cancelar exclusão: ${error.message || error}`);
+    } finally {
+      setProcessandoExclusao(false);
     }
   };
 
@@ -313,25 +395,58 @@ export default function DashboardCliente() {
       return;
     }
 
-    if (confirm('Confirmar pagamento e renovar para o próximo mês?')) {
-      try {
-        const dataAtual = new Date(cliente.data_vencimento + 'T00:00:00');
-        dataAtual.setMonth(dataAtual.getMonth() + 1);
-        const novaData = dataAtual.toISOString().split('T')[0];
+    setMesesPagamento(1);
+    setShowModalConfirmarPagamento(true);
+  };
 
-        const { error } = await supabase
-          .from('clientes')
-          .update({ data_vencimento: novaData })
-          .eq('pelada_id', clienteId);
+  const confirmarPagamentoComMeses = async () => {
+    if (!cliente?.data_vencimento) {
+      alert('Defina uma data de vencimento primeiro!');
+      return;
+    }
 
-        if (error) throw error;
+    if (!mesesPagamento || mesesPagamento < 1) {
+      alert('Informe ao menos 1 mês.');
+      return;
+    }
 
-        alert('Pagamento confirmado! Vencimento renovado para ' + new Date(novaData + 'T00:00:00').toLocaleDateString('pt-BR'));
-        await carregarCliente();
-      } catch (error) {
-        console.error('Erro:', error);
-        alert('Erro ao confirmar pagamento!');
+    try {
+      const credenciais = obterCredenciais();
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        alert('Credenciais inválidas. Faça login novamente.');
+        router.push('/login');
+        return;
       }
+
+      const response = await fetch('/api/admin/clientes/financeiro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          clienteId,
+          acao: 'confirmar_pagamento',
+          meses: mesesPagamento,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Falha ao confirmar pagamento');
+      }
+
+      const novaData = data.novaData;
+
+      setShowModalConfirmarPagamento(false);
+      alert(
+        `Pagamento confirmado! Vencimento renovado por ${mesesPagamento} ${mesesPagamento > 1 ? 'meses' : 'mês'} para ` +
+        new Date(novaData + 'T00:00:00').toLocaleDateString('pt-BR')
+      );
+      await carregarCliente();
+    } catch (error: any) {
+      console.error('Erro:', error);
+      alert(`Erro ao confirmar pagamento: ${error.message || error}`);
     }
   };
 
@@ -368,7 +483,7 @@ export default function DashboardCliente() {
       alert('Informe quantos dias restam!');
       return;
     }
-    const mensagem = `Olá ${cliente.nome}! 🔔\n\nSeu plano vence em ${dadosVencimento.diasRestantes} dias.\n\nPara evitar o bloqueio do acesso, faça a renovação o quanto antes. Qualquer dúvida, estamos à disposição!`;
+    const mensagem = `Olá ${cliente.nome}! 🔔\n\nSeu acesso vence em ${dadosVencimento.diasRestantes} dias.\n\nPara evitar o bloqueio do acesso, faça a renovação o quanto antes. Qualquer dúvida, estamos à disposição!`;
     abrirWhatsApp(mensagem);
     setModalVencimento(false);
     setDadosVencimento({ diasRestantes: '' });
@@ -480,9 +595,13 @@ export default function DashboardCliente() {
               <span className="text-sm font-bold text-gray-800">{cliente.telefone || 'Não informado'}</span>
             </div>
 
-            <div className={`p-2.5 rounded-lg border ${getPlanColor(cliente.plano)}`}>
-              <span className="text-xs opacity-75 block mb-0.5">Plano:</span>
-              <span className="text-sm font-bold">{cliente.plano || 'Free'}</span>
+            <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200">
+              <span className="text-xs text-gray-600 block mb-0.5">Acessos:</span>
+              <span className="text-sm font-bold text-emerald-700">
+                {cliente.acesso_pelada_tradicional !== false ? 'Tradicional' : 'Sem Tradicional'}
+                {' | '}
+                {cliente.acesso_modo_torneio === true ? 'Torneio' : 'Sem Torneio'}
+              </span>
             </div>
 
             <div className="p-2.5 bg-cyan-50 rounded-lg border border-cyan-200">
@@ -538,99 +657,15 @@ export default function DashboardCliente() {
           </div>
         </div>
 
-        {/* Uso do Supabase */}
-        {(cliente.plano === 'Gold' || cliente.plano === 'Premium') && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">💾 Banco de Dados</h2>
-                {!cliente.supabase_url && !cliente.supabase_anon_key && (
-                  <p className="text-xs text-gray-500 mt-1">🏢 Usando banco compartilhado</p>
-                )}
-              </div>
-              <button
-                onClick={() => {
-                  console.log('🔘 Botão clicado! Cliente no state:', cliente);
-                  if (!cliente || !cliente.pelada_id) {
-                    alert('Aguarde o carregamento dos dados do cliente...');
-                    return;
-                  }
-                  buscarUsoSupabase();
-                }}
-                disabled={loadingUsage || !cliente}
-                className="text-2xl hover:scale-110 disabled:opacity-50 transition-all"
-                title="Atualizar dados"
-              >
-                {loadingUsage ? '⏳' : '🔄'}
-              </button>
-            </div>
-
-            {loadingUsage && !usageData ? (
-              <div className="text-center py-8 text-gray-500">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-2"></div>
-                <p className="text-sm">Carregando dados do banco...</p>
-              </div>
-            ) : usageData ? (
-              <div className="space-y-3">
-                {/* BANCO TOTAL */}
-                {totalDatabaseSize && (
-                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg border-2 border-purple-300">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-gray-800 text-base">🗄️ Banco Total</span>
-                      <span className="font-bold text-purple-700 text-2xl">{totalDatabaseSize}</span>
-                    </div>
-                  </div>
-                )}
-                
-                {/* TABELAS (clicável para expandir) */}
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-2 border-green-200">
-                  <div 
-                    onClick={() => setShowTableDetails(!showTableDetails)}
-                    className="flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity"
-                  >
-                    <span className="font-bold text-gray-800 text-base flex items-center space-x-2">
-                      <span>📊 Tabelas</span>
-                      <span className="text-xs text-gray-500">
-                        {showTableDetails ? '▼' : '▶'}
-                      </span>
-                    </span>
-                    <span className="font-bold text-green-700 text-xl">
-                      {usageData.reduce((acc: number, t: any) => acc + (t.size_bytes || 0), 0) > 1024 * 1024
-                        ? `${(usageData.reduce((acc: number, t: any) => acc + (t.size_bytes || 0), 0) / (1024 * 1024)).toFixed(2)} MB`
-                        : `${(usageData.reduce((acc: number, t: any) => acc + (t.size_bytes || 0), 0) / 1024).toFixed(2)} KB`}
-                    </span>
-                  </div>
-
-                  {/* Lista detalhada (recolhível) */}
-                  {showTableDetails && (
-                    <div className="mt-3 space-y-1.5">
-                      {usageData.map((table: any, index: number) => (
-                        <div key={index} className="bg-white px-3 py-2 rounded flex items-center justify-between">
-                          <span className="text-sm text-gray-700">📁 {table.tablename}</span>
-                          <span className="text-xs text-gray-600 font-mono">{table.size}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p className="text-sm">Clique em 🔄 para carregar os dados</p>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Controle Financeiro */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-lg font-bold text-gray-800 flex items-center space-x-2">
                 <span>💰</span>
-                <span>Controle Financeiro</span>
+                <span>Controle Financeiro e Status</span>
               </h2>
-              <p className="text-sm text-gray-500 mt-1">Gerencie valores e vencimentos</p>
+              <p className="text-sm text-gray-500 mt-1">Gerencie valores, vencimentos e bloqueio do cliente</p>
             </div>
             {!editandoFinanceiro && (
               <button
@@ -650,7 +685,7 @@ export default function DashboardCliente() {
           {editandoFinanceiro ? (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Valor do Plano (R$)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Valor do acesso (R$)</label>
                 <input
                   type="number"
                   step="0.01"
@@ -688,7 +723,7 @@ export default function DashboardCliente() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-2 border-green-200">
-                  <div className="text-sm text-gray-600 mb-1">Valor do Plano</div>
+                  <div className="text-sm text-gray-600 mb-1">Valor do acesso</div>
                   <div className="text-2xl font-bold text-green-700">
                     R$ {(cliente.valor_plano || 0).toFixed(2).replace('.', ',')}
                   </div>
@@ -714,86 +749,95 @@ export default function DashboardCliente() {
               )}
             </div>
           )}
+
+          <div className="mt-6 pt-5 border-t border-gray-200">
+            <div className="mb-4">
+              <h3 className="text-base font-bold text-gray-800 mb-1">Status do Cliente</h3>
+              <p className="text-sm text-gray-500">Controle de acesso ao sistema</p>
+            </div>
+
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <div className="mb-3">
+                <button
+                  onClick={async () => {
+                    const novoStatus = acaoStatusPrimaria === 'ativar' ? 'ativo' : 'bloqueado';
+                    const mensagemConfirmacao = acaoStatusPrimaria === 'ativar'
+                      ? 'Deseja ATIVAR este cliente?'
+                      : 'Deseja BLOQUEAR este cliente?';
+
+                    if (!confirm(mensagemConfirmacao)) return;
+
+                    const ok = await atualizarStatusCliente(novoStatus);
+                    if (ok) {
+                      alert(acaoStatusPrimaria === 'ativar' ? 'Cliente ativado!' : 'Cliente bloqueado!');
+                    }
+                  }}
+                  className={`w-full px-4 py-3 rounded-lg font-bold transition-colors text-white ${acaoStatusPrimaria === 'ativar' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                >
+                  {acaoStatusPrimaria === 'ativar' ? 'ATIVAR' : 'BLOQUEAR'}
+                </button>
+              </div>
+
+              <div className={`mt-3 px-3 py-2 rounded-md text-sm font-medium ${
+                cliente.status === 'ativo'
+                  ? 'bg-green-50 text-green-800 border border-green-200'
+                  : cliente.status === 'bloqueado'
+                  ? 'bg-red-50 text-red-800 border border-red-200'
+                  : cliente.status === 'excluido'
+                  ? 'bg-gray-900 text-white border border-gray-700'
+                  : 'bg-gray-100 text-gray-700 border border-gray-300'
+              }`}>
+                <span className="font-bold">Status atual:</span>{' '}
+                {cliente.status === 'ativo' && '✅ Cliente com acesso liberado'}
+                {cliente.status === 'bloqueado' && '🚫 Cliente bloqueado (acesso negado)'}
+                {cliente.status === 'excluido' && '🗑️ Cliente com exclusão programada'}
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Status */}
+        {/* Controle de Acesso */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-start justify-between mb-5">
             <div>
-              <h2 className="text-lg font-bold text-gray-800 mb-1">Status do Cliente</h2>
-              <p className="text-sm text-gray-500">Controle de acesso ao sistema</p>
+              <h2 className="text-lg font-bold text-gray-800 mb-1">Controle de Acesso por Modo</h2>
+              <p className="text-sm text-gray-500">Escolha quais modos este cliente pode usar</p>
             </div>
-            {cliente.is_master && (
-              <div className="px-4 py-1.5 rounded-lg font-medium bg-gradient-to-r from-purple-100 to-pink-100 text-purple-800 border border-purple-300 flex items-center space-x-1.5">
-                <span>👑</span>
-                <span className="text-sm font-bold">Usuário Master</span>
-              </div>
-            )}
+            <button
+              onClick={salvarAcessosCliente}
+              disabled={salvandoAcessos}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-2.5 rounded-lg font-semibold transition-colors"
+            >
+              {salvandoAcessos ? 'Salvando...' : 'Salvar Acessos'}
+            </button>
           </div>
-          
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <div className="flex items-center gap-6 mb-3">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="status-ativo"
-                  checked={cliente.status === 'ativo'}
-                  onChange={async (e) => {
-                    const novoStatus = e.target.checked ? 'ativo' : 'inativo';
-                    if (confirm(`Deseja ${novoStatus === 'ativo' ? 'ATIVAR' : 'INATIVAR'} este cliente?`)) {
-                      try {
-                        await supabase.from('clientes').update({ status: novoStatus }).eq('pelada_id', clienteId);
-                        alert(`Cliente ${novoStatus === 'ativo' ? 'ativado' : 'inativado'}!`);
-                        await carregarCliente();
-                      } catch (error) {
-                        alert('Erro ao alterar status!');
-                      }
-                    }
-                  }}
-                  className="mr-2.5 w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer"
-                />
-                <label htmlFor="status-ativo" className="text-sm font-semibold text-green-700 cursor-pointer select-none">
-                  ✅ Ativo
-                </label>
-              </div>
 
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="status-bloqueado"
-                  checked={cliente.status === 'bloqueado'}
-                  onChange={async (e) => {
-                    const novoStatus = e.target.checked ? 'bloqueado' : 'inativo';
-                    if (confirm(`Deseja ${novoStatus === 'bloqueado' ? 'BLOQUEAR' : 'desbloquear'} este cliente?`)) {
-                      try {
-                        await supabase.from('clientes').update({ status: novoStatus }).eq('pelada_id', clienteId);
-                        alert(`Cliente ${novoStatus === 'bloqueado' ? 'bloqueado' : 'desbloqueado'}!`);
-                        await carregarCliente();
-                      } catch (error) {
-                        alert('Erro ao alterar status!');
-                      }
-                    }
-                  }}
-                  className="mr-2.5 w-5 h-5 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer"
-                />
-                <label htmlFor="status-bloqueado" className="text-sm font-semibold text-red-700 cursor-pointer select-none">
-                  🚫 Bloqueado
-                </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={acessoPeladaTradicional}
+                onChange={(e) => setAcessoPeladaTradicional(e.target.checked)}
+                className="w-5 h-5"
+              />
+              <div>
+                <div className="font-semibold text-emerald-900">Pelada Tradicional</div>
+                <div className="text-xs text-emerald-700">Libera acesso às telas da pelada tradicional.</div>
               </div>
-            </div>
+            </label>
 
-            <div className={`mt-3 px-3 py-2 rounded-md text-sm font-medium ${
-              cliente.status === 'ativo' 
-                ? 'bg-green-50 text-green-800 border border-green-200'
-                : cliente.status === 'bloqueado'
-                ? 'bg-red-50 text-red-800 border border-red-200'
-                : 'bg-gray-100 text-gray-700 border border-gray-300'
-            }`}>
-              <span className="font-bold">Status atual:</span>{' '}
-              {cliente.status === 'ativo' && "✅ Cliente com acesso liberado"}
-              {cliente.status === 'inativo' && "⏸️ Cliente sem acesso (inativo)"}
-              {cliente.status === 'bloqueado' && "🚫 Cliente bloqueado (acesso negado)"}
-            </div>
+            <label className="flex items-center gap-3 bg-sky-50 border border-sky-200 rounded-xl p-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={acessoModoTorneio}
+                onChange={(e) => setAcessoModoTorneio(e.target.checked)}
+                className="w-5 h-5"
+              />
+              <div>
+                <div className="font-semibold text-sky-900">Modo Torneio</div>
+                <div className="text-xs text-sky-700">Permissão salva, mas o modo segue bloqueado para todos em desenvolvimento.</div>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -826,7 +870,144 @@ export default function DashboardCliente() {
             ))}
           </div>
         </div>
+
+        {cliente.is_master !== true && (
+          <div className="bg-white rounded-xl shadow-sm border border-red-200 p-6">
+            <button
+              onClick={abrirModalExclusao}
+              disabled={processandoExclusao}
+              className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+            >
+              Excluir Perfil
+            </button>
+
+            {cliente.status === 'excluido' && cliente.data_remocao_programada && (
+              <div className="flex flex-col sm:flex-row gap-3 mt-4">
+                <div className="flex-1 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800 font-medium">
+                  Perfil nos excluídos até {formatarDataUsuario(cliente.data_remocao_programada + 'T00:00:00')}
+                </div>
+                <button
+                  onClick={cancelarExclusaoProgramada}
+                  disabled={processandoExclusao}
+                  className="bg-white border border-gray-300 hover:bg-gray-50 disabled:opacity-60 text-gray-800 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancelar exclusão agendada
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Modal Confirmar Pagamento por Meses */}
+      {showModalConfirmarPagamento && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white p-5 rounded-t-2xl">
+              <h2 className="text-xl font-bold">✅ Confirmar Pagamento</h2>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-600">
+                Quantos meses deseja adicionar ao vencimento deste cliente?
+              </p>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Meses</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={mesesPagamento}
+                  onChange={(e) => setMesesPagamento(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowModalConfirmarPagamento(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarPagamentoComMeses}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showModalExclusao && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="bg-gradient-to-r from-red-600 to-rose-600 text-white p-5 rounded-t-2xl">
+              <h2 className="text-xl font-bold">Excluir perfil</h2>
+            </div>
+            <div className="p-5 space-y-4">
+              <label className="flex items-center gap-3 border border-gray-200 rounded-xl p-4 cursor-pointer">
+                <input
+                  type="radio"
+                  name="tipo-exclusao"
+                  checked={tipoExclusao === 'imediata'}
+                  onChange={() => setTipoExclusao('imediata')}
+                />
+                <span className="font-semibold text-gray-800">Remover o perfil imediatamente</span>
+              </label>
+
+              <label className="flex items-start gap-3 border border-gray-200 rounded-xl p-4 cursor-pointer">
+                <input
+                  type="radio"
+                  name="tipo-exclusao"
+                  className="mt-1"
+                  checked={tipoExclusao === 'agendada'}
+                  onChange={() => setTipoExclusao('agendada')}
+                />
+                <div className="flex-1 space-y-3">
+                  <span className="font-semibold text-gray-800 block">Programar remoção para</span>
+                  <input
+                    type="date"
+                    value={dataRemocaoProgramada}
+                    min={dataHojeInput()}
+                    onChange={(e) => setDataRemocaoProgramada(e.target.value)}
+                    disabled={tipoExclusao !== 'agendada'}
+                    className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
+                  />
+                </div>
+              </label>
+
+              <div>
+                <input
+                  type="password"
+                  value={senhaConfirmacao}
+                  onChange={(e) => setSenhaConfirmacao(e.target.value)}
+                  placeholder="Senha de confirmação"
+                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowModalExclusao(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={executarExclusaoPerfil}
+                  disabled={processandoExclusao}
+                  className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  {processandoExclusao ? 'Processando...' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Vencimento Próximo */}
       {modalVencimento && (
@@ -883,7 +1064,7 @@ export default function DashboardCliente() {
                   type="text"
                   value={dadosOferta.tipo}
                   onChange={(e) => setDadosOferta({ ...dadosOferta, tipo: e.target.value })}
-                  placeholder="Ex: Upgrade para Premium com desconto"
+                  placeholder="Ex: Renovação sem taxa de adesão"
                   className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                 />
               </div>

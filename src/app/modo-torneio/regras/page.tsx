@@ -14,15 +14,20 @@ import {
 } from '../../../lib/torneioLocalService';
 import { buscar_pelada_id } from '../../../lib/credenciais';
 import { MetodoChaveamento, obterLabelMetodo, obterDescricaoMetodo } from '../../../lib/bracketService';
+import {
+  NivelImportanciaTorneio,
+  TorneioCatalogo,
+  listarTorneiosCatalogo,
+  migrarTorneiosVinculadosLegado,
+} from '../../../lib/torneioVinculadoService';
 
-interface TorneioVinculadoItem {
-  id: string;
-  nome: string;
-  temporada?: string;
-  slug: string;
-  colocacaoCol: string;
-  premiacoesCol: string;
-}
+const ESTRELAS_IMPORTANCIA: Record<NivelImportanciaTorneio, string> = {
+  baixa_relevancia: '⭐',
+  intermediario: '⭐⭐',
+  alta_relevancia: '⭐⭐⭐',
+  o_torneio: '⭐⭐⭐⭐',
+  intertemporada_sem_classificacao: '⏸️',
+};
 
 const descricaoFormato: Record<FormatoCompeticao, string> = {
   grupos_mata_mata: 'Fase de grupos seguida de mata-mata.',
@@ -44,6 +49,12 @@ interface CriterioOrdenavel {
   enabled: boolean;
 }
 
+interface MetodoOpcaoUI {
+  metodo: MetodoChaveamento;
+  label: string;
+  descricao: string;
+}
+
 const CRITERIOS_BASE: CriterioOrdenavel[] = [
   { key: 'vitorias', label: 'Vitorias', enabled: true },
   { key: 'saldo_gols', label: 'Saldo de gols', enabled: true },
@@ -61,9 +72,11 @@ export default function RegrasModoTorneioPage() {
 
   const [nomeCompeticao, setNomeCompeticao] = useState('');
   const [usarTorneioVinculado, setUsarTorneioVinculado] = useState<'sim' | 'nao' | null>(null);
-  const [torneiosVinculados, setTorneiosVinculados] = useState<TorneioVinculadoItem[]>([]);
+  const [torneiosVinculados, setTorneiosVinculados] = useState<TorneioCatalogo[]>([]);
   const [torneioVinculadoSelecionado, setTorneioVinculadoSelecionado] = useState('');
-  const [temporadaCompeticao, setTemporadaCompeticao] = useState('2026');
+  const [temporadaCompeticao, setTemporadaCompeticao] = useState('');
+  const [minJogadoresParticipantesPorTime, setMinJogadoresParticipantesPorTime] = useState(5);
+  const [maxJogadoresParticipantesPorTime, setMaxJogadoresParticipantesPorTime] = useState(10);
   const [jogadoresPorTime, setJogadoresPorTime] = useState(5);
   const [quantidadeTimes, setQuantidadeTimes] = useState(6);
   const [incluirGoleiro, setIncluirGoleiro] = useState(false);
@@ -116,14 +129,13 @@ export default function RegrasModoTorneioPage() {
     setNomeCompeticao('');
     setUsarTorneioVinculado(null);
     setTorneioVinculadoSelecionado('');
-    setTemporadaCompeticao('2026');
+    setTemporadaCompeticao(`${new Date().getFullYear()}-01`);
 
     if (typeof window !== 'undefined') {
       const peladaId = buscar_pelada_id() || 'default';
       try {
-        const raw = localStorage.getItem(`torneios_vinculados_${peladaId}`);
-        const parsed = raw ? (JSON.parse(raw) as TorneioVinculadoItem[]) : [];
-        setTorneiosVinculados(Array.isArray(parsed) ? parsed : []);
+        migrarTorneiosVinculadosLegado(peladaId);
+        setTorneiosVinculados(listarTorneiosCatalogo(peladaId));
       } catch {
         setTorneiosVinculados([]);
       }
@@ -138,6 +150,68 @@ export default function RegrasModoTorneioPage() {
       setIdaVolta(false);
     }
   }, [router]);
+
+  const selectedVinculado = useMemo(
+    () => torneiosVinculados.find((item) => item.id === torneioVinculadoSelecionado),
+    [torneioVinculadoSelecionado, torneiosVinculados],
+  );
+
+  const proximaTemporadaAutomatica = useMemo(() => {
+    const anoAtual = new Date().getFullYear();
+
+    if (usarTorneioVinculado !== 'sim' || !selectedVinculado || typeof window === 'undefined') {
+      return `${anoAtual}-01`;
+    }
+
+    const peladaId = buscar_pelada_id() || 'default';
+    const prefix = `regras_competicao_${peladaId}_`;
+    let maiorSequencia = 0;
+
+    // Pendente para próxima etapa: trocar leitura local por busca em Supabase (fonte oficial).
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(prefix)) continue;
+
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+
+        const regra = JSON.parse(raw) as {
+          vinculado_torneio_slug?: string;
+          vinculado_torneio_nome?: string;
+          temporada_competicao?: string;
+        };
+
+        const mesmoTorneio =
+          regra.vinculado_torneio_slug === selectedVinculado.id ||
+          (regra.vinculado_torneio_nome || '').toLowerCase() === selectedVinculado.nome.toLowerCase();
+
+        if (!mesmoTorneio || !regra.temporada_competicao) continue;
+
+        const match = regra.temporada_competicao.match(/^(\d{4})-(\d{2})$/);
+        if (!match) continue;
+
+        const ano = Number(match[1]);
+        const sequencia = Number(match[2]);
+        if (ano === anoAtual && sequencia > maiorSequencia) {
+          maiorSequencia = sequencia;
+        }
+      } catch {
+        // Ignora entradas locais inválidas.
+      }
+    }
+
+    const proximaSequencia = String(maiorSequencia + 1).padStart(2, '0');
+    return `${anoAtual}-${proximaSequencia}`;
+  }, [selectedVinculado, usarTorneioVinculado]);
+
+  useEffect(() => {
+    if (usarTorneioVinculado === 'sim') {
+      setTemporadaCompeticao(proximaTemporadaAutomatica);
+      return;
+    }
+    setTemporadaCompeticao('');
+  }, [proximaTemporadaAutomatica, usarTorneioVinculado]);
 
   const aspectosPrincipais = useMemo(() => {
     const base = [
@@ -165,6 +239,9 @@ export default function RegrasModoTorneioPage() {
 
   const mostrarClassificados = formato === 'grupos_mata_mata';
   const mostrarMataMata = formato !== 'pontos_corridos';
+  const classificacaoLigaImpar = classificamLiga % 2 !== 0;
+  const deveMostrarRepescagemLiga = formato === 'pontos_corridos_mata_mata' && classificacaoLigaImpar;
+  const repescagemLigaObrigatoria = deveMostrarRepescagemLiga;
 
   // Grupos possíveis: mínimo 2 grupos, mínimo 3 times por grupo
   const gruposPossiveis = useMemo(() => {
@@ -183,6 +260,205 @@ export default function RegrasModoTorneioPage() {
   }, [gruposPossiveis]);
 
   const mostrarOpcaoResetCartoes = formato === 'grupos_mata_mata' || formato === 'pontos_corridos_mata_mata';
+
+  const descricaoRepescagemLiga = useMemo(() => {
+    if (!deveMostrarRepescagemLiga) return '';
+    return 'Repescagem Detectada/Necessária';
+  }, [classificamLiga, deveMostrarRepescagemLiga]);
+
+  const jogadoresNecessariosMin = useMemo(() => {
+    const base = minJogadoresParticipantesPorTime * quantidadeTimes;
+    const goleiros = incluirGoleiro ? quantidadeTimes : 0;
+    return base + goleiros;
+  }, [minJogadoresParticipantesPorTime, quantidadeTimes, incluirGoleiro]);
+
+  const jogadoresNecessariosMax = useMemo(() => {
+    const base = maxJogadoresParticipantesPorTime * quantidadeTimes;
+    const goleiros = incluirGoleiro ? quantidadeTimes : 0;
+    return base + goleiros;
+  }, [maxJogadoresParticipantesPorTime, quantidadeTimes, incluirGoleiro]);
+
+  const metodosChaveamentoDisponiveis = useMemo<MetodoOpcaoUI[]>(() => {
+    const padrao = (['aleatorio', 'cruzamento_grupos', 'melhor_vs_pior', 'classificacao_geral'] as MetodoChaveamento[])
+      .filter((m) => (formato === 'pontos_corridos_mata_mata' ? m !== 'cruzamento_grupos' : true))
+      .map((metodo) => ({
+        metodo,
+        label: obterLabelMetodo(metodo),
+        descricao: obterDescricaoMetodo(metodo),
+      }));
+
+    if (formato !== 'pontos_corridos_mata_mata') {
+      return padrao;
+    }
+
+    if (classificamLiga <= 2) {
+      return [{
+        metodo: 'melhor_vs_pior',
+        label: 'Final direta: 1º vs 2º',
+        descricao: 'Com 2 classificados existe apenas uma semifinal/final direta possível.',
+      }];
+    }
+
+    if (classificamLiga === 3) {
+      return [
+        {
+          metodo: 'classificacao_geral',
+          label: '1º finalista, semifinal 2º vs 3º',
+          descricao: 'Formato padrão: líder da liga espera na final e 2º enfrenta 3º.',
+        },
+        {
+          metodo: 'melhor_vs_pior',
+          label: '2º finalista, semifinal 1º vs 3º',
+          descricao: 'O 2º colocado vai direto para a final; 1º e 3º disputam a vaga.',
+        },
+        {
+          metodo: 'cruzamento_grupos',
+          label: '3º finalista, semifinal 1º vs 2º',
+          descricao: 'O 3º colocado vai direto para a final; 1º e 2º decidem a outra vaga.',
+        },
+        {
+          metodo: 'aleatorio',
+          label: 'Sorteio da ordem (finalista e semifinal)',
+          descricao: 'Sorteia quem avança direto e quais dois times fazem a semifinal.',
+        },
+      ];
+    }
+
+    if (classificamLiga === 4) {
+      return [
+        {
+          metodo: 'aleatorio',
+          label: 'Sorteio das semifinais',
+          descricao: 'Sorteia os dois confrontos de semifinal sem considerar posição na liga.',
+        },
+        {
+          metodo: 'melhor_vs_pior',
+          label: '1º vs 4º e 2º vs 3º',
+          descricao: 'Semifinal clássica por ranking: melhor contra pior e miolo entre si.',
+        },
+        {
+          metodo: 'cruzamento_grupos',
+          label: '1º vs 3º e 2º vs 4º',
+          descricao: 'Semifinal alternativa com cruzamento intermediário da classificação.',
+        },
+        {
+          metodo: 'classificacao_geral',
+          label: '1º vs 2º e 3º vs 4º',
+          descricao: 'Semifinal por blocos consecutivos da tabela de classificação.',
+        },
+      ];
+    }
+
+    if (classificamLiga === 5) {
+      return [
+        {
+          metodo: 'melhor_vs_pior',
+          label: 'Repescagem 4º vs 5º, semis 1º vs V e 2º vs 3º',
+          descricao: 'Repescagem elimina 1 time e completa a semifinal com vantagem ao líder.',
+        },
+        {
+          metodo: 'classificacao_geral',
+          label: 'Repescagem 1º vs 2º, semis 3º vs V e 4º vs 5º',
+          descricao: 'Modelo alternativo com repescagem entre líderes antes da semifinal.',
+        },
+        {
+          metodo: 'cruzamento_grupos',
+          label: 'Repescagem 3º vs 5º, semis 1º vs 4º e 2º vs V',
+          descricao: 'Repescagem no miolo da tabela e semifinal com cruzamento misto.',
+        },
+        {
+          metodo: 'aleatorio',
+          label: 'Sorteio completo (repescagem + semifinal)',
+          descricao: 'Sorteia tanto o jogo de repescagem quanto os lados da semifinal.',
+        },
+      ];
+    }
+
+    if (classificamLiga % 2 === 0) {
+      return [
+        {
+          metodo: 'aleatorio',
+          label: 'Sorteio',
+          descricao: `Sorteio livre dos confrontos para os ${classificamLiga} classificados.`,
+        },
+        {
+          metodo: 'melhor_vs_pior',
+          label: 'Melhor vs pior',
+          descricao: 'Primeiros colocados enfrentam os últimos colocados no chaveamento inicial.',
+        },
+        {
+          metodo: 'cruzamento_grupos',
+          label: 'Cruzamento alternado',
+          descricao: 'Cruza posições de forma alternada para equilibrar o lado da chave.',
+        },
+        {
+          metodo: 'classificacao_geral',
+          label: 'Classificação sequencial',
+          descricao: 'Pareamento sequencial na ordem da tabela de classificação da liga.',
+        },
+      ];
+    }
+
+    return [
+      {
+        metodo: 'aleatorio',
+        label: 'Sorteio com repescagem',
+        descricao: 'Sorteia quais equipes disputam a repescagem e como ficam os confrontos seguintes.',
+      },
+      {
+        metodo: 'melhor_vs_pior',
+        label: 'Repescagem dos últimos colocados',
+        descricao: `Repescagem entre ${classificamLiga - 1}º e ${classificamLiga}º; os melhores entram depois.`,
+      },
+      {
+        metodo: 'cruzamento_grupos',
+        label: 'Repescagem intermediária',
+        descricao: 'Repescagem com posições intermediárias para redistribuir vantagem de tabela.',
+      },
+      {
+        metodo: 'classificacao_geral',
+        label: 'Repescagem central da tabela',
+        descricao: 'Repescagem entre posições centrais e sequência por ordem de classificação.',
+      },
+    ];
+  }, [formato, classificamLiga]);
+
+  const metodoChaveamentoSelecionado = useMemo(
+    () => metodosChaveamentoDisponiveis.find((item) => item.metodo === metodoChaveamento),
+    [metodoChaveamento, metodosChaveamentoDisponiveis],
+  );
+
+  const repescagemLigaPosicoesSelecionadas = useMemo<number[] | undefined>(() => {
+    if (formato !== 'pontos_corridos_mata_mata' || !classificacaoLigaImpar) return undefined;
+
+    if (classificamLiga === 3) {
+      if (metodoChaveamento === 'melhor_vs_pior') return [1, 3];
+      if (metodoChaveamento === 'cruzamento_grupos') return [1, 2];
+      if (metodoChaveamento === 'aleatorio') return undefined;
+      return [2, 3];
+    }
+
+    if (classificamLiga === 5) {
+      if (metodoChaveamento === 'classificacao_geral') return [1, 2];
+      if (metodoChaveamento === 'cruzamento_grupos') return [3, 5];
+      if (metodoChaveamento === 'aleatorio') return undefined;
+      return [4, 5];
+    }
+
+    if (metodoChaveamento === 'aleatorio') return undefined;
+
+    if (metodoChaveamento === 'classificacao_geral') {
+      const meio = Math.floor(classificamLiga / 2);
+      return [meio, meio + 1];
+    }
+
+    if (metodoChaveamento === 'cruzamento_grupos') {
+      const meio = Math.floor(classificamLiga / 2);
+      return [Math.max(2, meio), classificamLiga];
+    }
+
+    return [classificamLiga - 1, classificamLiga];
+  }, [formato, classificacaoLigaImpar, classificamLiga, metodoChaveamento]);
 
   const timesPorGrupoAtual = useMemo(() => {
     if (!quantidadeGrupos) return 0;
@@ -258,15 +534,22 @@ export default function RegrasModoTorneioPage() {
 
   useEffect(() => {
     if (formato !== 'pontos_corridos_mata_mata') return;
-    const maxPar = Math.floor((quantidadeTimes - 1) / 2) * 2;
+    const maxClassificam = quantidadeTimes;
     setClassificamLiga((curr) => {
-      if (maxPar < 2) return 2;
-      if (curr > maxPar || curr % 2 !== 0) {
-        return [4, 2, 8, 6].find((n) => n <= maxPar) ?? 2;
+      if (maxClassificam < 2) return 2;
+      if (curr > maxClassificam || curr < 2) {
+        return Math.min(4, maxClassificam);
       }
       return curr;
     });
   }, [quantidadeTimes, formato]);
+
+  useEffect(() => {
+    const metodosPermitidos = metodosChaveamentoDisponiveis.map((item) => item.metodo);
+    if (!metodosPermitidos.includes(metodoChaveamento)) {
+      setMetodoChaveamento(metodosChaveamentoDisponiveis[0].metodo);
+    }
+  }, [metodoChaveamento, metodosChaveamentoDisponiveis]);
 
   const criteriosDesempateVisiveis = useMemo(
     () => criteriosDesempate.filter((item) => item.key !== 'total_cartoes' || registrarCartoes),
@@ -308,6 +591,22 @@ export default function RegrasModoTorneioPage() {
       alert('Informe a quantidade de jogadores por time.');
       return;
     }
+    if (!minJogadoresParticipantesPorTime || minJogadoresParticipantesPorTime < 1) {
+      alert('Informe o mínimo de jogadores participantes por time.');
+      return;
+    }
+    if (!maxJogadoresParticipantesPorTime || maxJogadoresParticipantesPorTime < 1) {
+      alert('Informe o máximo de jogadores participantes por time.');
+      return;
+    }
+    if (minJogadoresParticipantesPorTime > maxJogadoresParticipantesPorTime) {
+      alert('O mínimo de participantes por time não pode ser maior que o máximo.');
+      return;
+    }
+    if (jogadoresPorTime < minJogadoresParticipantesPorTime || jogadoresPorTime > maxJogadoresParticipantesPorTime) {
+      alert('Jogadores em campo deve estar dentro do intervalo mínimo e máximo definido para participantes por time.');
+      return;
+    }
     if (!quantidadeTimes || quantidadeTimes < 2) {
       alert('Informe a quantidade de times (mínimo 2).');
       return;
@@ -326,9 +625,6 @@ export default function RegrasModoTorneioPage() {
         return;
       }
 
-      const selectedVinculado = usarTorneioVinculado === 'sim'
-        ? torneiosVinculados.find((item) => item.slug === torneioVinculadoSelecionado)
-        : undefined;
       const nomeFinal = selectedVinculado?.nome ?? nomeCompeticao.trim();
       const torneio = iniciarCompeticaoLocalAPartirSetup(setup, nomeFinal);
 
@@ -344,10 +640,12 @@ export default function RegrasModoTorneioPage() {
         modalidade,
         formato,
         jogadores_por_time: jogadoresPorTime,
+        min_jogadores_participantes_por_time: minJogadoresParticipantesPorTime,
+        max_jogadores_participantes_por_time: maxJogadoresParticipantesPorTime,
         quantidade_times: quantidadeTimes,
-        temporada_competicao: temporadaCompeticao.trim() || undefined,
+        temporada_competicao: usarTorneioVinculado === 'sim' ? proximaTemporadaAutomatica : undefined,
         vinculado_torneio_nome: selectedVinculado?.nome ?? (usarTorneioVinculado === 'sim' ? undefined : undefined),
-        vinculado_torneio_slug: selectedVinculado?.slug,
+        vinculado_torneio_slug: selectedVinculado?.id,
         incluir_goleiro: incluirGoleiro,
         tempo_partida: tempoPartida,
         tempos_partida: temposPartida,
@@ -361,6 +659,10 @@ export default function RegrasModoTorneioPage() {
         ida_e_volta: idaVolta,
         classificam_por_grupo: mostrarClassificados ? classificamGrupo : 0,
         classificam_liga: (formato === 'pontos_corridos' || formato === 'pontos_corridos_mata_mata') ? classificamLiga : undefined,
+        repescagem_liga: formato === 'pontos_corridos_mata_mata' && classificacaoLigaImpar ? repescagemLigaObrigatoria : undefined,
+        repescagem_liga_posicoes: formato === 'pontos_corridos_mata_mata' && classificacaoLigaImpar && repescagemLigaObrigatoria
+          ? repescagemLigaPosicoesSelecionadas
+          : undefined,
         jogos_mata_mata_unicos: mostrarMataMata ? mataMataFormato === 'jogo_unico' : false,
         final_jogo_unico: mostrarMataMata ? finalFormato === 'jogo_unico' : false,
         mata_mata_formato: mostrarMataMata ? mataMataFormato : undefined,
@@ -432,7 +734,16 @@ export default function RegrasModoTorneioPage() {
       <section className="mb-5">
         <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-4 sm:p-5">
           <div className="mb-4">
-            <p className="text-sm font-semibold text-gray-700 mb-3">Deseja iniciar um torneio vinculado à sua pelada?</p>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <p className="text-sm font-semibold text-gray-700">Deseja iniciar um torneio vinculado à sua pelada?</p>
+              <button
+                type="button"
+                onClick={() => router.push('/modo-torneio/meus-torneios')}
+                className="text-[11px] sm:text-xs font-semibold text-sky-700 border border-sky-300 bg-sky-50 hover:bg-sky-100 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+              >
+                Cadastrar Torneio
+              </button>
+            </div>
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
@@ -461,8 +772,8 @@ export default function RegrasModoTorneioPage() {
                 >
                   <option value="">Selecione o torneio vinculado</option>
                   {torneiosVinculados.map((item) => (
-                    <option key={item.slug} value={item.slug}>
-                      {item.nome}{item.temporada ? ` — ${item.temporada}` : ''}
+                    <option key={item.id} value={item.id}>
+                      {item.nome} — {ESTRELAS_IMPORTANCIA[item.nivel_importancia]}
                     </option>
                   ))}
                 </select>
@@ -475,10 +786,11 @@ export default function RegrasModoTorneioPage() {
                 <input
                   type="text"
                   value={temporadaCompeticao}
-                  onChange={(e) => setTemporadaCompeticao(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 outline-none focus:border-sky-500"
-                  placeholder="Ex: 2026"
+                  readOnly
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-50 text-gray-700 outline-none"
+                  placeholder="Gerado automaticamente"
                 />
+                <p className="mt-1 text-xs text-gray-500">Sequência automática no padrão AAAA-XX (ex.: 2026-01, 2026-02).</p>
               </div>
             </div>
           ) : (
@@ -502,8 +814,35 @@ export default function RegrasModoTorneioPage() {
           <h3 className="font-black text-gray-800 mb-4">Bloco 1 — Regras Gerais da Partida</h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Quantidade jogadores participantes por time no torneio</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Minimo</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={minJogadoresParticipantesPorTime}
+                    onChange={(e) => setMinJogadoresParticipantesPorTime(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 outline-none focus:border-sky-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Maximo</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={maxJogadoresParticipantesPorTime}
+                    onChange={(e) => setMaxJogadoresParticipantesPorTime(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 outline-none focus:border-sky-500"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Esse intervalo define quantos participantes por time podem ser usados no torneio.</p>
+            </div>
+
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Jogadores por time</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Jogadores por time em campo</label>
               <input
                 type="number"
                 value={jogadoresPorTime}
@@ -524,8 +863,12 @@ export default function RegrasModoTorneioPage() {
               />
               {jogadoresPorTime > 0 && quantidadeTimes > 0 && (
                 <p className="text-xs text-gray-500 mt-1">
-                  {quantidadeTimes} times × {jogadoresPorTime} jogadores{incluirGoleiro ? ' + 1 goleiro' : ''} ={' '}
-                  <span className="font-semibold text-sky-700">{quantidadeTimes * (jogadoresPorTime + (incluirGoleiro ? 1 : 0))} jogadores no total</span>
+                  Necessário entre{' '}
+                  <span className="font-semibold text-sky-700">{jogadoresNecessariosMin}</span>
+                  {' '}e{' '}
+                  <span className="font-semibold text-sky-700">{jogadoresNecessariosMax}</span>
+                  {' '}jogadores no total
+                  {incluirGoleiro ? ' (incluindo goleiros)' : ''}
                 </p>
               )}
             </div>
@@ -912,7 +1255,7 @@ export default function RegrasModoTorneioPage() {
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Quantos se classificam</label>
                 <div className="flex gap-2 flex-wrap">
-                  {Array.from({ length: Math.floor((quantidadeTimes - 1) / 2) }, (_, i) => (i + 1) * 2).map((n) => (
+                  {Array.from({ length: Math.max(0, quantidadeTimes - 1) }, (_, i) => i + 2).map((n) => (
                     <button
                       key={n}
                       type="button"
@@ -930,10 +1273,10 @@ export default function RegrasModoTorneioPage() {
                 <p className="text-xs text-gray-500 mt-1.5">
                   {classificamLiga} times avançam para o mata-mata{classificamLiga > 1 && <span className="ml-1 text-sky-600 font-medium">· Eliminatórias = {faseEliminatoriaLabel(classificamLiga)}</span>}
                 </p>
-                {(classificamLiga & (classificamLiga - 1)) !== 0 && (
-                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 mt-2">
-                    ⚠️ {classificamLiga} times não é potência de 2 — o chaveamento ficará irregular (alguns times entram direto em rodadas mais avançadas).
-                  </p>
+                {deveMostrarRepescagemLiga && (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-xs font-semibold text-amber-800">{descricaoRepescagemLiga}</p>
+                  </div>
                 )}
               </div>
             )}
@@ -992,31 +1335,38 @@ export default function RegrasModoTorneioPage() {
               {/* 1 - Método de chaveamento */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Método de chaveamento</label>
+                {formato === 'pontos_corridos_mata_mata' && classificacaoLigaImpar && (
+                  <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                    <p className="text-xs text-amber-700">Repescagem ativa. O confronto será definido pelo método selecionado abaixo.</p>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {(['aleatorio', 'cruzamento_grupos', 'melhor_vs_pior', 'classificacao_geral'] as MetodoChaveamento[])
-                    .filter((m) =>
-                      formato === 'pontos_corridos_mata_mata'
-                        ? m !== 'cruzamento_grupos'
-                        : true
-                    )
-                    .map((metodo) => (
+                  {metodosChaveamentoDisponiveis.map((opcao) => (
                     <button
-                      key={metodo}
+                      key={`${opcao.metodo}-${opcao.label}`}
                       type="button"
-                      onClick={() => setMetodoChaveamento(metodo)}
+                      onClick={() => setMetodoChaveamento(opcao.metodo)}
                       className={`p-3 rounded-lg border-2 text-left transition-all ${
-                        metodoChaveamento === metodo
+                        metodoChaveamento === opcao.metodo
                           ? 'border-sky-500 bg-sky-50'
                           : 'border-gray-200 bg-white hover:border-gray-300'
                       }`}
                     >
-                      <p className={`font-semibold text-sm ${metodoChaveamento === metodo ? 'text-sky-700' : 'text-gray-800'}`}>
-                        {obterLabelMetodo(metodo)}
+                      <p className={`font-semibold text-sm ${metodoChaveamento === opcao.metodo ? 'text-sky-700' : 'text-gray-800'}`}>
+                        {opcao.label}
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5">{obterDescricaoMetodo(metodo)}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{opcao.descricao}</p>
                     </button>
                   ))}
                 </div>
+                {formato === 'pontos_corridos_mata_mata' && classificacaoLigaImpar && repescagemLigaPosicoesSelecionadas && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Repescagem definida: {repescagemLigaPosicoesSelecionadas[0]}º vs {repescagemLigaPosicoesSelecionadas[1]}º.
+                  </p>
+                )}
+                {formato === 'pontos_corridos_mata_mata' && classificacaoLigaImpar && !repescagemLigaPosicoesSelecionadas && (
+                  <p className="text-xs text-gray-500 mt-2">Repescagem definida por sorteio automático.</p>
+                )}
               </div>
 
               {/* 2 - Mata-Mata */}
@@ -1206,6 +1556,7 @@ export default function RegrasModoTorneioPage() {
                   <p className="font-bold text-gray-700 mb-1.5">Partida</p>
                   <div className="space-y-1 text-gray-600">
                     <p><span className="text-gray-400">Times:</span> {quantidadeTimes} × {jogadoresPorTime} jogadores = <strong>{quantidadeTimes * jogadoresPorTime}</strong> no total</p>
+                    <p><span className="text-gray-400">Elenco necessário:</span> <strong>{jogadoresNecessariosMin}</strong> a <strong>{jogadoresNecessariosMax}</strong> jogadores</p>
                     <p><span className="text-gray-400">Tempo:</span> {tempoPartida} min por jogo</p>
                   </div>
                 </div>
@@ -1227,7 +1578,17 @@ export default function RegrasModoTorneioPage() {
                     <div className="space-y-1 text-gray-600">
                       <p><span className="text-gray-400">Rodadas:</span> {idaVolta ? 'Turno e returno' : 'Turno único'}</p>
                       {formato === 'pontos_corridos_mata_mata' && (
-                        <p><span className="text-gray-400">Classificam:</span> {classificamLiga} times para o mata-mata</p>
+                        <>
+                          <p><span className="text-gray-400">Classificam:</span> {classificamLiga} times para o mata-mata</p>
+                          {classificacaoLigaImpar && (
+                            <p>
+                              <span className="text-gray-400">Repescagem:</span>{' '}
+                              {repescagemLigaPosicoesSelecionadas
+                                ? `${repescagemLigaPosicoesSelecionadas[0]}º x ${repescagemLigaPosicoesSelecionadas[1]}º`
+                                : 'Sorteio automático'}
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -1237,7 +1598,7 @@ export default function RegrasModoTorneioPage() {
                   <div className="bg-gray-50 rounded-xl p-3">
                     <p className="font-bold text-gray-700 mb-1.5">Fase Eliminatória</p>
                     <div className="space-y-1 text-gray-600">
-                      <p><span className="text-gray-400">Método:</span> {obterLabelMetodo(metodoChaveamento)}</p>
+                      <p><span className="text-gray-400">Método:</span> {metodoChaveamentoSelecionado?.label || obterLabelMetodo(metodoChaveamento)}</p>
                       <p><span className="text-gray-400">Mata-mata:</span> {mataMataFormato === 'jogo_unico' ? 'Jogo único' : 'Ida e volta'}</p>
                       <p><span className="text-gray-400">Final:</span> {finalFormato === 'jogo_unico' ? 'Jogo único' : 'Ida e volta'}</p>
                       <p><span className="text-gray-400">3º lugar:</span> {disputaTerceiro === 'nao' ? 'Não' : disputaTerceiro === 'jogo_unico' ? 'Jogo único' : 'Ida e volta'}</p>

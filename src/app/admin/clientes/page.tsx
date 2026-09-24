@@ -3,35 +3,51 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
 import { validarAcessoMaster } from '../../../lib/adminAuth';
 import { obterCredenciais } from '../../../lib/credenciais';
-
-// Configuração Supabase
-const supabase = createClient(
-  'https://ewcswczqvelhlwpbraea.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3Y3N3Y3pxdmVsaGx3cGJyYWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Mzc1MzksImV4cCI6MjA4MDIxMzUzOX0.DRzgAuj171lUG_7wMVCFhuDH71sGxlHHEB28qBN9wks'
-);
 
 interface Cliente {
   pelada_id: string;
   nome: string;
+  nome_pelada?: string;
+  cidade?: string;
+  uf?: string;
   email?: string;
   telefone?: string;
   status: string;
-  plano?: string;
+  created_at?: string;
   data_vencimento?: string;
   valor_plano?: number;
   username?: string;
   is_master?: boolean;
+  data_remocao_programada?: string | null;
+  acesso_pelada_tradicional?: boolean;
+  acesso_modo_torneio?: boolean;
 }
+
+interface ConsumoTabela {
+  tablename: string;
+  size: string;
+  size_bytes: number;
+  row_count: number;
+}
+
+const LIMITE_BANCO_BYTES = 500 * 1024 * 1024;
 
 export default function AdminClientes() {
   const router = useRouter();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [filtroOrdenacao, setFiltroOrdenacao] = useState<'nome' | 'vencimento' | 'status' | 'plano'>('nome');
+  const [abaAtiva, setAbaAtiva] = useState<'ativos' | 'bloqueados' | 'excluidos' | 'vencimento'>('ativos');
+  const [loadingUsoBanco, setLoadingUsoBanco] = useState(false);
+  const [mostrarDetalhesConsumo, setMostrarDetalhesConsumo] = useState(false);
+  const [consumoTotalBanco, setConsumoTotalBanco] = useState('');
+  const [consumoTotalBytes, setConsumoTotalBytes] = useState(0);
+  const [percentualUsoBanco, setPercentualUsoBanco] = useState(0);
+  const [consumoTabelas, setConsumoTabelas] = useState<ConsumoTabela[]>([]);
+  const [setupConsumoPendente, setSetupConsumoPendente] = useState(false);
+  const [mostrarVoltarTopo, setMostrarVoltarTopo] = useState(false);
   
   // Estados dos modais de cada template
   const [modalNovidades, setModalNovidades] = useState(false);
@@ -43,15 +59,14 @@ export default function AdminClientes() {
   
   // Estados dos dados dos formulários
   const [novidades, setNovidades] = useState({ resumo: '' });
-  const [oferta, setOferta] = useState({ planoAlvo: 'todos', valorOferta: '', beneficios: '' });
+  const [oferta, setOferta] = useState({ valorOferta: '', beneficios: '' });
   const [promocao, setPromocao] = useState({ 
-    planoAlvo: 'todos', 
     valorOferta: '', 
     vencimento: '', 
     tipo: '', 
     observacao: '' 
   });
-  const [dicas, setDicas] = useState({ texto: '', planoAlvo: 'todos' });
+  const [dicas, setDicas] = useState({ texto: '' });
   const [avisos, setAvisos] = useState({ titulo: '', assunto: '' });
   const [avisoSistema, setAvisoSistema] = useState({
     mensagem: '',
@@ -60,7 +75,6 @@ export default function AdminClientes() {
     dataFim: ''
   });
   const [avisosAtivos, setAvisosAtivos] = useState<any[]>([]);
-  const [mostrarFiltro, setMostrarFiltro] = useState(false);
 
   useEffect(() => {
     const validarECarregar = async () => {
@@ -71,6 +85,7 @@ export default function AdminClientes() {
         return;
       }
       carregarClientes();
+      carregarConsumoBanco();
     };
 
     validarECarregar();
@@ -82,19 +97,40 @@ export default function AdminClientes() {
     }
   }, [modalAvisosSistema]);
 
+  useEffect(() => {
+    const onScroll = () => {
+      setMostrarVoltarTopo(window.scrollY > 320);
+    };
+
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   const carregarAvisosAtivos = async () => {
     try {
-      const { data, error } = await supabase
-        .from('avisos_sistema')
-        .select('*')
-        .eq('ativo', true)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Erro ao carregar avisos:', error);
-      } else {
-        setAvisosAtivos(data || []);
+      const credenciais = obterCredenciais();
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        throw new Error('Credenciais inválidas');
       }
+
+      const response = await fetch('/api/admin/clientes/avisos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          acao: 'listar',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao carregar avisos');
+      }
+
+      setAvisosAtivos(data.avisos || []);
     } catch (error) {
       console.error('Erro:', error);
     }
@@ -133,35 +169,63 @@ export default function AdminClientes() {
     }
   };
 
-  const editarCliente = (clienteId: string) => {
-    router.push(`/admin/clientes/cadastrar?id=${clienteId}`);
+  const carregarConsumoBanco = async () => {
+    try {
+      setLoadingUsoBanco(true);
+      const credenciais = obterCredenciais();
+
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        throw new Error('Credenciais inválidas');
+      }
+
+      const response = await fetch('/api/admin/clientes/database-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao carregar consumo do banco');
+      }
+
+      setConsumoTotalBanco(data.totalSizeFormatted || 'Não configurado');
+      setConsumoTotalBytes(Number(data.totalSizeBytes) || 0);
+      setPercentualUsoBanco(Number(data.percentualUso) || 0);
+      setConsumoTabelas(data.tables || []);
+      setSetupConsumoPendente(Boolean(data.setupPendente));
+    } catch (error) {
+      console.error('Erro ao carregar consumo do banco:', error);
+      setConsumoTotalBanco('Erro ao carregar');
+      setConsumoTotalBytes(0);
+      setPercentualUsoBanco(0);
+      setConsumoTabelas([]);
+      setSetupConsumoPendente(true);
+    } finally {
+      setLoadingUsoBanco(false);
+    }
   };
 
   const getStatusEmoji = (status: string) => {
     switch (status) {
       case 'ativo': return '✅';
-      case 'inativo': return '⏸️';
       case 'bloqueado': return '🚫';
+      case 'excluido': return '🗑️';
       default: return '❓';
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'ativo': return 'bg-green-50 border-green-200';
-      case 'inativo': return 'bg-gray-100 border-gray-300';
-      case 'bloqueado': return 'bg-red-50 border-red-200';
-      default: return 'bg-gray-50 border-gray-200';
-    }
-  };
-
-  const getPlanoColor = (plano: string, isMaster: boolean) => {
-    if (isMaster) return 'bg-gray-100 border-2 border-black';
-    
-    const planoLower = plano?.toLowerCase() || 'free';
-    if (planoLower === 'premium') return 'bg-yellow-50 border-2 border-yellow-400';
-    if (planoLower === 'gold') return 'bg-red-50 border-2 border-red-800';
-    return 'bg-white border border-gray-200';
+  const formatarDataVencimentoCurta = (dataVencimento?: string) => {
+    if (!dataVencimento) return '--/--/--';
+    return new Date(`${dataVencimento}T00:00:00`).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit'
+    });
   };
 
   const salvarAvisoSistema = async () => {
@@ -171,27 +235,34 @@ export default function AdminClientes() {
     }
 
     try {
-      const { error } = await supabase
-        .from('avisos_sistema')
-        .insert([{
-          mensagem: avisoSistema.mensagem,
-          plano_alvo: avisoSistema.planoAlvo,
-          data_inicio: avisoSistema.dataInicio,
-          data_fim: avisoSistema.dataFim,
-          ativo: true
-        }]);
-      
-      if (error) {
-        console.error('Erro ao salvar aviso:', error);
-        alert('Erro ao salvar aviso: ' + error.message);
-      } else {
-        alert('Aviso salvo com sucesso!');
-        setAvisoSistema({ mensagem: '', planoAlvo: 'todos', dataInicio: '', dataFim: '' });
-        carregarAvisosAtivos();
+      const credenciais = obterCredenciais();
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        throw new Error('Credenciais inválidas');
       }
+
+      const response = await fetch('/api/admin/clientes/avisos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          acao: 'criar',
+          aviso: avisoSistema,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao salvar aviso');
+      }
+
+      alert('Aviso salvo com sucesso!');
+      setAvisoSistema({ mensagem: '', planoAlvo: 'todos', dataInicio: '', dataFim: '' });
+      carregarAvisosAtivos();
     } catch (error) {
       console.error('Erro ao salvar aviso:', error);
-      alert('Erro ao salvar aviso!');
+      alert(`Erro ao salvar aviso: ${error}`);
     }
   };
 
@@ -199,21 +270,33 @@ export default function AdminClientes() {
     if (!confirm('Deseja realmente excluir este aviso? Esta ação não pode ser desfeita.')) return;
 
     try {
-      const { error } = await supabase
-        .from('avisos_sistema')
-        .delete()
-        .eq('id', id);
-      
-      if (error) {
-        console.error('Erro ao excluir aviso:', error);
-        alert('Erro ao excluir aviso!');
-      } else {
-        alert('Aviso excluído com sucesso!');
-        carregarAvisosAtivos();
+      const credenciais = obterCredenciais();
+      if (!credenciais?.pelada_id || !credenciais?.username || !credenciais?.senha) {
+        throw new Error('Credenciais inválidas');
       }
+
+      const response = await fetch('/api/admin/clientes/avisos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pelada_id: credenciais.pelada_id,
+          username: credenciais.username,
+          senha_hash: credenciais.senha,
+          acao: 'excluir',
+          id,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao excluir aviso');
+      }
+
+      alert('Aviso excluído com sucesso!');
+      carregarAvisosAtivos();
     } catch (error) {
       console.error('Erro:', error);
-      alert('Erro ao excluir aviso!');
+      alert(`Erro ao excluir aviso: ${error}`);
     }
   };
 
@@ -230,8 +313,8 @@ export default function AdminClientes() {
       action: () => setModalNovidades(true)
     },
     {
-      titulo: '⬆️ Oferta de Upgrade',
-      descricao: 'Solicite upgrade mostrando benefícios do próximo plano',
+      titulo: '⬆️ Oferta Comercial',
+      descricao: 'Envie uma oferta ou condicao especial para os clientes',
       action: () => setModalOferta(true)
     },
     {
@@ -251,18 +334,11 @@ export default function AdminClientes() {
     }
   ];
 
-  const enviarMensagem = (mensagem: string, planoFiltro: string = 'todos') => {
-    let clientesFiltrados = clientes.filter(c => c.status === 'ativo' && c.telefone);
-    
-    // Filtrar por plano se necessário
-    if (planoFiltro !== 'todos') {
-      clientesFiltrados = clientesFiltrados.filter(c => 
-        c.plano?.toLowerCase() === planoFiltro.toLowerCase()
-      );
-    }
-    
+  const enviarMensagem = (mensagem: string) => {
+    const clientesFiltrados = clientes.filter(c => c.status === 'ativo' && c.telefone);
+
     if (clientesFiltrados.length === 0) {
-      alert(`Nenhum cliente ativo ${planoFiltro !== 'todos' ? `no plano ${planoFiltro}` : ''} com telefone cadastrado!`);
+      alert('Nenhum cliente ativo com telefone cadastrado!');
       return;
     }
 
@@ -299,26 +375,12 @@ export default function AdminClientes() {
       alert('Preencha os benefícios!');
       return;
     }
-    
-    let planoDestino = '';
-    let planoOrigem = '';
-    
-    if (oferta.planoAlvo === 'Free') {
-      planoDestino = 'Gold';
-      planoOrigem = 'Free';
-    } else if (oferta.planoAlvo === 'Gold') {
-      planoDestino = 'Premium';
-      planoOrigem = 'Gold';
-    } else {
-      planoDestino = 'Premium ou Gold';
-      planoOrigem = 'todos';
-    }
-    
+
     const valorTexto = oferta.valorOferta ? `\n💰 Valor especial: R$ ${oferta.valorOferta}` : '';
-    const mensagem = `Olá [Nome]! ⬆️\n\nQue tal dar um upgrade no seu plano?\n\n🎯 Benefícios do plano ${planoDestino}:\n${oferta.beneficios}${valorTexto}\n\nFale conosco para saber mais!`;
-    
-    enviarMensagem(mensagem, oferta.planoAlvo === 'todos' ? 'todos' : planoOrigem);
-    setOferta({ planoAlvo: 'todos', valorOferta: '', beneficios: '' });
+    const mensagem = `Olá [Nome]! ⬆️\n\nTemos uma condicao especial para seu acesso no PelADM.\n\n🎯 Benefícios:\n${oferta.beneficios}${valorTexto}\n\nFale conosco para saber mais!`;
+
+    enviarMensagem(mensagem);
+    setOferta({ valorOferta: '', beneficios: '' });
   };
 
   const enviarPromocao = () => {
@@ -332,8 +394,8 @@ export default function AdminClientes() {
     
     const mensagem = `Olá [Nome]! 🎁\n\n${promocao.tipo}\n\n💰 Oferta: R$ ${promocao.valorOferta}${vencimentoTexto}${observacaoTexto}\n\nNão perca essa oportunidade!`;
     
-    enviarMensagem(mensagem, promocao.planoAlvo);
-    setPromocao({ planoAlvo: 'todos', valorOferta: '', vencimento: '', tipo: '', observacao: '' });
+    enviarMensagem(mensagem);
+    setPromocao({ valorOferta: '', vencimento: '', tipo: '', observacao: '' });
   };
 
   const enviarDicas = () => {
@@ -342,8 +404,8 @@ export default function AdminClientes() {
       return;
     }
     const mensagem = `Olá [Nome]! 💡\n\nDica PelADM:\n\n${dicas.texto}\n\nAproveite para otimizar seu uso do sistema!`;
-    enviarMensagem(mensagem, dicas.planoAlvo);
-    setDicas({ texto: '', planoAlvo: 'todos' });
+    enviarMensagem(mensagem);
+    setDicas({ texto: '' });
   };
 
   const enviarAvisos = () => {
@@ -356,57 +418,229 @@ export default function AdminClientes() {
     setAvisos({ titulo: '', assunto: '' });
   };
 
-  const ordenarClientes = () => {
-    const clientesOrdenados = [...clientes];
-    
-    // Separar o master (assumindo que é "Adm Matheus" ou o primeiro com email do admin)
-    const masterIndex = clientesOrdenados.findIndex(c => 
-      c.nome.toLowerCase().includes('adm') || c.email?.includes('matheus')
-    );
-    
-    let master: Cliente | null = null;
-    if (masterIndex !== -1) {
-      master = clientesOrdenados.splice(masterIndex, 1)[0];
+  const clientesFiltradosPorAba = () => {
+    const base = [...clientes];
+    const normalizarStatus = (status?: string) => String(status || '').toLowerCase();
+    const fixarMasterNoTopo = (lista: Cliente[]) => {
+      const masters = lista.filter((c) => c.is_master === true);
+      const demais = lista.filter((c) => c.is_master !== true);
+      return [...masters, ...demais];
+    };
+
+    if (abaAtiva === 'ativos') {
+      const lista = base
+        .filter((c) => normalizarStatus(c.status) === 'ativo')
+        .sort((a, b) => a.nome.localeCompare(b.nome));
+      return fixarMasterNoTopo(lista);
     }
-    
-    // Ordenar os demais
-    switch (filtroOrdenacao) {
-      case 'nome':
-        clientesOrdenados.sort((a, b) => a.nome.localeCompare(b.nome));
-        break;
-      case 'vencimento':
-        clientesOrdenados.sort((a, b) => {
-          if (!a.data_vencimento) return 1;
-          if (!b.data_vencimento) return -1;
-          return new Date(a.data_vencimento).getTime() - new Date(b.data_vencimento).getTime();
-        });
-        break;
-      case 'status':
-        const statusOrder = { 'ativo': 1, 'inativo': 2, 'bloqueado': 3 };
-        clientesOrdenados.sort((a, b) => {
-          const orderA = statusOrder[a.status as keyof typeof statusOrder] || 999;
-          const orderB = statusOrder[b.status as keyof typeof statusOrder] || 999;
-          return orderA - orderB;
-        });
-        break;
-      case 'plano':
-        const planoOrder = { 'premium': 1, 'gold': 2, 'free': 3 };
-        clientesOrdenados.sort((a, b) => {
-          const planoA = (a.plano || 'free').toLowerCase();
-          const planoB = (b.plano || 'free').toLowerCase();
-          const orderA = planoOrder[planoA as keyof typeof planoOrder] || 999;
-          const orderB = planoOrder[planoB as keyof typeof planoOrder] || 999;
-          return orderA - orderB;
-        });
-        break;
+
+    if (abaAtiva === 'bloqueados') {
+      const lista = base
+        .filter((c) => normalizarStatus(c.status) === 'bloqueado')
+        .sort((a, b) => a.nome.localeCompare(b.nome));
+      return fixarMasterNoTopo(lista);
     }
-    
-    // Adicionar master no início
-    if (master) {
-      clientesOrdenados.unshift(master);
+
+    if (abaAtiva === 'excluidos') {
+      const lista = base
+        .filter((c) => normalizarStatus(c.status) === 'excluido')
+        .sort((a, b) => a.nome.localeCompare(b.nome));
+      return fixarMasterNoTopo(lista);
     }
-    
-    return clientesOrdenados;
+
+    const lista = base
+      .filter((c) => normalizarStatus(c.status) !== 'excluido')
+      .sort((a, b) => {
+        if (!a.data_vencimento) return 1;
+        if (!b.data_vencimento) return -1;
+        return new Date(a.data_vencimento).getTime() - new Date(b.data_vencimento).getTime();
+      });
+    return fixarMasterNoTopo(lista);
+  };
+
+  const calcularStatusVencimento = (dataVencimento?: string) => {
+    if (!dataVencimento) {
+      return {
+        label: 'Sem vencimento',
+        classe: 'bg-gray-100 text-gray-700 border-gray-300',
+      };
+    }
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const venc = new Date(`${dataVencimento}T00:00:00`);
+    venc.setHours(0, 0, 0, 0);
+
+    const diffDias = Math.ceil((venc.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDias < 0) {
+      return {
+        label: `Vencido há ${Math.abs(diffDias)}d`,
+        classe: 'bg-red-100 text-red-700 border-red-300',
+      };
+    }
+
+    if (diffDias === 0) {
+      return {
+        label: 'Vence hoje',
+        classe: 'bg-red-100 text-red-700 border-red-300',
+      };
+    }
+
+    if (diffDias <= 7) {
+      return {
+        label: `Vence em ${diffDias}d`,
+        classe: 'bg-orange-100 text-orange-700 border-orange-300',
+      };
+    }
+
+    if (diffDias <= 15) {
+      return {
+        label: `Vence em ${diffDias}d`,
+        classe: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+      };
+    }
+
+    return {
+      label: `Vence em ${diffDias}d`,
+      classe: 'bg-green-100 text-green-700 border-green-300',
+    };
+  };
+
+  const formatarDataCurta = (dataISO?: string | null) => {
+    if (!dataISO) return 'Não informado';
+    const data = new Date(dataISO.includes('T') ? dataISO : `${dataISO}T00:00:00`);
+    if (Number.isNaN(data.getTime())) return 'Não informado';
+    return data.toLocaleDateString('pt-BR');
+  };
+
+  const calcularMesesEDiasAte = (dataISO?: string | null) => {
+    if (!dataISO) return 'Não informado';
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const alvo = new Date(dataISO.includes('T') ? dataISO : `${dataISO}T00:00:00`);
+    alvo.setHours(0, 0, 0, 0);
+
+    const diffMs = alvo.getTime() - hoje.getTime();
+    const diffDias = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    const meses = Math.floor(diffDias / 30);
+    const dias = diffDias % 30;
+
+    const partes = [];
+    if (meses > 0) partes.push(`${meses} ${meses === 1 ? 'mês' : 'meses'}`);
+    if (dias > 0 || partes.length === 0) partes.push(`${dias} ${dias === 1 ? 'dia' : 'dias'}`);
+    return partes.join(' e ');
+  };
+
+  const calcularDiasBloqueado = (dataVencimento?: string) => {
+    if (!dataVencimento) return 0;
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const venc = new Date(dataVencimento.includes('T') ? dataVencimento : `${dataVencimento}T00:00:00`);
+    venc.setHours(0, 0, 0, 0);
+
+    return Math.max(0, Math.ceil((hoje.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24)));
+  };
+
+  const calcularTempoCadastro = (dataISO?: string | null) => {
+    if (!dataISO) return 'Não informado';
+
+    const cadastro = new Date(dataISO.includes('T') ? dataISO : `${dataISO}T00:00:00`);
+    if (Number.isNaN(cadastro.getTime())) return 'Não informado';
+
+    const agora = new Date();
+    agora.setHours(0, 0, 0, 0);
+    cadastro.setHours(0, 0, 0, 0);
+
+    const diffDias = Math.max(0, Math.floor((agora.getTime() - cadastro.getTime()) / (1000 * 60 * 60 * 24)));
+    const meses = Math.floor(diffDias / 30);
+    const dias = diffDias % 30;
+
+    const partes = [];
+    if (meses > 0) partes.push(`${meses} ${meses === 1 ? 'mês' : 'meses'}`);
+    if (dias > 0 || partes.length === 0) partes.push(`${dias} ${dias === 1 ? 'dia' : 'dias'}`);
+    return partes.join(' e ');
+  };
+
+  const calcularTempoAte = (dataISO?: string | null) => {
+    if (!dataISO) return 'Não informado';
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const alvo = new Date(dataISO.includes('T') ? dataISO : `${dataISO}T00:00:00`);
+    if (Number.isNaN(alvo.getTime())) return 'Não informado';
+    alvo.setHours(0, 0, 0, 0);
+
+    const diffDias = Math.max(0, Math.ceil((alvo.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)));
+    const meses = Math.floor(diffDias / 30);
+    const dias = diffDias % 30;
+
+    const partes = [];
+    if (meses > 0) partes.push(`${meses} ${meses === 1 ? 'mês' : 'meses'}`);
+    if (dias > 0 || partes.length === 0) partes.push(`${dias} ${dias === 1 ? 'dia' : 'dias'}`);
+    return partes.join(' e ');
+  };
+
+  const getResumoListaPorAba = (cliente: Cliente, aba: 'ativos' | 'bloqueados' | 'excluidos' | 'vencimento') => {
+    const nome = cliente.nome || 'Cliente sem nome';
+    const peladaId = cliente.pelada_id || 'sem pelada_id';
+    const nomePelada = cliente.nome_pelada || 'Pelada não informada';
+    const cidadeUf = cliente.cidade
+      ? `${cliente.cidade}${cliente.uf ? `/${String(cliente.uf).toUpperCase()}` : ''}`
+      : 'Cidade/UF não informada';
+
+    if (aba === 'bloqueados') {
+      const diasBloqueado = calcularDiasBloqueado(cliente.data_vencimento);
+      const bloqueioAutomatico = Boolean(cliente.data_vencimento && new Date(`${cliente.data_vencimento}T00:00:00`).getTime() < new Date().setHours(0, 0, 0, 0));
+      return {
+        linha1Nome: nome,
+        linha1Usuario: peladaId,
+        linha2: `${formatarDataCurta(cliente.data_vencimento)} • ${diasBloqueado} ${diasBloqueado === 1 ? 'dia' : 'dias'} bloqueado${diasBloqueado === 1 ? '' : 's'}`,
+        linha3: bloqueioAutomatico ? 'Bloqueio automático pela data de vencimento' : 'Bloqueado manualmente na edição do cadastro',
+      };
+    }
+
+    if (aba === 'excluidos') {
+      const dataExclusao = formatarDataCurta(cliente.data_remocao_programada);
+      const tempoFaltante = calcularMesesEDiasAte(cliente.data_remocao_programada);
+      const dataSolicitacao = formatarDataCurta((cliente as Cliente & { updated_at?: string }).updated_at || null);
+
+      return {
+        linha1Nome: nome,
+        linha1Usuario: peladaId,
+        linha2: `${dataExclusao} • ${tempoFaltante} faltando`,
+        linha3: `Solicitei a exclusão em ${dataSolicitacao}`,
+      };
+    }
+
+    if (aba === 'vencimento') {
+      const vencimento = formatarDataCurta(cliente.data_vencimento);
+      const tempoAteVencer = calcularTempoAte(cliente.data_vencimento);
+
+      return {
+        linha1Nome: nome,
+        linha1Usuario: peladaId,
+        linha2: `${nomePelada} • Cliente desde ${formatarDataCurta(cliente.created_at)}`,
+        linha3: `${vencimento} • ${tempoAteVencer}`,
+      };
+    }
+
+    return {
+      linha1Nome: nome,
+      linha1Usuario: peladaId,
+      linha2: `${nomePelada} • Cliente desde ${formatarDataCurta(cliente.created_at)}`,
+      linha3: cidadeUf,
+    };
+  };
+
+  const bloquearDragNativo = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
   };
 
   return (
@@ -422,7 +656,7 @@ export default function AdminClientes() {
           </button>
           
           <h1 className="text-xl font-bold text-gray-800 absolute left-1/2 transform -translate-x-1/2">
-            Clientes
+            Painel Administrativo
           </h1>
           
           <Image
@@ -435,98 +669,163 @@ export default function AdminClientes() {
         </div>
       </header>
 
-      <div className="p-6">
+      <div className="w-[90%] mx-auto py-6">
         <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">Gerenciar Clientes</h2>
-          </div>
+        {/* Ações rápidas */}
+        <div className="grid grid-cols-3 gap-3">
           <button
             onClick={() => router.push('/admin/clientes/cadastrar')}
-            className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 transition-colors"
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors text-sm sm:text-base"
           >
             <span>➕</span>
             <span>Novo Cliente</span>
           </button>
-        </div>
 
-        {/* Botões de Ação */}
-        <div className="space-y-4">
-          {/* Templates WhatsApp */}
           <button
             onClick={() => setShowTemplates(true)}
-            className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-4 rounded-xl font-bold text-lg flex items-center justify-center space-x-3 transition-all hover:scale-[1.02] shadow-md"
+            title="Templates do WhatsApp"
+            aria-label="Templates do WhatsApp"
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-xl font-bold text-lg flex items-center justify-center transition-all hover:scale-[1.02] shadow-md"
           >
-            <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current">
+            <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" role="img">
               <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
             </svg>
-            <span>Templates</span>
           </button>
 
-          {/* Avisos do Sistema */}
           <button
             onClick={() => setModalAvisosSistema(true)}
-            className="w-full bg-orange-600 hover:bg-orange-700 text-white px-6 py-4 rounded-xl font-bold text-lg flex items-center justify-center space-x-3 transition-all hover:scale-[1.02] shadow-md"
+            title="Avisos do sistema"
+            aria-label="Avisos do sistema"
+            className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-3 rounded-xl font-bold text-lg flex items-center justify-center transition-all hover:scale-[1.02] shadow-md"
           >
             <span className="text-2xl">📢</span>
-            <span>Avisos do Sistema</span>
           </button>
+        </div>
+
+        {/* Consumo do banco */}
+        <div className="bg-white rounded-xl shadow border border-gray-200 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h3 className="text-[15px] font-bold text-gray-800">Consumo do banco (Supabase)</h3>
+              <p className="text-[11px] text-gray-500">Visão consolidada do banco centralizado</p>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setMostrarDetalhesConsumo((prev) => !prev)}
+                className="text-sm px-2 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                title={mostrarDetalhesConsumo ? 'Recolher tabelas' : 'Expandir tabelas'}
+              >
+                {mostrarDetalhesConsumo ? '▼' : '▶'}
+              </button>
+              <button
+                onClick={carregarConsumoBanco}
+                className="text-sm px-2 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                title="Atualizar consumo"
+              >
+                {loadingUsoBanco ? '⏳' : '↻'}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5">
+              <p className="text-[11px] text-purple-700 font-semibold mb-1">Banco total</p>
+              <p className="text-base font-bold text-purple-900 leading-tight">{consumoTotalBanco || '--'}</p>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5">
+              <p className="text-[11px] text-emerald-700 font-semibold mb-1">Tabelas monitoradas</p>
+              <p className="text-base font-bold text-emerald-900 leading-tight">{consumoTabelas.length}</p>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 mb-2">
+            <div className="flex items-center justify-between text-[11px] text-blue-800 font-semibold mb-1">
+              <span>Limite</span>
+              <span>500 MB</span>
+            </div>
+            <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full ${percentualUsoBanco >= 90 ? 'bg-red-500' : percentualUsoBanco >= 70 ? 'bg-amber-500' : 'bg-blue-600'}`}
+                style={{ width: `${Math.min(percentualUsoBanco, 100)}%` }}
+              />
+            </div>
+            <div className="mt-1 flex items-center justify-between text-[11px] text-blue-900">
+              <span>Uso atual: {consumoTotalBytes > 0 ? `${(consumoTotalBytes / (1024 * 1024)).toFixed(2)} MB` : '--'}</span>
+              <span className="font-bold">{percentualUsoBanco.toFixed(2)}%</span>
+            </div>
+          </div>
+
+          {mostrarDetalhesConsumo && consumoTabelas.length > 0 && (
+            <div className="space-y-1.5 max-h-40 overflow-auto pr-1">
+              {consumoTabelas
+                .slice()
+                .sort((a, b) => b.size_bytes - a.size_bytes)
+                .map((item) => (
+                  <div key={item.tablename} className="flex items-center justify-between bg-gray-50 rounded-md px-2.5 py-1.5">
+                    <span className="text-xs text-gray-700 truncate pr-2">{item.tablename}</span>
+                    <span className="text-[11px] text-gray-600 font-mono whitespace-nowrap">{item.size}</span>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {setupConsumoPendente && (
+            <p className="text-[11px] text-amber-700 mt-2">
+              Funções RPC de monitoramento não estão 100% configuradas. Verifique SETUP-FUNCOES-RPC.sql.
+            </p>
+          )}
         </div>
 
         {/* Lista de Clientes */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200">
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="pb-4 border-b border-gray-200">
+            <div className="flex items-center justify-center mb-3">
               <h2 className="text-xl font-bold text-gray-800">Clientes Cadastrados</h2>
-              <div className="relative">
-                <button
-                  onClick={() => setMostrarFiltro(!mostrarFiltro)}
-                  className="text-2xl hover:scale-110 transition-transform"
-                  title="Ordenar"
-                >
-                  🔽
-                </button>
-                {mostrarFiltro && (
-                  <div className="absolute right-0 mt-2 bg-white border border-gray-300 rounded-lg shadow-lg z-10 py-1 w-48">
-                    <button
-                      onClick={() => { setFiltroOrdenacao('nome'); setMostrarFiltro(false); }}
-                      className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors ${filtroOrdenacao === 'nome' ? 'bg-green-50 font-semibold' : ''}`}
-                    >
-                      📝 Nome (A-Z)
-                    </button>
-                    <button
-                      onClick={() => { setFiltroOrdenacao('vencimento'); setMostrarFiltro(false); }}
-                      className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors ${filtroOrdenacao === 'vencimento' ? 'bg-green-50 font-semibold' : ''}`}
-                    >
-                      📅 Vencimento
-                    </button>
-                    <button
-                      onClick={() => { setFiltroOrdenacao('status'); setMostrarFiltro(false); }}
-                      className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors ${filtroOrdenacao === 'status' ? 'bg-green-50 font-semibold' : ''}`}
-                    >
-                      🔰 Status
-                    </button>
-                    <button
-                      onClick={() => { setFiltroOrdenacao('plano'); setMostrarFiltro(false); }}
-                      className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors ${filtroOrdenacao === 'plano' ? 'bg-green-50 font-semibold' : ''}`}
-                    >
-                      💎 Plano
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
-            <p className="text-gray-600 text-sm mt-1">
+            <p className="text-gray-600 text-sm mt-1 text-center">
               Total: {clientes.length} clientes 
               {clientes.length > 0 && (
-                <span className="ml-3">
+                <span className="ml-2 inline-block">
                   ✅ {clientes.filter(c => c.status === 'ativo').length} • 
-                  ⏸️ {clientes.filter(c => c.status === 'inativo').length} • 
-                  🚫 {clientes.filter(c => c.status === 'bloqueado').length}
+                  🚫 {clientes.filter(c => c.status === 'bloqueado').length} •
+                  🗑️ {clientes.filter(c => c.status === 'excluido').length}
                 </span>
               )}
             </p>
+            <div className="flex items-center justify-center gap-2 mt-4 overflow-x-auto whitespace-nowrap pb-1">
+              <button
+                onClick={() => setAbaAtiva('ativos')}
+                title="Ativos"
+                aria-label="Ativos"
+                className={`w-11 h-11 flex items-center justify-center rounded-lg text-xl border transition-colors flex-shrink-0 ${abaAtiva === 'ativos' ? 'bg-green-600 border-green-700' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+              >
+                <span className={abaAtiva === 'ativos' ? 'grayscale-0' : 'opacity-80'}>✅</span>
+              </button>
+              <button
+                onClick={() => setAbaAtiva('bloqueados')}
+                title="Bloqueados"
+                aria-label="Bloqueados"
+                className={`w-11 h-11 flex items-center justify-center rounded-lg text-xl border transition-colors flex-shrink-0 ${abaAtiva === 'bloqueados' ? 'bg-red-600 border-red-700' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+              >
+                <span className={abaAtiva === 'bloqueados' ? 'grayscale-0' : 'opacity-80'}>🚫</span>
+              </button>
+              <button
+                onClick={() => setAbaAtiva('excluidos')}
+                title="Excluídos"
+                aria-label="Excluídos"
+                className={`w-11 h-11 flex items-center justify-center rounded-lg text-xl border transition-colors flex-shrink-0 ${abaAtiva === 'excluidos' ? 'bg-gray-700 border-gray-800' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+              >
+                <span className={abaAtiva === 'excluidos' ? 'grayscale-0' : 'opacity-80'}>🗑️</span>
+              </button>
+              <button
+                onClick={() => setAbaAtiva('vencimento')}
+                title="Vencimento"
+                aria-label="Vencimento"
+                className={`w-11 h-11 flex items-center justify-center rounded-lg text-xl border transition-colors flex-shrink-0 ${abaAtiva === 'vencimento' ? 'bg-amber-500 border-amber-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+              >
+                <span className={abaAtiva === 'vencimento' ? 'grayscale-0' : 'opacity-80'}>📅</span>
+              </button>
+            </div>
           </div>
           
           {loading ? (
@@ -541,46 +840,60 @@ export default function AdminClientes() {
               <p className="text-gray-400 text-sm">Clique em "Novo Cliente" para começar</p>
             </div>
           ) : (
-            <div className="p-6">
+            <div className="pt-4 pb-2">
               <div className="space-y-3">
-                {ordenarClientes().map((cliente) => {
+                {clientesFiltradosPorAba().map((cliente) => {
                   const isMaster = cliente.is_master === true;
-                  const planoLower = (cliente.plano || 'free').toLowerCase();
+                  const infoVencimento = calcularStatusVencimento(cliente.data_vencimento);
+                  const status = String(cliente.status || '').toLowerCase();
+                  const acessoTorneio = cliente.acesso_modo_torneio === true;
+                  const resumo = getResumoListaPorAba(cliente, abaAtiva);
                   
                   // Definir classes completas (Tailwind precisa de classes completas)
                   let cardClasses = '';
                   
                   if (isMaster) {
                     cardClasses = 'border-2 border-black bg-gray-100';
-                  } else if (planoLower === 'premium') {
-                    cardClasses = 'border-2 border-yellow-400 bg-yellow-50';
-                  } else if (planoLower === 'gold') {
-                    cardClasses = 'border-2 border-red-800 bg-red-50';
+                  } else if (status === 'bloqueado') {
+                    cardClasses = 'border-2 border-red-400 bg-red-50';
+                  } else if (status === 'excluido') {
+                    cardClasses = 'border-2 border-gray-700 bg-gray-100';
+                  } else if (acessoTorneio) {
+                    cardClasses = 'border-2 border-sky-400 bg-sky-50';
                   } else {
-                    cardClasses = 'border-2 border-gray-300 bg-white';
+                    cardClasses = 'border-2 border-green-300 bg-green-50';
                   }
                   
                   return (
                   <div 
                     key={cliente.pelada_id} 
                     onClick={() => router.push(`/admin/clientes/${cliente.pelada_id}`)}
-                    className={`flex items-center justify-between p-4 rounded-lg ${cardClasses} transition-all cursor-pointer hover:shadow-lg hover:scale-[1.02]`}
+                    onDragStart={bloquearDragNativo}
+                    draggable={false}
+                    className={`flex items-center justify-between p-4 rounded-lg ${cardClasses} transition-all cursor-pointer hover:shadow-lg hover:scale-[1.02] select-none`}
                   >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-gray-800">{cliente.nome}</span>
-                        {isMaster && <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold">MASTER</span>}
+                    <div className="flex-1 min-w-0 pr-3">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <span className="font-semibold text-gray-800 truncate">{resumo.linha1Nome}</span>
+                            <span className="text-xs text-gray-600 font-medium truncate">{resumo.linha1Usuario}</span>
+                            {isMaster && <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold">MASTER</span>}
+                          </div>
+                        </div>
                       </div>
                       <div className="space-y-0.5">
-                        <p className="text-xs text-gray-600">
-                          <span className="font-medium">Plano:</span> {cliente.plano || 'Free'}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          <span className="font-medium">Vencimento:</span>{' '}
-                          {cliente.data_vencimento 
-                            ? new Date(cliente.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR')
-                            : 'Sem vencimento definido'}
-                        </p>
+                        <p className="text-xs text-gray-600 leading-tight">{resumo.linha2}</p>
+                        {abaAtiva === 'vencimento' ? (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs text-gray-600 leading-tight">{resumo.linha3.split(' • ')[0]} •</span>
+                            <span className={`text-xs font-bold leading-tight px-2 py-0.5 rounded-full border whitespace-nowrap ${infoVencimento.classe}`}>
+                              {resumo.linha3.split(' • ')[1] || infoVencimento.label}
+                            </span>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-600 leading-tight">{resumo.linha3}</p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -589,6 +902,13 @@ export default function AdminClientes() {
                   </div>
                   );
                 })}
+                {clientesFiltradosPorAba().length === 0 && (
+                  <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-5 text-center text-gray-600 text-sm">
+                    {abaAtiva === 'excluidos'
+                      ? 'Nenhum cliente excluído por enquanto.'
+                      : 'Nenhum cliente encontrado nesta aba.'}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -596,10 +916,21 @@ export default function AdminClientes() {
         </div>
       </div>
 
+      {mostrarVoltarTopo && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          title="Voltar ao topo"
+          aria-label="Voltar ao topo"
+          className="fixed bottom-5 right-5 z-40 h-9 w-9 rounded-full border border-gray-300 bg-white/90 text-gray-600 shadow-sm backdrop-blur-sm hover:bg-white hover:text-gray-900 transition-all"
+        >
+          ↑
+        </button>
+      )}
+
       {/* Modal Templates */}
       {showTemplates && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-6 py-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-none max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <svg viewBox="0 0 24 24" className="w-8 h-8 fill-green-600">
@@ -643,8 +974,8 @@ export default function AdminClientes() {
 
       {/* Modal Novidades */}
       {modalNovidades && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-6 py-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-none">
             <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-t-2xl">
               <h2 className="text-2xl font-bold">🆕 Novidades/Atualizações</h2>
             </div>
@@ -680,28 +1011,14 @@ export default function AdminClientes() {
         </div>
       )}
 
-      {/* Modal Oferta de Upgrade */}
+      {/* Modal Oferta Comercial */}
       {modalOferta && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-6 py-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-none">
             <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 rounded-t-2xl">
-              <h2 className="text-2xl font-bold">⬆️ Oferta de Upgrade</h2>
+              <h2 className="text-2xl font-bold">⬆️ Oferta Comercial</h2>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Plano Alvo (quem vai receber)
-                </label>
-                <select
-                  value={oferta.planoAlvo}
-                  onChange={(e) => setOferta({ ...oferta, planoAlvo: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                >
-                  <option value="todos">Todos os Planos</option>
-                  <option value="Free">Free → Gold</option>
-                  <option value="Gold">Gold → Premium</option>
-                </select>
-              </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Valor da Oferta (opcional)
@@ -716,7 +1033,7 @@ export default function AdminClientes() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Benefícios do Próximo Plano
+                  Benefícios da Oferta
                 </label>
                 <textarea
                   value={oferta.beneficios}
@@ -747,27 +1064,12 @@ export default function AdminClientes() {
 
       {/* Modal Promoção Sazonal */}
       {modalPromocao && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-6 py-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-none max-h-[90vh] overflow-y-auto">
             <div className="bg-gradient-to-r from-pink-500 to-pink-600 text-white p-6 rounded-t-2xl sticky top-0">
               <h2 className="text-2xl font-bold">🎁 Promoção Sazonal</h2>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Plano Alvo
-                </label>
-                <select
-                  value={promocao.planoAlvo}
-                  onChange={(e) => setPromocao({ ...promocao, planoAlvo: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                >
-                  <option value="todos">Todos os Planos</option>
-                  <option value="Free">Apenas Free</option>
-                  <option value="Gold">Apenas Gold</option>
-                  <option value="Premium">Apenas Premium</option>
-                </select>
-              </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Tipo da Promoção*
@@ -810,7 +1112,7 @@ export default function AdminClientes() {
                 <textarea
                   value={promocao.observacao}
                   onChange={(e) => setPromocao({ ...promocao, observacao: e.target.value })}
-                  placeholder="Ex: Válido apenas para novos upgrades. Não acumulativo com outras promoções."
+                  placeholder="Ex: Válido até a data informada. Não acumulativo com outras promoções."
                   className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   rows={3}
                 />
@@ -836,27 +1138,12 @@ export default function AdminClientes() {
 
       {/* Modal Dicas */}
       {modalDicas && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-6 py-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-none">
             <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white p-6 rounded-t-2xl">
               <h2 className="text-2xl font-bold">💡 Dicas</h2>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Plano Alvo
-                </label>
-                <select
-                  value={dicas.planoAlvo}
-                  onChange={(e) => setDicas({ ...dicas, planoAlvo: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                >
-                  <option value="todos">Todos os Planos</option>
-                  <option value="Free">Apenas Free</option>
-                  <option value="Gold">Apenas Gold</option>
-                  <option value="Premium">Apenas Premium</option>
-                </select>
-              </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Texto da Dica
@@ -890,8 +1177,8 @@ export default function AdminClientes() {
 
       {/* Modal Avisos Gerais */}
       {modalAvisos && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-6 py-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-none">
             <div className="bg-gradient-to-r from-red-500 to-red-600 text-white p-6 rounded-t-2xl">
               <h2 className="text-2xl font-bold">📢 Avisos Gerais</h2>
             </div>
@@ -941,8 +1228,8 @@ export default function AdminClientes() {
 
       {/* Modal Avisos do Sistema */}
       {modalAvisosSistema && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-6 py-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-none">
             <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-6 rounded-t-2xl flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <span className="text-3xl">📢</span>
@@ -975,18 +1262,11 @@ export default function AdminClientes() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Público-alvo *
+                  Público-alvo
                 </label>
-                <select
-                  value={avisoSistema.planoAlvo}
-                  onChange={(e) => setAvisoSistema({ ...avisoSistema, planoAlvo: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-3 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                >
-                  <option value="todos">Todos os Planos</option>
-                  <option value="Free">Free</option>
-                  <option value="Gold">Gold</option>
-                  <option value="Premium">Premium</option>
-                </select>
+                <div className="w-full border border-gray-300 rounded-lg p-3 bg-gray-50 text-gray-700">
+                  Todos os clientes (aviso geral)
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1052,7 +1332,7 @@ export default function AdminClientes() {
                           <div className="flex-1">
                             <div className="flex items-center space-x-2 mb-2">
                               <span className="text-xs font-semibold text-orange-700 bg-orange-100 px-2 py-1 rounded">
-                                {aviso.plano_alvo === 'todos' ? 'Todos os Planos' : aviso.plano_alvo}
+                                Aviso geral
                               </span>
                               <span className="text-xs text-gray-500">
                                 {new Date(aviso.data_inicio).toLocaleDateString('pt-BR')} - {new Date(aviso.data_fim).toLocaleDateString('pt-BR')}

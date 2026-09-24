@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '../../components/Layout';
 import { validarSenhaPelada } from '../../lib/supabase';
@@ -16,6 +16,7 @@ import {
   salvarSetupCompeticaoLocal,
   obterTorneiosEncerrados,
 } from '../../lib/torneioLocalService';
+import { listarTorneiosCatalogo, migrarTorneiosVinculadosLegado } from '../../lib/torneioVinculadoService';
 
 interface TorneioVinculado {
   id: string;
@@ -45,9 +46,10 @@ export default function ModoTorneioPage() {
   const [peladaId, setPeladaId] = useState<string>('');
   const [torneiosEncerrados, setTorneiosEncerrados] = useState<TorneioLocal[]>([]);
   const [modalEncerradosAberto, setModalEncerradosAberto] = useState(false);
-  const [showModalCarregarTorneio, setShowModalCarregarTorneio] = useState(false);
   const [showModalTipoTorneio, setShowModalTipoTorneio] = useState(false);
   const [showModalTipoLiga, setShowModalTipoLiga] = useState(false);
+  const [quantidadeMeusTorneios, setQuantidadeMeusTorneios] = useState(0);
+  const [painelAcoesAberto, setPainelAcoesAberto] = useState<'novo' | 'carregar' | null>(null);
 
   const [torneiosVinculados, setTorneiosVinculados] = useState<TorneioVinculado[]>([]);
   const [showModalTorneiosVinculados, setShowModalTorneiosVinculados] = useState(false);
@@ -63,11 +65,53 @@ export default function ModoTorneioPage() {
   useEffect(() => {
     const pelada_id = buscar_pelada_id() || 'default';
     setPeladaId(pelada_id);
+
+    validarAcessoModoTorneio(pelada_id);
     
     verificarTorneioAtivo(pelada_id);
     setTorneiosEncerrados(obterTorneiosEncerrados());
+    migrarTorneiosVinculadosLegado(pelada_id);
+    setQuantidadeMeusTorneios(listarTorneiosCatalogo(pelada_id).length);
     carregarTorneiosVinculados(pelada_id);
   }, []);
+
+  const validarAcessoModoTorneio = async (pelada_id: string) => {
+    try {
+      const response = await fetch('/api/auth/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pelada_id }),
+      });
+
+      if (!response.ok) {
+        alert('🚧 Modo Torneio em desenvolvimento e temporariamente indisponível.');
+        router.push('/');
+        return;
+      }
+
+      const data = await response.json();
+      const status = String(data.status || '').toLowerCase();
+      const acessoModoTorneio = data.acesso_modo_torneio === true;
+
+      if (status === 'bloqueado' || status === 'inativo') {
+        alert(status === 'bloqueado'
+          ? '🚫 Acesso bloqueado. Entre em contato com o administrador.'
+          : '⏸️ Cliente inativo. Regularize seu acesso para continuar.');
+        router.push('/login');
+        return;
+      }
+
+      if (!acessoModoTorneio) {
+        alert('🚫 Seu cliente não possui acesso ao Modo Torneio.');
+        router.push('/');
+        return;
+      }
+    } catch (error) {
+      console.warn('Falha ao validar acesso do Modo Torneio:', error);
+      alert('❌ Não foi possível validar o acesso ao Modo Torneio.');
+      router.push('/');
+    }
+  };
 
   const carregarTorneiosVinculados = (pelada_id: string) => {
     if (typeof window === 'undefined') return;
@@ -336,134 +380,203 @@ export default function ModoTorneioPage() {
       </section>
 
       <section className="mb-5">
-        {setupEmAndamento ? (
-          <div className="w-full bg-gradient-to-r from-amber-600 to-orange-700 rounded-xl shadow-lg border-2 border-amber-400 p-4 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <span className="text-3xl leading-none">🔧</span>
-                <div className="text-left">
-                  <h3 className="font-bold text-white text-sm sm:text-base mb-0.5">Setup em Andamento</h3>
-                  <p className="text-xs text-amber-100">
-                    {equipesJaCadastradas ? '📋 Próximo: Chaveamento' : '👥 Próximo: Cadastro de Equipes'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => router.push(equipesJaCadastradas ? '/modo-torneio/chaveamento' : '/modo-torneio/equipes')}
-                className="text-white font-bold text-sm bg-amber-800 hover:bg-amber-900 px-4 py-2 rounded-lg transition-colors"
-              >
-                Continuar →
-              </button>
-            </div>
-            <div className="flex gap-4 mt-3 pt-3 border-t border-amber-500">
-              <button
-                onClick={() => { limparSetupCompeticaoLocal(); setSetupEmAndamento(false); }}
-                className="text-amber-200 hover:text-white text-sm underline underline-offset-2 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => { limparSetupCompeticaoLocal(); setSetupEmAndamento(false); }}
-                className="text-amber-200 hover:text-white text-sm underline underline-offset-2 transition-colors"
-              >
-                Iniciar Novo
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => torneioAtivo ? setShowModalCarregarTorneio(true) : undefined}
-            className={`w-full rounded-xl shadow-md p-4 sm:p-6 border transition-all duration-300 min-h-[5rem] ${
-              torneioAtivo
-                ? 'bg-gradient-to-r from-blue-600 to-sky-700 border-sky-400 cursor-pointer hover:from-blue-700 hover:to-sky-800'
-                : 'bg-gradient-to-r from-gray-100 to-gray-200 border-gray-300 opacity-75 cursor-not-allowed'
-            }`}
-          >
-            <div className="flex items-center justify-between h-full">
-              <div className="flex items-center space-x-3">
-                <span className="text-3xl leading-none">📂</span>
-                <div className="text-left">
-                  <h3 className={`font-semibold text-sm sm:text-base ${torneioAtivo ? 'text-white' : 'text-gray-600'}`}>
-                    Carregar Torneio em Aberto
-                  </h3>
-                  {!torneioAtivo && (
-                    <p className="text-xs text-gray-500 mt-0.5">Nenhum torneio em aberto</p>
-                  )}
-                </div>
-              </div>
-              {torneioAtivo && (
-                <span className="text-sky-100 text-sm font-semibold">Ver →</span>
-              )}
-            </div>
-          </button>
-        )}
-      </section>
-
-      {/* ── DIVISOR ───────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="flex-1 h-px bg-gray-700"></div>
-        <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Novo Torneio</span>
-        <div className="flex-1 h-px bg-gray-700"></div>
-      </div>
-
-      <section
-        onClick={() => !torneioAtivo && !setupEmAndamento && setShowModalTipoTorneio(true)}
-        className={`mb-5 rounded-2xl border p-4 sm:p-5 transition-all ${
-          torneioAtivo || setupEmAndamento
-            ? 'bg-gray-200 border-gray-300 opacity-80 cursor-not-allowed'
-            : 'bg-gradient-to-r from-red-700 to-rose-900 border-red-500 cursor-pointer hover:from-red-800 hover:to-rose-950'
-        }`}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl leading-none">🏆</span>
-            <h3 className={`font-black text-lg ${torneioAtivo || setupEmAndamento ? 'text-gray-600' : 'text-white'}`}>Torneio / Copa</h3>
-          </div>
-          {!torneioAtivo && !setupEmAndamento && (
-            <span className="text-red-200 text-sm font-semibold">Escolher →</span>
-          )}
-        </div>
-      </section>
-
-      <section
-        onClick={() => !torneioAtivo && !setupEmAndamento && setShowModalTipoLiga(true)}
-        className={`mb-5 rounded-2xl border p-4 sm:p-5 transition-all ${
-          torneioAtivo || setupEmAndamento
-            ? 'bg-gray-200 border-gray-300 opacity-80 cursor-not-allowed'
-            : 'bg-gradient-to-r from-sky-600 to-cyan-700 border-sky-400 cursor-pointer hover:from-sky-700 hover:to-cyan-800'
-        }`}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl leading-none">🥇</span>
-            <h3 className={`font-black text-lg ${torneioAtivo || setupEmAndamento ? 'text-gray-600' : 'text-white'}`}>Liga / Campeonato</h3>
-          </div>
-          {!torneioAtivo && !setupEmAndamento && (
-            <span className="text-sky-100 text-sm font-semibold">Escolher →</span>
-          )}
-        </div>
-      </section>
-
-      <section className="mb-6">
         <button
-          onClick={() => setShowModalTorneiosVinculados(true)}
-          className="w-full rounded-2xl border border-gray-300 bg-white p-4 sm:p-5 text-left shadow-sm hover:border-sky-300 transition-colors"
+          onClick={() => router.push('/modo-torneio/meus-torneios')}
+          className="w-full rounded-2xl border border-sky-200 bg-white p-4 sm:p-5 text-left shadow-sm hover:border-sky-400 transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <span className="text-3xl leading-none">🔗</span>
+              <span className="text-3xl leading-none">🏆</span>
               <div>
-                <h3 className="font-black text-lg text-gray-900">Torneios e Ligas vinculados à minha pelada</h3>
+                <h3 className="font-black text-lg text-gray-900">Meus Torneios</h3>
                 <p className="text-xs text-gray-500 mt-1">
-                  {torneiosVinculados.length > 0
-                    ? `${torneiosVinculados.length} vinculados`
-                    : 'Nenhum torneio vinculado cadastrado'}
+                  {quantidadeMeusTorneios > 0
+                    ? `${quantidadeMeusTorneios} tipo(s) cadastrado(s)`
+                    : 'Cadastre tipos de torneio e niveis de importancia'}
                 </p>
               </div>
             </div>
-            <span className="text-sm font-semibold text-slate-500">Ver →</span>
+            <span className="text-sm font-semibold text-slate-500">Abrir →</span>
           </div>
         </button>
+      </section>
+
+      <section className="mb-6">
+        <div className="grid grid-cols-1 gap-3">
+          <div className={`rounded-2xl border overflow-hidden transition-all ${painelAcoesAberto === 'novo' ? 'border-emerald-500 shadow-md' : 'border-emerald-200'}`}>
+            <button
+              onClick={() => setPainelAcoesAberto((prev) => (prev === 'novo' ? null : 'novo'))}
+              className={`w-full p-4 text-left transition-all ${
+                painelAcoesAberto === 'novo'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-white text-emerald-900 hover:bg-emerald-50'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl leading-none">🆕</span>
+                  <div>
+                    <h3 className="font-bold text-sm sm:text-base">Iniciar Novo Torneio</h3>
+                    <p className={`text-xs mt-0.5 ${painelAcoesAberto === 'novo' ? 'text-emerald-100' : 'text-emerald-700'}`}>
+                      Defina o formato da nova competicao
+                    </p>
+                  </div>
+                </div>
+                <span className={`text-sm font-semibold ${painelAcoesAberto === 'novo' ? 'text-emerald-100' : 'text-emerald-700'}`}>
+                  {painelAcoesAberto === 'novo' ? 'Ocultar' : 'Abrir →'}
+                </span>
+              </div>
+            </button>
+
+            {painelAcoesAberto === 'novo' && (
+              <div className="border-t border-emerald-200 bg-white p-4 sm:p-5">
+                <div className="w-full rounded-xl border border-gray-200 bg-gray-50 p-4 text-left mb-4">
+                  <p className="text-xs text-gray-600">
+                    Dica: antes de iniciar um novo torneio, passe em Meus Torneios para cadastrar o tipo e a importancia.
+                  </p>
+                </div>
+
+                {setupEmAndamento && (
+                  <div className="w-full bg-gradient-to-r from-amber-600 to-orange-700 rounded-xl shadow-lg border-2 border-amber-400 p-4 sm:p-6 mb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <span className="text-3xl leading-none">🔧</span>
+                        <div className="text-left">
+                          <h3 className="font-bold text-white text-sm sm:text-base mb-0.5">Setup em Andamento</h3>
+                          <p className="text-xs text-amber-100">
+                            {equipesJaCadastradas ? '📋 Próximo: Chaveamento' : '👥 Próximo: Cadastro de Equipes'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => router.push(equipesJaCadastradas ? '/modo-torneio/chaveamento' : '/modo-torneio/equipes')}
+                        className="text-white font-bold text-sm bg-amber-800 hover:bg-amber-900 px-4 py-2 rounded-lg transition-colors"
+                      >
+                        Continuar →
+                      </button>
+                    </div>
+                    <div className="flex gap-4 mt-3 pt-3 border-t border-amber-500">
+                      <button
+                        onClick={() => { limparSetupCompeticaoLocal(); setSetupEmAndamento(false); }}
+                        className="text-amber-200 hover:text-white text-sm underline underline-offset-2 transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={() => { limparSetupCompeticaoLocal(); setSetupEmAndamento(false); }}
+                        className="text-amber-200 hover:text-white text-sm underline underline-offset-2 transition-colors"
+                      >
+                        Iniciar Novo
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-3">
+                  <section
+                    onClick={() => !torneioAtivo && !setupEmAndamento && setShowModalTipoTorneio(true)}
+                    className={`rounded-xl border p-4 transition-all ${
+                      torneioAtivo || setupEmAndamento
+                        ? 'bg-gray-200 border-gray-300 opacity-80 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-red-700 to-rose-900 border-red-500 cursor-pointer hover:from-red-800 hover:to-rose-950'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-3xl leading-none">🏆</span>
+                        <h3 className={`font-black text-lg ${torneioAtivo || setupEmAndamento ? 'text-gray-600' : 'text-white'}`}>Torneio / Copa</h3>
+                      </div>
+                      {!torneioAtivo && !setupEmAndamento && (
+                        <span className="text-red-200 text-sm font-semibold">Escolher →</span>
+                      )}
+                    </div>
+                  </section>
+
+                  <section
+                    onClick={() => !torneioAtivo && !setupEmAndamento && setShowModalTipoLiga(true)}
+                    className={`rounded-xl border p-4 transition-all ${
+                      torneioAtivo || setupEmAndamento
+                        ? 'bg-gray-200 border-gray-300 opacity-80 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-sky-600 to-cyan-700 border-sky-400 cursor-pointer hover:from-sky-700 hover:to-cyan-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-3xl leading-none">🥇</span>
+                        <h3 className={`font-black text-lg ${torneioAtivo || setupEmAndamento ? 'text-gray-600' : 'text-white'}`}>Liga / Campeonato</h3>
+                      </div>
+                      {!torneioAtivo && !setupEmAndamento && (
+                        <span className="text-sky-100 text-sm font-semibold">Escolher →</span>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className={`rounded-2xl border overflow-hidden transition-all ${painelAcoesAberto === 'carregar' ? 'border-sky-500 shadow-md' : 'border-sky-200'}`}>
+            <button
+              onClick={() => setPainelAcoesAberto((prev) => (prev === 'carregar' ? null : 'carregar'))}
+              className={`w-full p-4 text-left transition-all ${
+                painelAcoesAberto === 'carregar'
+                  ? 'bg-sky-700 text-white'
+                  : 'bg-white text-sky-900 hover:bg-sky-50'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl leading-none">📂</span>
+                  <div>
+                    <h3 className="font-bold text-sm sm:text-base">Carregar Torneio em Aberto</h3>
+                    <p className={`text-xs mt-0.5 ${painelAcoesAberto === 'carregar' ? 'text-sky-100' : 'text-sky-700'}`}>
+                      Veja e retome torneios em andamento
+                    </p>
+                  </div>
+                </div>
+                <span className={`text-sm font-semibold ${painelAcoesAberto === 'carregar' ? 'text-sky-100' : 'text-sky-700'}`}>
+                  {painelAcoesAberto === 'carregar' ? 'Ocultar' : 'Abrir →'}
+                </span>
+              </div>
+            </button>
+
+            {painelAcoesAberto === 'carregar' && (
+              <div className="border-t border-sky-200 bg-white p-4 sm:p-5">
+                {infoTorneio ? (
+                  <div
+                    onClick={acessarTorneioAtivo}
+                    className="w-full bg-gray-800 border border-sky-600 rounded-xl p-4 text-left hover:border-sky-400 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-white text-sm">⚡ Torneio Ativo</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Iniciado em {infoTorneio.data} · {infoTorneio.equipes} equipes · {infoTorneio.partidas} partidas
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-3 shrink-0">
+                        <button
+                          type="button"
+                          onClick={abrirModalExcluirTorneio}
+                          className="bg-red-800/50 hover:bg-red-700 text-white rounded-lg w-8 h-8 flex items-center justify-center text-sm transition-colors"
+                          title="Apagar torneio"
+                        >
+                          🗑️
+                        </button>
+                        <span className="text-sky-400 text-sm">Abrir →</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full rounded-xl border border-gray-200 bg-gray-50 p-4 text-left">
+                    <p className="text-sm font-semibold text-gray-700">Nenhum torneio em aberto</p>
+                    <p className="text-xs text-gray-500 mt-1">Inicie um novo torneio para ele aparecer aqui.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </section>
 
       {/* ── DIVISOR ──────────────────────────────────────────────────────── */}
@@ -532,56 +645,6 @@ export default function ModoTorneioPage() {
           </button>
         </div>
       </section>
-
-      {/* ── MODAL CARREGAR TORNEIO EM ABERTO ──────────────────────────── */}
-      {showModalCarregarTorneio && (
-        <div
-          className="fixed inset-0 z-[9999] bg-black/80 flex items-end justify-center"
-          onClick={() => setShowModalCarregarTorneio(false)}
-        >
-          <div
-            className="w-full max-w-lg bg-gray-900 rounded-t-3xl p-5 pb-8"
-            style={{ maxHeight: '80vh', overflowY: 'auto' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="text-lg font-black text-white">📂 Torneios em Aberto</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Selecione para carregar</p>
-              </div>
-              <button onClick={() => setShowModalCarregarTorneio(false)} className="text-gray-400 hover:text-white text-2xl leading-none">×</button>
-            </div>
-            <div className="space-y-3">
-              {infoTorneio && (
-                <div
-                  onClick={() => { setShowModalCarregarTorneio(false); acessarTorneioAtivo(); }}
-                  className="w-full bg-gray-800 border border-sky-600 rounded-2xl p-4 text-left hover:border-sky-400 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-white text-sm">⚡ Torneio Ativo</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Iniciado em {infoTorneio.data} · {infoTorneio.equipes} equipes · {infoTorneio.partidas} partidas
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 ml-3 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setShowModalCarregarTorneio(false); abrirModalExcluirTorneio(e); }}
-                        className="bg-red-800/50 hover:bg-red-700 text-white rounded-lg w-8 h-8 flex items-center justify-center text-sm transition-colors"
-                        title="Apagar torneio"
-                      >
-                        🗑️
-                      </button>
-                      <span className="text-sky-400 text-sm">Abrir →</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── MODAL TIPO TORNEIO / COPA ──────────────────────────────────── */}
       {showModalTipoTorneio && (

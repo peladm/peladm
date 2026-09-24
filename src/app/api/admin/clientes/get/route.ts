@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { sincronizarStatusClientePorVencimento } from '../_utils';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -54,14 +55,16 @@ export async function POST(request: NextRequest) {
     const { data: cliente, error: clienteError } = await supabaseAdmin
       .from('clientes')
       .select('*')
-      .eq('pelada_id', clienteId)
-      .single();
+      .ilike('pelada_id', String(clienteId))
+      .maybeSingle();
 
     if (clienteError || !cliente) {
       return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 });
     }
 
-    return NextResponse.json({ cliente });
+    const clienteNormalizado = await sincronizarStatusClientePorVencimento(cliente);
+
+    return NextResponse.json({ cliente: clienteNormalizado });
   } catch (error) {
     console.error('Erro na API:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });

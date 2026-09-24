@@ -9,7 +9,6 @@ export interface Usuario {
   email?: string;
   usuario_pelada?: string;
   senha_pelada?: string;
-  plano: string;
   is_master: boolean;
   status: boolean;
   tipo_acesso: TipoAcesso;
@@ -28,7 +27,6 @@ export const obterUsuario = (): Usuario | null => {
     return {
       id: credenciais.pelada_id,
       nome: credenciais.username,
-      plano: credenciais.plano || 'free',
       is_master: credenciais.is_master === true,
       status: true,
       tipo_acesso: tipoAcesso
@@ -108,7 +106,7 @@ export const redirecionarSeNaoTemAcesso = (pathname: string): string | null => {
   
   // Visitante tentando acessar home ou página não permitida
   if (ehVisitante() && (pathname === '/' || !podeAcessarPagina(pathname))) {
-    return '/resultados';
+    return '/estatisticas';
   }
   
   return null; // Não precisa redirecionar
